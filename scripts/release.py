@@ -128,7 +128,6 @@ def update_versions(root, version, notes):
     data, count = re.subn(r'(\[workspace\.package\]\s*\n(?:(?!\[)[^\n]*\n)*?version\s*=\s*)"[^"]+"', lambda m: m[1] + f'"{version}"', data, count=1)
     if count != 1:
         raise ValueError("Cannot locate [workspace.package].version")
-    manifest.write_text(data, encoding="utf-8")
     changelog = root / "CHANGELOG.md"
     previous = changelog.read_text(encoding="utf-8")
     # Preserve hand-written initial release notes and append generated history there.
@@ -143,6 +142,7 @@ def update_versions(root, version, notes):
         if not heading:
             raise ValueError("CHANGELOG.md must begin with # Changelog")
         previous = "# Changelog\n\n" + notes + "\n" + previous[heading.end():].lstrip()
+    manifest.write_text(data, encoding="utf-8")
     changelog.write_text(previous, encoding="utf-8")
 
 
@@ -284,6 +284,22 @@ def main():
         print(f"Checked {len(commits)} Conventional Commits")
     elif args.command == "validate":
         version = manifest_version()
+        manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        workspace = manifest["workspace"]
+        excluded = {path.resolve() for pattern in workspace.get("exclude", []) for path in ROOT.glob(pattern)}
+        members = {path.resolve() for pattern in workspace.get("members", []) for path in ROOT.glob(pattern)}
+        if "package" in manifest:
+            members.add(ROOT)
+        locked = tomllib.loads((ROOT / "Cargo.lock").read_text(encoding="utf-8")).get("package", [])
+        for member in sorted(members - excluded):
+            package = tomllib.loads((member / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+            expected = package["version"]
+            if isinstance(expected, dict) and expected.get("workspace") is True:
+                expected = version
+            # Registry/git dependencies may share a workspace package's name.
+            entries = [entry for entry in locked if entry["name"] == package["name"] and "source" not in entry]
+            if len(entries) != 1 or entries[0]["version"] != expected:
+                raise ValueError(f"Cargo.lock must contain local {package['name']} at version {expected}")
         if args.tag and args.tag != f"v{version}":
             raise ValueError(f"Release tag must match Cargo.toml: v{version}")
         notes_for_version(ROOT, version)
