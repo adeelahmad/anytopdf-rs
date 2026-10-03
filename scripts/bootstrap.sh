@@ -6,6 +6,10 @@ export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH:/opt/homebrew/bin:/usr/local/
 mode=${1:-build}
 case "$mode" in build|providers|release) ;; *) echo "Unknown bootstrap mode: $mode" >&2; exit 1;; esac
 platform=$(uname -s)
+case "$platform" in
+    Darwin|Linux|MINGW*|MSYS*|CYGWIN*) ;;
+    *) echo "Unsupported bootstrap platform: $platform" >&2; exit 1;;
+esac
 
 as_root() {
     if [[ $(id -u) == 0 ]]; then "$@"; else sudo "$@"; fi
@@ -108,4 +112,23 @@ fi
 if [[ "$mode" == release ]] && ! command -v gh >/dev/null; then
     install_packages gh gh gh github-cli gh
 fi
+# Package managers can succeed before newly installed tools become available.
+# Verify the requested mode's prerequisites before announcing readiness.
+required_tools=(curl git rustup)
+if [[ "$platform" == Linux ]]; then
+    required_tools+=(cc)
+    if [[ "${TARGET:-}" == *-unknown-linux-musl ]]; then
+        required_tools+=(musl-gcc)
+    fi
+fi
+case "$mode" in
+    providers) required_tools+=(ffmpeg exiftool tesseract pdftotext);;
+    release) required_tools+=(gh);;
+esac
+for tool in "${required_tools[@]}"; do
+    if ! command -v "$tool" >/dev/null; then
+        echo "Required tool is still unavailable after bootstrap: $tool. Check installation and PATH, then rerun make." >&2
+        exit 1
+    fi
+done
 printf 'Dependencies ready: Rust %s, Python 3.11+, native tools (%s).\n' "$toolchain" "$mode"
