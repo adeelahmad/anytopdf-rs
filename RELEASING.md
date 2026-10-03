@@ -209,25 +209,74 @@ dispatch validates and builds downloadable artifacts without publication, even
 when a tag is selected. Branch dispatch checks metadata without requiring a tag.
 There is no Docker, signing or crates.io publishing step.
 
-## Hosted evidence and release acceptance
+## Verified v0.1.0 release — 2026-10-04 (Australia/Melbourne)
 
-The public destination is [adeelahmad/anytopdf-rs](https://github.com/adeelahmad/anytopdf-rs).
-The initial private run was prevented from starting by an account billing/spending
-restriction. After the authorized move to public visibility, baseline and recovery
-CI succeeded on Linux, macOS and native Windows; the latest pre-delivery run is
-[37150925764](https://github.com/adeelahmad/anytopdf-rs/actions/runs/37150925764).
-This is prior CI evidence. Final delivery-candidate CI, five-target packaging and
-published release acceptance remain pending in this source snapshot.
+[Release v0.1.0](https://github.com/adeelahmad/anytopdf-rs/releases/tag/v0.1.0)
+is published as a stable, non-draft release from immutable commit
+[`e283c57fc20af0b7f2a777812e4c25f7686a4ff8`](https://github.com/adeelahmad/anytopdf-rs/commit/e283c57fc20af0b7f2a777812e4c25f7686a4ff8).
+[Release run 37152498275](https://github.com/adeelahmad/anytopdf-rs/actions/runs/37152498275)
+succeeded in all 10 jobs: version validation, three operating-system verification
+jobs, five native package jobs and publication. Earlier corrected-candidate
+[CI run 37152086874](https://github.com/adeelahmad/anytopdf-rs/actions/runs/37152086874)
+passed Linux, macOS and Windows at commit `9978544`. The release run independently
+verified the released commit. Both `make release` and subsequent
+`make release-resume` completed successfully without duplicate release history.
 
-Before claiming a release, record its exact commit/tag, successful matching hosted
-run and published non-draft release. Download all 11 assets, check the exact
-MUSL/Darwin/MSVC names, inspect archive contents and recompute SHA-256 hashes.
-Compare the published body with `scripts/release.py notes` at the tagged commit.
-Run extracted binaries on compatible hosts and retain native hosted smoke evidence
-for other targets. Local tests and mocked recovery scenarios prove their cases;
-Wine, Rosetta and cross-build checks are distinct from native hosted execution.
-Record provider versions and live PDF text/visual checks separately. docTR remains
-unvalidated until its actual model execution succeeds.
+| Released target | Native hosted package and smoke result |
+| --- | --- |
+| `aarch64-apple-darwin` | PASS on Apple Silicon macOS |
+| `x86_64-apple-darwin` | PASS on Intel macOS |
+| `aarch64-unknown-linux-musl` | PASS on ARM64 Linux, including Poppler extraction |
+| `x86_64-unknown-linux-musl` | PASS on x86-64 Linux, including Poppler extraction |
+| `x86_64-pc-windows-msvc` | PASS on native Windows MSVC |
+
+All five package jobs executed their binaries and checked PDF structure, graph
+output and overwrite protection. Hosted macOS/Windows jobs did not have Poppler;
+those jobs do not establish independent text extraction. The downloaded Apple
+Silicon binary separately reported `anytopdf 0.1.0` and passed strict smoke with
+host Poppler, including Unicode extraction and pagination.
+
+All 11 published assets were downloaded and independently verified: the five
+`anytopdf-0.1.0-<target>` archives (tar.gz for Darwin/MUSL, ZIP for MSVC), their five
+`.sha256` sidecars, and `SHA256SUMS`. Every archive hash matched both its sidecar
+and aggregate entry. Each archive contained exactly nine regular files beneath
+the expected version/target directory: the executable, README, RELEASING,
+ROADMAP, ARCHITECTURE, PLUGIN_PROTOCOL, CHANGELOG and both licenses. Paths were
+safe, tar entries contained no links, and the ZIP CRC check passed. Published
+release notes matched the changelog section at the tagged commit.
+
+The corrected local candidate passed the complete matrix with 43 Rust tests per
+default/minimal feature configuration and 29 Python tests, with no skips. Live
+acceptance independently extracted searchable text and visually reviewed 18 PDF
+pages: two recursive-filter image pages, three patterned video/caption pages,
+one independent plugin page and 12 supplementary media/OCR pages. Image OCR and
+metadata stayed on their own pages; excluded images were absent and source hashes
+were unchanged. Video scenes, timestamps, captions and provenance agreed.
+Supplied audio transcripts, Unicode, rotation, long tokens and the external
+`.example` plugin were also exercised. These results demonstrate existing media
+and plugin behavior, not automatic speech recognition, IGL decoding or remote
+storage support.
+
+Native Apple Vision and Tesseract were invoked successfully. Recorded providers
+were FFmpeg/ffprobe 6.1.2, ExifTool 12.76, Tesseract 5.5.3 and Poppler 26.08.0,
+with an installed Arial font. **docTR model execution remains unvalidated.**
+Historical Wine, Rosetta and cross-build results above remain separate from
+these native hosted and downloaded-binary checks.
+
+The initial private CI run was blocked before execution by account billing;
+public hosted runs subsequently proceeded. Candidate run `37151534301` exposed
+a Windows test-helper Bash lookup problem; explicit executable resolution fixed
+it and the corrected run above passed. These earlier failures are retained as
+history, not successful validation. Publication/download verification also used
+a temporary network proxy and isolated GitHub CLI configuration for the active
+account; stored accounts were preserved. Default authentication can still report
+an invalid inactive account, so this record does not claim that configuration
+was repaired.
+
+This evidence update is a separate documentation commit after publication.
+The tag and packaged source remain at `e283c57`; documentation bundled in the
+archives reflects that earlier snapshot. Future release acceptance should repeat
+the matching-run, asset inventory/hash/contents, notes and executable checks.
 
 ## Distribution scope
 

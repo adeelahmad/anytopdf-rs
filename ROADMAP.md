@@ -29,7 +29,7 @@ Checked items describe implemented code, not release certification. See
 - [x] independently inspect generated PDF appearance and searchable Unicode text
 - [x] Apple Silicon/Intel macOS and ARM64/x86-64 Linux release execution
 - [x] Windows GNU cross-build and Wine execution smoke test
-- [ ] hosted native Windows MSVC release matrix verification
+- [x] hosted native Windows MSVC release matrix verification
 
 ## 0.2 — runtime plugin host
 - [x] PATH / `ANYTOPDF_PLUGIN_PATH` executable discovery
