@@ -18,6 +18,7 @@ import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+BASH = shutil.which("bash")
 TARGETS = {
     "x86_64-unknown-linux-musl": "tar.gz",
     "aarch64-unknown-linux-musl": "tar.gz",
@@ -101,7 +102,7 @@ class WorkflowTests(unittest.TestCase):
         script = re.sub(r"(?<![\w/])python(?:3)?(?=\s)",
                         lambda _: shlex.quote(Path(sys.executable).as_posix()), script)
         environment = {**self.env, **variables}
-        return subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        return subprocess.run([BASH, "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
                               cwd=cwd, env=environment, text=True, encoding="utf-8",
                               capture_output=True)
 
