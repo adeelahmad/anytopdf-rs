@@ -1,0 +1,11 @@
+/target/
+/dist/
+/tmp/
+.DS_Store
+__pycache__/
+*.pyc
+
+# agentic-agile (managed by agentic-init)
+.agentic/
+.transcripts/
+docs/agents/

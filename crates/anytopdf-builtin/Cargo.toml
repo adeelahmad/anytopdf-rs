@@ -1,0 +1,42 @@
+[package]
+name = "anytopdf-builtin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["apple-vision"]
+apple-vision = [
+  "dep:objc2",
+  "dep:objc2-foundation",
+  "dep:objc2-vision"
+]
+
+[dependencies]
+anyhow.workspace = true
+anytopdf-core = { path = "../anytopdf-core" }
+image.workspace = true
+infer.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+walkdir.workspace = true
+which.workspace = true
+uuid.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3.2", optional = true, default-features = false, features = [
+  "std", "NSObject",
+  "NSArray", "NSData", "NSDictionary", "NSError", "NSString", "NSEnumerator"
+] }
+objc2-vision = { version = "0.3.2", optional = true, default-features = false, features = [
+  "std",
+  "VNRecognizeTextRequest",
+  "VNObservation",
+  "VNRequest",
+  "VNTypes",
+  "VNRequestHandler",
+  "objc2-core-foundation"
+] }

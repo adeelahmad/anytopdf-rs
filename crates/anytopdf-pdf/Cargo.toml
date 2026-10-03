@@ -1,0 +1,17 @@
+[package]
+name = "anytopdf-pdf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+anytopdf-core = { path = "../anytopdf-core" }
+image.workspace = true
+printpdf.workspace = true
+ttf-parser.workspace = true
+allsorts.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

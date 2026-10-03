@@ -1,0 +1,18 @@
+[resolver]
+incompatible-rust-versions = "fallback"
+
+# Windows release builds use the static MSVC CRT.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+# Linux fully-static binaries:
+#   rustup target add x86_64-unknown-linux-musl
+#   cargo build --release --target x86_64-unknown-linux-musl
+#
+# macOS system frameworks cannot be fully statically linked by design. The
+# resulting executable is otherwise self-contained; optional external providers
+# (ffmpeg, exiftool, tesseract, Python/docTR, runtime plugins) are discovered
+# separately at runtime.

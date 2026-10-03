@@ -1,0 +1,27 @@
+[package]
+name = "anytopdf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "anytopdf"
+path = "src/main.rs"
+
+[features]
+default = ["apple-vision"]
+apple-vision = ["anytopdf-builtin/apple-vision"]
+
+[dependencies]
+anyhow.workspace = true
+anytopdf-core = { path = "../anytopdf-core" }
+anytopdf-builtin = { path = "../anytopdf-builtin", default-features = false }
+anytopdf-pdf = { path = "../anytopdf-pdf" }
+clap.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+which.workspace = true
+infer.workspace = true
+tempfile.workspace = true
+
