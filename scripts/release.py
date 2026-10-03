@@ -20,7 +20,7 @@ VERSION_FILES = ("Cargo.toml", "Cargo.lock", "CHANGELOG.md")
 
 
 def run(*args, root=ROOT, capture=True, env=None):
-    result = subprocess.run(args, cwd=root, check=True, text=True, encoding="utf-8", stdout=subprocess.PIPE if capture else None, env=env)
+    result = subprocess.run(args, cwd=root, check=True, text=True, encoding="utf-8", stdout=subprocess.PIPE if capture else None, stderr=subprocess.PIPE if capture else None, env=env)
     return result.stdout.strip() if capture else ""
 
 
@@ -195,24 +195,70 @@ def publish_and_wait(root, remote, branch, repo, version):
     print(f"Pushed {tag}; waiting for GitHub Release workflow in {repo}...", flush=True)
     deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
-        runs = json.loads(run("gh", "run", "list", "--repo", repo, "--workflow", "release.yml", "--event", "push", "--commit", commit, "--limit", "30", "--json", "databaseId,headBranch,createdAt", root=root))
-        matches = [item for item in runs if item['headBranch'] == tag]
+        try:
+            runs = json.loads(run("gh", "run", "list", "--repo", repo, "--workflow", "release.yml", "--event", "push", "--commit", commit, "--limit", "30", "--json", "databaseId,headBranch,headSha,createdAt", root=root))
+        except subprocess.CalledProcessError as error:
+            # A just-pushed workflow may not yet be indexed. Only this specific
+            # 404 is retryable; permission, authentication and other errors escape.
+            diagnostic = (error.stderr or "").lower()
+            if "http 404" not in diagnostic or "workflow" not in diagnostic or not (
+                "not found" in diagnostic or "could not find" in diagnostic
+            ):
+                raise
+            runs = []
+        matches = [item for item in runs if item['headBranch'] == tag and item['headSha'] == commit]
         if matches:
             selected = max(matches, key=lambda item: item['createdAt'])
             run("gh", "run", "watch", str(selected['databaseId']), "--repo", repo, "--exit-status", root=root, capture=False)
-            result = json.loads(run("gh", "release", "view", tag, "--repo", repo, "--json", "url,isDraft,assets", root=root))
-            if result['isDraft'] or len(result['assets']) < 11:
-                raise ValueError("GitHub release is not published with all five archives and checksums")
+            result = json.loads(run("gh", "release", "view", tag, "--repo", repo, "--json", "url,tagName,isDraft,isPrerelease,assets", root=root))
+            expected = {"SHA256SUMS"}
+            for target in ("x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl",
+                           "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"):
+                extension = ".zip" if "windows" in target else ".tar.gz"
+                archive = f"anytopdf-{version}-{target}{extension}"
+                expected.update((archive, archive + ".sha256"))
+            names = [asset['name'] for asset in result['assets']]
+            prerelease = SEMVER.fullmatch(version)[4] is not None
+            if (result['isDraft'] or result['tagName'] != tag
+                    or result['isPrerelease'] != prerelease
+                    or len(names) != len(expected) or set(names) != expected):
+                raise ValueError("GitHub release must be published with the matching tag, prerelease state and exact five archives and checksums")
             print(f"Published: {result['url']}")
             return
         time.sleep(5)
     raise ValueError(f"Release workflow did not appear for {tag}; check Actions in {repo}. Then run make release-resume")
 
 
+def verify_release(root):
+    # No caller MAKEFLAGS: release must not inherit dry-run, ignore-errors, or parallel mode.
+    env = os.environ.copy()
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
+        env.pop(key, None)
+    env["PYTHON"] = sys.executable
+    run("make", "ci", "package", root=root, capture=False, env=env)
+
+
 def publish(root=ROOT, bump="auto", remote="origin", resume=False):
     branch, repo = preflight(root, remote)
     if resume:
-        version = manifest_version(root)
+        version = validate_metadata(root)
+        if not git("tag", "--list", f"v{version}", root=root):
+            if git("log", "-1", "--format=%s", root=root) != f"chore(release): {version}":
+                raise ValueError("Missing release tag: HEAD must be the matching chore(release) commit to resume")
+            before = git("rev-parse", "HEAD", root=root)
+            original = {name: (root / name).read_bytes() for name in VERSION_FILES}
+            try:
+                verify_release(root)
+                clean_tree(root)
+                if git("rev-parse", "HEAD", root=root) != before:
+                    raise ValueError("Verification changed HEAD; inspect history before resuming")
+            except BaseException:
+                if git("rev-parse", "HEAD", root=root) == before:
+                    git("reset", "--quiet", "HEAD", "--", *VERSION_FILES, root=root)
+                    for name, contents in original.items():
+                        (root / name).write_bytes(contents)
+                raise
+            git("tag", "-a", f"v{version}", "-m", f"Release {version}", root=root)
         publish_and_wait(root, remote, branch, repo, version)
         return
     version, commits = plan(root, bump)
@@ -230,12 +276,7 @@ def publish(root=ROOT, bump="auto", remote="origin", resume=False):
     try:
         update_versions(root, version, release_notes(version, commits))
         run(cargo, "update", "--workspace", "--offline", root=root, capture=False)
-        # No caller MAKEFLAGS: release must not inherit dry-run, ignore-errors, or parallel mode.
-        env = os.environ.copy()
-        for key in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
-            env.pop(key, None)
-        env["PYTHON"] = sys.executable
-        run("make", "ci", "package", root=root, capture=False, env=env)
+        verify_release(root)
         changed = set(git("diff", "--name-only", root=root).splitlines())
         staged = set(git("diff", "--cached", "--name-only", root=root).splitlines())
         untracked = git("ls-files", "--others", "--exclude-standard", root=root)
@@ -270,6 +311,30 @@ def check_event(root=ROOT):
         print(f"Checked {len(commits)} Conventional Commits")
 
 
+def validate_metadata(root, tag=None):
+    version = manifest_version(root)
+    manifest = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+    workspace = manifest["workspace"]
+    excluded = {path.resolve() for pattern in workspace.get("exclude", []) for path in root.glob(pattern)}
+    members = {path.resolve() for pattern in workspace.get("members", []) for path in root.glob(pattern)}
+    if "package" in manifest:
+        members.add(root)
+    locked = tomllib.loads((root / "Cargo.lock").read_text(encoding="utf-8")).get("package", [])
+    for member in sorted(members - excluded):
+        package = tomllib.loads((member / "Cargo.toml").read_text(encoding="utf-8"))["package"]
+        expected = package["version"]
+        if isinstance(expected, dict) and expected.get("workspace") is True:
+            expected = version
+        # Registry/git dependencies may share a workspace package's name.
+        entries = [entry for entry in locked if entry["name"] == package["name"] and "source" not in entry]
+        if len(entries) != 1 or entries[0]["version"] != expected:
+            raise ValueError(f"Cargo.lock must contain local {package['name']} at version {expected}")
+    if tag and tag != f"v{version}":
+        raise ValueError(f"Release tag must match Cargo.toml: v{version}")
+    notes_for_version(root, version)
+    return version
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=["plan", "publish", "resume", "check", "check-event", "validate", "notes"])
@@ -283,26 +348,7 @@ def main():
         commits = commits_since(latest_tag())
         print(f"Checked {len(commits)} Conventional Commits")
     elif args.command == "validate":
-        version = manifest_version()
-        manifest = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
-        workspace = manifest["workspace"]
-        excluded = {path.resolve() for pattern in workspace.get("exclude", []) for path in ROOT.glob(pattern)}
-        members = {path.resolve() for pattern in workspace.get("members", []) for path in ROOT.glob(pattern)}
-        if "package" in manifest:
-            members.add(ROOT)
-        locked = tomllib.loads((ROOT / "Cargo.lock").read_text(encoding="utf-8")).get("package", [])
-        for member in sorted(members - excluded):
-            package = tomllib.loads((member / "Cargo.toml").read_text(encoding="utf-8"))["package"]
-            expected = package["version"]
-            if isinstance(expected, dict) and expected.get("workspace") is True:
-                expected = version
-            # Registry/git dependencies may share a workspace package's name.
-            entries = [entry for entry in locked if entry["name"] == package["name"] and "source" not in entry]
-            if len(entries) != 1 or entries[0]["version"] != expected:
-                raise ValueError(f"Cargo.lock must contain local {package['name']} at version {expected}")
-        if args.tag and args.tag != f"v{version}":
-            raise ValueError(f"Release tag must match Cargo.toml: v{version}")
-        notes_for_version(ROOT, version)
+        version = validate_metadata(ROOT, args.tag)
         print(f"Validated anytopdf {version}")
     elif args.command == "notes":
         print(notes_for_version(ROOT, manifest_version()), end="")
@@ -317,4 +363,5 @@ if __name__ == "__main__":
     try:
         main()
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
-        sys.exit(f"Release error: {error}")
+        diagnostic = error.stderr.strip() if isinstance(error, subprocess.CalledProcessError) and error.stderr else ""
+        sys.exit(f"Release error: {error}" + (f"\n{diagnostic}" if diagnostic else ""))
