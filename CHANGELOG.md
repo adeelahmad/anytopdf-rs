@@ -30,3 +30,21 @@ Markdown remains plain text. GIF/TIFF import uses the first frame/page. Audio ne
 a transcript or speech-recognition plugin. PDF/Office/HTML import, complex-script
 layout, OS-level plugin sandboxing, signing/notarization, and automatic updates are
 future work; see `ROADMAP.md` and `RELEASING.md`.
+
+### Commit history
+
+#### Features
+
+- establish searchable media PDF converter and release tooling (a7096d09)
+
+#### Fixes
+
+- bootstrap: verify prerequisites before reporting readiness (a49898dd)
+- release: validate workspace lock versions before publication (0bdf0f7a)
+- release: validate published assets and recover interrupted releases (7993aec1)
+
+#### Maintenance
+
+- enforce release policy and verify publication inventory (775e9472)
+- resolve Bash explicitly for Windows workflow fixtures (99785443)
+
