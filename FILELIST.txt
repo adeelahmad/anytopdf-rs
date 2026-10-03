@@ -30,7 +30,11 @@ crates/anytopdf-builtin/src/ocr.rs
 crates/anytopdf-builtin/src/scene.rs
 crates/anytopdf-cli/Cargo.toml
 crates/anytopdf-cli/src/main.rs
+crates/anytopdf-cli/tests/bootstrap.rs
 crates/anytopdf-cli/tests/cli.rs
+crates/anytopdf-cli/tests/release_policy.rs
+crates/anytopdf-cli/tests/release_recovery.rs
+crates/anytopdf-cli/tests/workflows.rs
 crates/anytopdf-core/Cargo.toml
 crates/anytopdf-core/src/external.rs
 crates/anytopdf-core/src/lib.rs
@@ -44,8 +48,15 @@ crates/anytopdf-pdf/Cargo.toml
 crates/anytopdf-pdf/src/lib.rs
 examples/anytopdf-plugin-example.py
 rust-toolchain.toml
+scripts/bootstrap.sh
 scripts/package.py
+scripts/python.sh
+scripts/release.py
 scripts/smoke.py
 scripts/verify.sh
+tests/test_bootstrap.py
 tests/test_package.py
 tests/test_plugin_example.py
+tests/test_release.py
+tests/test_release_recovery.py
+tests/test_workflows.py

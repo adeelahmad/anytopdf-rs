@@ -33,17 +33,11 @@ jobs:
           RELEASE_REF: ${{ github.ref }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python - <<'PYTHON'
-          import os
-          from pathlib import Path
-          import tomllib
-          version = tomllib.loads(Path('Cargo.toml').read_text())['workspace']['package']['version']
-          if os.environ['RELEASE_REF'].startswith('refs/tags/'):
-              expected = f'v{version}'
-              if os.environ['RELEASE_TAG'] != expected:
-                  raise SystemExit(f'Release tag must match Cargo.toml: {expected}')
-          print(f'Building anytopdf {version}')
-          PYTHON
+          if [[ "$RELEASE_REF" == refs/tags/* ]]; then
+            python scripts/release.py validate --tag "$RELEASE_TAG"
+          else
+            python scripts/release.py validate
+          fi
 
   verify:
     needs: version
@@ -119,6 +113,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Read tagged changelog notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python scripts/release.py validate --tag "$RELEASE_TAG"
+          python scripts/release.py notes > release-notes.md
       - uses: actions/download-artifact@v4
         with:
           pattern: anytopdf-*
@@ -126,9 +132,49 @@ jobs:
           path: dist
       - name: Verify release checksums
         working-directory: dist
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          cat -- *.sha256 > SHA256SUMS
-          sha256sum --check SHA256SUMS
+          python - <<'PYTHON'
+          import hashlib
+          import os
+          from pathlib import Path
+          import re
+
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?', tag):
+              raise SystemExit('Invalid release tag for archive inventory')
+          version = tag[1:]
+          targets = {
+              'x86_64-unknown-linux-musl': 'tar.gz',
+              'aarch64-unknown-linux-musl': 'tar.gz',
+              'aarch64-apple-darwin': 'tar.gz',
+              'x86_64-apple-darwin': 'tar.gz',
+              'x86_64-pc-windows-msvc': 'zip',
+          }
+          archives = sorted(f'anytopdf-{version}-{target}.{extension}'
+                            for target, extension in targets.items())
+          expected = set(archives) | {name + '.sha256' for name in archives}
+          actual = {path.name for path in Path('.').iterdir()}
+          if actual != expected:
+              raise SystemExit(f'Invalid release inventory: missing={sorted(expected - actual)}, extra={sorted(actual - expected)}')
+          checksums = []
+          for name in archives:
+              archive, sidecar = Path(name), Path(name + '.sha256')
+              if any(path.is_symlink() or not path.is_file() for path in (archive, sidecar)):
+                  raise SystemExit(f'Release asset must be a regular file: {name}')
+              line = sidecar.read_text(encoding='utf-8')
+              match = re.fullmatch(r'([0-9a-f]{64})  ' + re.escape(name) + r'\n?', line)
+              if not match:
+                  raise SystemExit(f'Invalid or unsafe checksum sidecar: {sidecar}')
+              with archive.open('rb') as stream:
+                  digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+              if digest != match[1]:
+                  raise SystemExit(f'Checksum mismatch: {name}')
+              checksums.append(f'{digest}  {name}\n')
+          Path('SHA256SUMS').write_text(''.join(checksums), encoding='utf-8')
+          print('Verified exact five archives and their checksums')
+          PYTHON
       - name: Publish archives and checksums
         env:
           GH_TOKEN: ${{ github.token }}
@@ -136,8 +182,8 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           options=()
-          if [[ "$RELEASE_TAG" == *-* ]]; then
+          if [[ "${RELEASE_TAG%%+*}" == *-* ]]; then
             options+=(--prerelease)
           fi
           gh release create "$RELEASE_TAG" dist/* \
-            --verify-tag --title "anytopdf $RELEASE_TAG" --generate-notes "${options[@]}"
+            --verify-tag --title "anytopdf $RELEASE_TAG" --notes-file release-notes.md "${options[@]}"

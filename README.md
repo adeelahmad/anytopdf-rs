@@ -145,6 +145,8 @@ anytopdf convert meeting.mp4 \
 ## Dependencies
 
 Building from source:
+- GNU Make and Bash to start the bootstrap (Git Bash on Windows).
+- Python 3.11+ for build verification and release tooling.
 - Rust 1.88.0 (pinned in `rust-toolchain.toml`); packaged binaries do not require Rust.
 - `Cargo.lock` pins dependencies compatible with this toolchain.
 
@@ -159,8 +161,29 @@ On macOS the `apple-vision` Cargo feature uses native Vision directly from Rust.
 ## Build
 
 ```bash
-cargo build --release --locked
+make
+./target/release/anytopdf doctor
+# Optional: install media/OCR/PDF inspection providers separately
+make providers
 ```
+
+Default `make` installs missing supported build tools, the pinned Rust toolchain,
+rustfmt and Clippy, then builds the optimized CLI. Bootstrap uses Homebrew on
+macOS, apt/dnf/pacman on Linux, or Chocolatey from Git Bash on Windows. Package
+installation may need administrator access and network access. GNU Make and Bash
+must already be available to start it. On macOS, finish the Apple Command Line
+Tools installer if prompted and rerun. Windows needs Visual Studio C++ Build
+Tools for MSVC; bootstrap does not install that compiler or Git Bash.
+
+`make deps` prepares build tools only. `make providers` additionally installs
+FFmpeg, ExifTool, Tesseract and Poppler (plus DejaVu fonts on Linux); it does not
+install docTR models or perform audio transcription. Missing providers remain
+optional for ordinary conversions. `make doctor` reports actual availability.
+
+Python selection honors `PYTHON=/absolute/path/to/python` (quote paths containing
+spaces), otherwise tries Python 3.11+ candidates. An invalid explicit override
+fails instead of silently choosing another interpreter. Once tools are ready,
+`cargo build --release --locked` remains available directly.
 
 Linux fully-static (run on Linux with `musl-tools` installed):
 
@@ -244,8 +267,12 @@ make package
 `make ci` runs formatting, checks, Clippy, Rust tests in both feature configurations,
 Python tests, a release build and PDF smoke checks. `make package` builds and
 smoke-tests the CLI, then writes its archive and SHA-256 checksum to `dist/`.
-Individual targets include `build`, `release`, `fmt`, `check`, `lint`, `test`,
+Individual targets include `build`, `build-release`, `fmt`, `check`, `lint`, `test`,
 `test-no-default`, `test-python` and `doctor`. `make clean` keeps release archives.
+**`make release` publishes to GitHub**: it versions, verifies, commits, tags,
+pushes and waits for publication. Use `make build-release` for a local binary,
+`make release-plan` for a version/notes preview, and `make commit-check` to check
+Conventional Commits. See [release and recovery procedures](RELEASING.md).
 
 Select a build target with `TARGET=<triple>`; Linux musl builds also use
 `NO_DEFAULT_FEATURES=1`. Set `PYTHON=python` on Windows (Git Bash and GNU Make are
@@ -259,7 +286,10 @@ Poppler (`pdftotext`, `pdfinfo`), it also checks extracted Unicode text and pagi
 and a Unicode-capable font are installed.
 
 GitHub CI runs `make ci` on Linux, macOS and Windows for branch pushes and pull
-requests. Pushing a `v*` tag matching the Cargo version runs the checks, packages
-five native targets, verifies checksums and publishes a GitHub Release. Manual
+requests. Full-history push checks enforce Conventional Commits; PR checks enforce
+the title for squash merging. Dispatch/reusable calls without push/PR context do
+not assume event fields. Pushing a `v*` tag matching the Cargo version and lockfile
+runs the checks, packages five native targets, verifies the exact archive/checksum
+inventory and publishes a GitHub Release using that changelog section. Manual
 release runs upload workflow artifacts only. See `RELEASING.md` for the release
 procedure and validation evidence. All builds use direct shell commands.
