@@ -1,0 +1,45 @@
+{
+  "created": "1700000000",
+  "generator": {
+    "name": "anytopdf",
+    "version": "0.1.0"
+  },
+  "profile": "share",
+  "providers": [],
+  "schema_version": "anytopdf.manifest/1",
+  "sources": [
+    {
+      "id": "a92ee7dc-a7ec-8980-9ee9-732b4e63378d",
+      "media_type": "image/png",
+      "metadata": {
+        "fs.size-bytes": "107",
+        "source.filename": "one.png"
+      },
+      "name": "one.png",
+      "pages": {
+        "first": 1,
+        "last": 1
+      },
+      "sha256": "c8186323045c7bb6bfc1655931ae1a9eebd6e2fcfda0be148300b9d0e191c8bf",
+      "size": 107
+    }
+  ],
+  "units": [
+    {
+      "anchor": {
+        "height": 1.0,
+        "kind": "region",
+        "width": 1.0,
+        "x": 0.0,
+        "y": 0.0
+      },
+      "id": "4e87822c-deb2-8d5c-a05a-6aac19ba5301",
+      "kind": "visual",
+      "pages": {
+        "first": 1,
+        "last": 1
+      },
+      "source_id": "a92ee7dc-a7ec-8980-9ee9-732b4e63378d"
+    }
+  ]
+}

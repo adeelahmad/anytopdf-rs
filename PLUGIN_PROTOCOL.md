@@ -98,7 +98,8 @@ Units may carry an optional `anchor` (tagged by `kind`: `time-span` with
 `byte-range` with `start`/`end`). The host fills a default anchor when it is
 absent (time range, else full-frame region for visual units, else the whole
 source byte range) and never overwrites one a plugin supplies. Inverted or
-non-finite anchors fail validation.
+non-finite anchors fail validation. `region` anchors may carry an optional 0-based
+`frame` for multi-frame images; protocol version unchanged.
 
 Units may also carry an optional `unit_pages` field (additive; the host fills it with the
 page range a unit occupies in the rendered PDF). Plugins must ignore it on requests and

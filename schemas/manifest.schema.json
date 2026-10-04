@@ -62,7 +62,7 @@
     "anchor": {
       "type": "object",
       "required": ["kind"],
-      "properties": {"kind": {"type": "string", "enum": ["time-span", "region", "byte-range"]}}
+      "properties": {"kind": {"type": "string", "enum": ["time-span", "region", "byte-range"]}, "frame": {"type": "integer", "minimum": 0}}
     }
   }
 }
