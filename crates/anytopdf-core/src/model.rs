@@ -164,6 +164,25 @@ impl Annotation {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum Anchor {
+    TimeSpan {
+        start_seconds: f64,
+        end_seconds: f64,
+    },
+    Region {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+    ByteRange {
+        start: u64,
+        end: u64,
+    },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unit {
     #[serde(default = "Uuid::new_v4")]
@@ -177,6 +196,8 @@ pub struct Unit {
     /// Text that should be visibly laid out as document content.
     pub visible_text: Option<String>,
     pub time_range: Option<TimeRange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anchor: Option<Anchor>,
     #[serde(default)]
     pub annotations: Vec<Annotation>,
     #[serde(default)]
@@ -184,6 +205,36 @@ pub struct Unit {
 }
 
 impl Unit {
+    pub fn default_anchor(&self, source: &SourceRecord) -> Anchor {
+        let annotation_times = self
+            .annotations
+            .iter()
+            .filter_map(|a| a.time_range.as_ref())
+            .copied()
+            .reduce(|a, b| TimeRange {
+                start_seconds: a.start_seconds.min(b.start_seconds),
+                end_seconds: a.end_seconds.max(b.end_seconds),
+            });
+        if let Some(t) = self.time_range.or(annotation_times) {
+            return Anchor::TimeSpan {
+                start_seconds: t.start_seconds,
+                end_seconds: t.end_seconds,
+            };
+        }
+        if self.kind == UnitKind::Visual {
+            return Anchor::Region {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            };
+        }
+        Anchor::ByteRange {
+            start: 0,
+            end: source.size.unwrap_or(0),
+        }
+    }
+
     pub fn visual(source_id: Uuid, path: PathBuf) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -192,6 +243,7 @@ impl Unit {
             visual_path: Some(path),
             visible_text: None,
             time_range: None,
+            anchor: None,
             annotations: Vec::new(),
             metadata: Metadata::new(),
         }
@@ -205,6 +257,7 @@ impl Unit {
             visual_path: None,
             visible_text: Some(text),
             time_range: None,
+            anchor: None,
             annotations: Vec::new(),
             metadata: Metadata::new(),
         }
@@ -251,6 +304,31 @@ impl DocumentGraph {
                         && time.end_seconds >= time.start_seconds,
                     "invalid annotation time range"
                 );
+            }
+            match &unit.anchor {
+                Some(Anchor::TimeSpan {
+                    start_seconds,
+                    end_seconds,
+                }) => anyhow::ensure!(
+                    start_seconds.is_finite()
+                        && end_seconds.is_finite()
+                        && *start_seconds >= 0.0
+                        && end_seconds >= start_seconds,
+                    "invalid anchor time span"
+                ),
+                Some(Anchor::Region {
+                    x,
+                    y,
+                    width,
+                    height,
+                }) => anyhow::ensure!(
+                    [x, y, width, height].iter().all(|n| n.is_finite()),
+                    "non-finite anchor region"
+                ),
+                Some(Anchor::ByteRange { start, end }) => {
+                    anyhow::ensure!(end >= start, "inverted anchor byte range")
+                }
+                None => {}
             }
             for annotation in &unit.annotations {
                 anyhow::ensure!(
@@ -425,5 +503,107 @@ mod tests {
         assert!(region.width <= 0.2);
         assert_eq!(region.y, 0.0);
         assert_eq!(region.height, 0.0);
+    }
+
+    #[test]
+    fn default_anchor_matches_unit_kind() {
+        let mut source = SourceRecord::new("s.bin".into());
+        source.size = Some(42);
+        let text = Unit::text(source.id, "t".into());
+        assert_eq!(
+            text.default_anchor(&source),
+            Anchor::ByteRange { start: 0, end: 42 }
+        );
+        let visual = Unit::visual(source.id, "v.png".into());
+        assert_eq!(
+            visual.default_anchor(&source),
+            Anchor::Region {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0
+            }
+        );
+        let mut timed = Unit::visual(source.id, "v.png".into());
+        timed.time_range = Some(TimeRange::point(5.0));
+        assert_eq!(
+            timed.default_anchor(&source),
+            Anchor::TimeSpan {
+                start_seconds: 5.0,
+                end_seconds: 5.0
+            }
+        );
+        let mut transcript = Unit::text(source.id, "t".into());
+        for (start, end) in [(1.0, 2.0), (3.0, 4.5)] {
+            let mut cue = Annotation::text(AnnotationKind::Transcript, "test", "cue");
+            cue.time_range = Some(TimeRange {
+                start_seconds: start,
+                end_seconds: end,
+            });
+            transcript.annotations.push(cue);
+        }
+        assert_eq!(
+            transcript.default_anchor(&source),
+            Anchor::TimeSpan {
+                start_seconds: 1.0,
+                end_seconds: 4.5
+            }
+        );
+    }
+
+    #[test]
+    fn validation_rejects_inverted_or_non_finite_anchors() {
+        let source = SourceRecord::new("s.bin".into());
+        let check = |anchor: Anchor| {
+            let mut unit = Unit::text(source.id, "t".into());
+            unit.anchor = Some(anchor);
+            DocumentGraph {
+                sources: vec![source.clone()],
+                units: vec![unit],
+                ..Default::default()
+            }
+            .validate()
+        };
+        assert!(check(Anchor::ByteRange { start: 10, end: 2 }).is_err());
+        assert!(
+            check(Anchor::TimeSpan {
+                start_seconds: -1.0,
+                end_seconds: 2.0
+            })
+            .is_err()
+        );
+        assert!(
+            check(Anchor::TimeSpan {
+                start_seconds: 3.0,
+                end_seconds: 1.0
+            })
+            .is_err()
+        );
+        assert!(
+            check(Anchor::Region {
+                x: f32::NAN,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0
+            })
+            .is_err()
+        );
+        assert!(check(Anchor::ByteRange { start: 0, end: 2 }).is_ok());
+        assert!(
+            check(Anchor::TimeSpan {
+                start_seconds: 1.0,
+                end_seconds: 1.0
+            })
+            .is_ok()
+        );
+        assert!(
+            check(Anchor::Region {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0
+            })
+            .is_ok()
+        );
     }
 }

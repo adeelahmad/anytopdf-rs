@@ -205,6 +205,13 @@ impl Pipeline {
         }
 
         graph.assign_content_ids()?;
+        for unit in &mut graph.units {
+            if unit.anchor.is_none()
+                && let Some(source) = graph.sources.iter().find(|s| s.id == unit.source_id)
+            {
+                unit.anchor = Some(unit.default_anchor(source));
+            }
+        }
 
         Ok(PipelineRun {
             graph,
@@ -420,5 +427,60 @@ mod tests {
         let unit = run.graph.units.last().unwrap();
         assert_eq!(unit.source_id, added.id);
         assert_eq!(unit.id, content_unit_id(added.id, 0));
+    }
+
+    struct AnchoringImport;
+    impl Plugin for AnchoringImport {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl Importer for AnchoringImport {
+        fn probe(&self, _: &SourceRecord) -> ProbeScore {
+            ProbeScore::CERTAIN
+        }
+        fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
+            let mut outcome = TextImport.import(ctx, source)?;
+            outcome.units[0].anchor = Some(Anchor::Region {
+                x: 0.1,
+                y: 0.2,
+                width: 0.3,
+                height: 0.4,
+            });
+            Ok(outcome)
+        }
+    }
+
+    #[test]
+    fn every_ingested_unit_has_an_anchor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("id.txt");
+        std::fs::write(&path, b"Identity fixture\n").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        let run = Pipeline::new(registry).ingest(&[path], true).unwrap();
+        assert_eq!(
+            run.graph.units[0].anchor,
+            Some(Anchor::ByteRange { start: 0, end: 17 })
+        );
+    }
+
+    #[test]
+    fn importer_supplied_anchor_is_preserved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("id.txt");
+        std::fs::write(&path, b"Identity fixture\n").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(AnchoringImport));
+        let run = Pipeline::new(registry).ingest(&[path], true).unwrap();
+        assert_eq!(
+            run.graph.units[0].anchor,
+            Some(Anchor::Region {
+                x: 0.1,
+                y: 0.2,
+                width: 0.3,
+                height: 0.4
+            })
+        );
     }
 }
