@@ -234,6 +234,14 @@ PDF and JSON outputs are separate file transactions. `--strict` refuses to publi
 when ingestion or rendering produces warnings; normal mode reports warnings and
 keeps usable content. `--quiet` suppresses the success summary, not warnings.
 
+### Diagnostics and strict mode
+
+Each notice prints to stderr as `INFO [code]: message` or `WARNING [code]: message`.
+Informational codes (`provider.missing`, `ocr.fallback`, `manifest.sidecar`) report
+optional capabilities or fallbacks and never fail `--strict`. Every other code is a
+warning (for example `input.unsupported`, `import.failed`, `provider.failed`,
+`render.warning`) and makes `--strict` stop before publishing.
+
 Plugin invocations default to a 60-second timeout. Captured stdout, stderr and
 plugin response JSON each have a 16 MiB limit. Metadata providers have 30-second
 timeouts, OCR subprocesses 180 seconds, subtitle extraction 120 seconds and each
