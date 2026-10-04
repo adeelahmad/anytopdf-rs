@@ -347,6 +347,15 @@ current directory, numbered (`notes-1.pdf`) if that name exists; `--overwrite` r
 unnumbered name. An explicit existing `-o` requires `--overwrite`; input files and explicit transcripts are
 protected even with that flag. Put outputs outside input directories so subsequent
 directory scans do not ingest them. Writes are staged and atomically published.
+
+### --output-dir
+
+`anytopdf a.txt b.png --output-dir out/` writes one PDF per input instead of one merged
+PDF. Each PDF has its own provenance page and embedded manifest listing only that source.
+Names are `<input-stem>.pdf` in input order; a name already used in the run, by an existing
+file (without `--overwrite`) or by an input becomes `<stem>-N.pdf`. All PDFs are rendered
+before any is published. `--dump-graph` still writes one whole-run graph. It conflicts with
+`-o` (exit 2).
 PDF and JSON outputs are separate file transactions. `--strict` refuses to publish
 when ingestion or rendering produces warnings; normal mode reports warnings and
 keeps usable content. `--quiet` suppresses the success summary, not warnings.
