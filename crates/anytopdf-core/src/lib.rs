@@ -1,4 +1,5 @@
 mod diagnostics;
+mod events; // agentic:shim
 mod external;
 mod manifest;
 mod model;
@@ -11,6 +12,7 @@ mod registry;
 pub mod schema;
 
 pub use diagnostics::*;
+pub use events::*; // agentic:shim
 pub use external::*;
 pub use manifest::*;
 pub use model::*;
