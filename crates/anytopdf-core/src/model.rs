@@ -9,8 +9,45 @@ pub struct SourceRecord {
     pub id: Uuid,
     pub path: PathBuf,
     pub detected_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
     #[serde(default)]
     pub metadata: Metadata,
+}
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn derived_uuid(domain: &str, parts: &[&str]) -> Uuid {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(domain.as_bytes());
+    for part in parts {
+        hasher.update([0]);
+        hasher.update(part.as_bytes());
+    }
+    let digest = hasher.finalize();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    uuid::Builder::from_custom_bytes(bytes).into_uuid()
+}
+
+pub fn content_source_id(sha256_hex: &str, occurrence: usize) -> Uuid {
+    derived_uuid("anytopdf/source/v1", &[sha256_hex, &occurrence.to_string()])
+}
+
+pub fn content_unit_id(source_id: Uuid, position: usize) -> Uuid {
+    derived_uuid(
+        "anytopdf/unit/v1",
+        &[&source_id.to_string(), &position.to_string()],
+    )
 }
 
 impl SourceRecord {
@@ -19,6 +56,8 @@ impl SourceRecord {
             id: Uuid::new_v4(),
             path,
             detected_type: None,
+            sha256: None,
+            size: None,
             metadata: Metadata::new(),
         }
     }
@@ -237,6 +276,35 @@ impl DocumentGraph {
         Ok(())
     }
 
+    pub fn assign_content_ids(&mut self) -> anyhow::Result<()> {
+        use anyhow::Context;
+        use std::collections::HashMap;
+        let mut occurrences: HashMap<String, usize> = HashMap::new();
+        let mut remap: HashMap<Uuid, Uuid> = HashMap::new();
+        for source in &mut self.sources {
+            if source.sha256.is_none() {
+                let bytes = std::fs::read(&source.path)
+                    .with_context(|| format!("read {} for digest", source.path.display()))?;
+                source.size = Some(bytes.len() as u64);
+                source.sha256 = Some(sha256_hex(&bytes));
+            }
+            let digest = source.sha256.clone().unwrap_or_default();
+            let occurrence = occurrences.entry(digest.clone()).or_insert(0);
+            let id = content_source_id(&digest, *occurrence);
+            *occurrence += 1;
+            remap.insert(source.id, id);
+            source.id = id;
+        }
+        let mut positions: HashMap<Uuid, usize> = HashMap::new();
+        for unit in &mut self.units {
+            unit.source_id = *remap.get(&unit.source_id).unwrap_or(&unit.source_id);
+            let position = positions.entry(unit.source_id).or_insert(0);
+            unit.id = content_unit_id(unit.source_id, *position);
+            *position += 1;
+        }
+        Ok(())
+    }
+
     pub fn source(&self, id: Uuid) -> Option<&SourceRecord> {
         self.sources.iter().find(|s| s.id == id)
     }
@@ -268,6 +336,67 @@ pub struct RenderReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const FIXTURE: &[u8] = b"Identity fixture\n";
+    const DIGEST: &str = "eea2ca13a1da285c9365c7dd3fdfb68eb34445313f8eb1b994991728ae3d917a";
+
+    fn graph_for(dir: &std::path::Path, files: &[(&str, &[u8])]) -> DocumentGraph {
+        let mut graph = DocumentGraph::default();
+        for (name, bytes) in files {
+            let path = dir.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            let source = SourceRecord::new(path);
+            graph.units.push(Unit::text(source.id, "t".into()));
+            graph.sources.push(source);
+        }
+        graph
+    }
+
+    #[test]
+    fn content_ids_are_stable_for_identical_bytes() {
+        let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut a = graph_for(d1.path(), &[("a.txt", FIXTURE)]);
+        let mut b = graph_for(d2.path(), &[("b.txt", FIXTURE)]);
+        a.assign_content_ids().unwrap();
+        b.assign_content_ids().unwrap();
+        assert_eq!(a.sources[0].id, b.sources[0].id);
+        assert_eq!(a.units[0].id, b.units[0].id);
+        assert_eq!(a.sources[0].sha256.as_deref(), Some(DIGEST));
+        assert_eq!(a.sources[0].size, Some(17));
+        assert_eq!(a.sources[0].id, content_source_id(DIGEST, 0));
+    }
+
+    #[test]
+    fn changing_one_byte_changes_only_that_source_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut flipped = FIXTURE.to_vec();
+        flipped[0] ^= 1;
+        let mut before = graph_for(
+            dir.path(),
+            &[("a.txt", FIXTURE), ("b.txt", b"other bytes\n")],
+        );
+        before.assign_content_ids().unwrap();
+        let mut after = graph_for(dir.path(), &[("a.txt", FIXTURE), ("b.txt", &flipped)]);
+        after.assign_content_ids().unwrap();
+        assert_eq!(before.sources[0].id, after.sources[0].id);
+        assert_eq!(before.sources[0].sha256, after.sources[0].sha256);
+        assert_ne!(before.sources[1].id, after.sources[1].id);
+        assert_ne!(before.sources[1].sha256, after.sources[1].sha256);
+    }
+
+    #[test]
+    fn identical_content_sources_get_distinct_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut graph = graph_for(dir.path(), &[("a.txt", FIXTURE), ("b.txt", FIXTURE)]);
+        graph.assign_content_ids().unwrap();
+        assert_ne!(graph.sources[0].id, graph.sources[1].id);
+        assert_eq!(graph.sources[0].id, content_source_id(DIGEST, 0));
+        assert_eq!(graph.sources[1].id, content_source_id(DIGEST, 1));
+        graph.validate().unwrap();
+        for (unit, source) in graph.units.iter().zip(&graph.sources) {
+            assert_eq!(unit.source_id, source.id);
+        }
+    }
 
     #[test]
     fn validation_rejects_orphaned_units_and_duplicate_ids() {

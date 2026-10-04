@@ -121,6 +121,15 @@ annotation model.
 
 Importer responses may omit unit `id` and `source_id`; the host generates unit IDs
 and assigns the importing source ID. Supplied source IDs must match the request.
+Sources may carry optional `sha256` (lowercase hex of the file bytes) and `size`
+(bytes). After all enrichers run, the host re-derives every source and unit ID,
+so plugins may omit these fields and any IDs they supply are transient:
+
+- `source.id = UUIDv8(first 16 bytes of SHA-256("anytopdf/source/v1\0" + sha256_hex + "\0" + occurrence))`,
+  where `occurrence` counts earlier sources with the same digest.
+- `unit.id = UUIDv8(first 16 bytes of SHA-256("anytopdf/unit/v1\0" + source_id + "\0" + position))`,
+  where `position` is the unit's index among that source's units in graph order.
+
 Enrichment responses must preserve existing source and unit identities. Graph
 responses must retain existing sources and keep valid, unique IDs and references.
 Annotations must have a provider, finite coordinates, confidence between 0 and 1
