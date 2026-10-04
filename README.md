@@ -113,6 +113,7 @@ image conversion; provider-specific dependencies are listed below.
 
 ```bash
 ./anytopdf --version
+./anytopdf notes.txt photo.jpg -o out.pdf
 ./anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
 ./anytopdf doctor
 ```
