@@ -3,6 +3,8 @@ mod capabilities;
 mod cli;
 mod commands;
 mod convert;
+// agentic:shim
+mod events;
 mod exit;
 mod extract;
 mod naming;
