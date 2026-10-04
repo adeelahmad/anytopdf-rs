@@ -1,4 +1,4 @@
-use crate::{DocumentGraph, JobContext, Registry, SourceRecord};
+use crate::{Diagnostic, DiagnosticCode, DocumentGraph, JobContext, Registry, SourceRecord};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -9,7 +9,7 @@ pub struct Pipeline {
 
 pub struct PipelineRun {
     pub graph: DocumentGraph,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Diagnostic>,
     _workspace_guard: TempDir,
     pub context: JobContext,
 }
@@ -34,17 +34,25 @@ impl Pipeline {
         };
 
         let mut graph = DocumentGraph::default();
-        let mut warnings = Vec::new();
+        let mut warnings: Vec<Diagnostic> = Vec::new();
 
         for path in paths {
             let canonical = match path.canonicalize() {
                 Ok(path) if path.is_file() => path,
                 Ok(_) => {
-                    warnings.push(format!("input is not a file: {}", path.display()));
+                    warnings.push(Diagnostic::for_input(
+                        DiagnosticCode::InputNotFile,
+                        path,
+                        format!("input is not a file: {}", path.display()),
+                    ));
                     continue;
                 }
                 Err(e) => {
-                    warnings.push(format!("input {}: {e}", path.display()));
+                    warnings.push(Diagnostic::for_input(
+                        DiagnosticCode::InputUnreadable,
+                        path,
+                        format!("input {}: {e}", path.display()),
+                    ));
                     continue;
                 }
             };
@@ -57,13 +65,17 @@ impl Pipeline {
                 if enricher.supports(&source) {
                     let original = source.clone();
                     match enricher.enrich_source(&ctx, &mut source) {
-                        Ok(mut w) => warnings.append(&mut w),
+                        Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                         Err(e) => {
                             source = original;
-                            warnings.push(format!(
-                                "{} source enrichment failed for {}: {e:#}",
-                                enricher.descriptor().name,
-                                path.display()
+                            warnings.push(Diagnostic::for_input(
+                                DiagnosticCode::EnrichmentFailed,
+                                path,
+                                format!(
+                                    "{} source enrichment failed for {}: {e:#}",
+                                    enricher.descriptor().name,
+                                    path.display()
+                                ),
                             ));
                         }
                     }
@@ -73,20 +85,28 @@ impl Pipeline {
             let importer = match self.registry.importer_for(&source) {
                 Ok(p) => p,
                 Err(e) => {
-                    warnings.push(e.to_string());
+                    warnings.push(Diagnostic::for_input(
+                        DiagnosticCode::InputUnsupported,
+                        path,
+                        e.to_string(),
+                    ));
                     continue;
                 }
             };
 
             match importer.import(&ctx, source.clone()) {
-                Ok(mut outcome) => {
+                Ok(outcome) => {
                     let candidate = DocumentGraph {
                         sources: vec![outcome.source.clone()],
                         units: outcome.units.clone(),
                         ..Default::default()
                     };
                     if let Err(e) = candidate.validate() {
-                        warnings.push(format!("invalid import from {}: {e:#}", path.display()));
+                        warnings.push(Diagnostic::for_input(
+                            DiagnosticCode::ImportInvalid,
+                            path,
+                            format!("invalid import from {}: {e:#}", path.display()),
+                        ));
                         continue;
                     }
                     if graph.sources.iter().any(|s| s.id == outcome.source.id)
@@ -95,17 +115,25 @@ impl Pipeline {
                             .iter()
                             .any(|u| graph.units.iter().any(|old| old.id == u.id))
                     {
-                        warnings.push(format!("duplicate import IDs from {}", path.display()));
+                        warnings.push(Diagnostic::for_input(
+                            DiagnosticCode::ImportDuplicateId,
+                            path,
+                            format!("duplicate import IDs from {}", path.display()),
+                        ));
                         continue;
                     }
-                    warnings.append(&mut outcome.warnings);
+                    warnings.extend(outcome.warnings.iter().map(|s| Diagnostic::from_wire(s)));
                     graph.sources.push(outcome.source);
                     graph.units.extend(outcome.units);
                 }
-                Err(e) => warnings.push(format!(
-                    "{} import failed for {}: {e:#}",
-                    importer.descriptor().name,
-                    path.display()
+                Err(e) => warnings.push(Diagnostic::for_input(
+                    DiagnosticCode::ImportFailed,
+                    path,
+                    format!(
+                        "{} import failed for {}: {e:#}",
+                        importer.descriptor().name,
+                        path.display()
+                    ),
                 )),
             }
         }
@@ -121,12 +149,15 @@ impl Pipeline {
                     graph.validate()?;
                     Ok(warnings)
                 }) {
-                Ok(mut w) => warnings.append(&mut w),
+                Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                 Err(e) => {
                     graph = original;
-                    warnings.push(format!(
-                        "{} graph enrichment failed: {e:#}",
-                        enricher.descriptor().name
+                    warnings.push(Diagnostic::new(
+                        DiagnosticCode::EnrichmentFailed,
+                        format!(
+                            "{} graph enrichment failed: {e:#}",
+                            enricher.descriptor().name
+                        ),
                     ));
                 }
             }
@@ -157,12 +188,15 @@ impl Pipeline {
                             .validate()?;
                             Ok(warnings)
                         }) {
-                        Ok(mut w) => warnings.append(&mut w),
+                        Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                         Err(e) => {
                             *unit = original;
-                            warnings.push(format!(
-                                "{} unit enrichment failed: {e:#}",
-                                enricher.descriptor().name
+                            warnings.push(Diagnostic::new(
+                                DiagnosticCode::EnrichmentFailed,
+                                format!(
+                                    "{} unit enrichment failed: {e:#}",
+                                    enricher.descriptor().name
+                                ),
                             ));
                         }
                     }
@@ -266,5 +300,70 @@ mod tests {
         assert!(workspace.is_dir());
         drop(run);
         assert!(!workspace.exists());
+    }
+
+    struct WarnImport;
+    impl Plugin for WarnImport {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl Importer for WarnImport {
+        fn probe(&self, _: &SourceRecord) -> ProbeScore {
+            ProbeScore::CERTAIN
+        }
+        fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
+            let mut outcome = TextImport.import(ctx, source)?;
+            outcome.warnings = vec![
+                Diagnostic::new(DiagnosticCode::LossyDecode, "x").to_string(),
+                "legacy".to_string(),
+            ];
+            Ok(outcome)
+        }
+    }
+
+    #[test]
+    fn unsupported_and_missing_inputs_are_coded_skips_with_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("exists.bin");
+        std::fs::write(&existing, "data").unwrap();
+        let missing = dir.path().join("missing.bin");
+        let run = Pipeline::new(Registry::default())
+            .ingest(&[existing.clone(), missing.clone()], true)
+            .unwrap();
+        let find = |code| run.warnings.iter().find(|d| d.code == code);
+        let unsupported = find(DiagnosticCode::InputUnsupported).expect("unsupported diagnostic");
+        assert_eq!(unsupported.input.as_deref(), Some(existing.as_path()));
+        let unreadable = find(DiagnosticCode::InputUnreadable).expect("unreadable diagnostic");
+        assert_eq!(unreadable.input.as_deref(), Some(missing.as_path()));
+        for d in [unsupported, unreadable] {
+            assert_eq!(d.severity, crate::Severity::Warning);
+            assert!(d.code.is_skip());
+        }
+    }
+
+    #[test]
+    fn importer_wire_warnings_keep_their_codes() {
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), "text").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(WarnImport));
+        let run = Pipeline::new(registry)
+            .ingest(&[input.path().into()], true)
+            .unwrap();
+        assert!(
+            run.warnings
+                .iter()
+                .any(|d| d.code == DiagnosticCode::LossyDecode && d.message == "x"),
+            "{:?}",
+            run.warnings
+        );
+        assert!(
+            run.warnings
+                .iter()
+                .any(|d| d.code == DiagnosticCode::PluginWarning && d.message == "legacy"),
+            "{:?}",
+            run.warnings
+        );
     }
 }

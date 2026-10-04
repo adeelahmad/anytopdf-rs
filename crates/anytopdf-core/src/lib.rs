@@ -1,3 +1,4 @@
+mod diagnostics;
 mod external;
 mod model;
 mod output;
@@ -6,6 +7,7 @@ mod plugin;
 mod process;
 mod registry;
 
+pub use diagnostics::*;
 pub use external::*;
 pub use model::*;
 pub use output::*;

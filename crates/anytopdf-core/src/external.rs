@@ -102,6 +102,13 @@ impl RuntimePluginPolicy {
     }
 }
 
+fn plugin_warnings(warnings: Vec<String>) -> Vec<String> {
+    warnings
+        .into_iter()
+        .map(|w| Diagnostic::new(DiagnosticCode::PluginWarning, w).to_string())
+        .collect()
+}
+
 pub fn read_manifest(executable: &Path) -> Result<RuntimePluginManifest> {
     read_manifest_with_timeout(executable, Duration::from_secs(60))
 }
@@ -205,14 +212,14 @@ fn scan_plugin_dir(dir: &Path, out: &mut BTreeSet<PathBuf>) {
     }
 }
 
-pub fn register_runtime_plugins(registry: &mut Registry) -> Vec<String> {
+pub fn register_runtime_plugins(registry: &mut Registry) -> Vec<Diagnostic> {
     register_runtime_plugins_with_policy(registry, &RuntimePluginPolicy::default())
 }
 
 pub fn register_runtime_plugins_with_policy(
     registry: &mut Registry,
     policy: &RuntimePluginPolicy,
-) -> Vec<String> {
+) -> Vec<Diagnostic> {
     let (plugins, mut warnings) = discover_with_policy(policy);
     for plugin in plugins {
         for capability in plugin.manifest.capabilities.clone() {
@@ -252,6 +259,9 @@ pub fn register_runtime_plugins_with_policy(
         }
     }
     warnings
+        .into_iter()
+        .map(|w| Diagnostic::new(DiagnosticCode::PluginDiscovery, w))
+        .collect()
 }
 
 fn descriptor(plugin: &RuntimePlugin, cap: &RuntimeCapability) -> PluginDescriptor {
@@ -387,7 +397,7 @@ impl Importer for RuntimeImporter {
         Ok(ImportOutcome {
             source: updated,
             units,
-            warnings: response.warnings,
+            warnings: plugin_warnings(response.warnings),
         })
     }
 }
@@ -424,7 +434,7 @@ impl SourceEnricher for RuntimeSourceEnricher {
             validate_source_identity(source, &updated)?;
             *source = updated;
         }
-        Ok(response.warnings)
+        Ok(plugin_warnings(response.warnings))
     }
 }
 
@@ -468,7 +478,7 @@ impl GraphEnricher for RuntimeGraphEnricher {
             }
             *graph = updated;
         }
-        Ok(response.warnings)
+        Ok(plugin_warnings(response.warnings))
     }
 }
 
@@ -519,7 +529,7 @@ impl UnitEnricher for RuntimeUnitEnricher {
         } else {
             unit.annotations.extend(response.annotations);
         }
-        Ok(response.warnings)
+        Ok(plugin_warnings(response.warnings))
     }
 }
 
@@ -585,6 +595,20 @@ fn validate_visual_path(ctx: &JobContext, source: &SourceRecord, unit: &Unit) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plugin_warning_strings_cannot_claim_builtin_codes() {
+        let wrapped = plugin_warnings(vec!["[provider.missing] spoof".into(), "plain".into()]);
+        let parsed: Vec<Diagnostic> = wrapped.iter().map(|w| Diagnostic::from_wire(w)).collect();
+        assert_eq!(parsed.len(), 2);
+        assert!(
+            parsed
+                .iter()
+                .all(|d| d.code == DiagnosticCode::PluginWarning)
+        );
+        assert!(parsed[0].message.contains("[provider.missing] spoof"));
+        assert!(parsed[1].message.contains("plain"));
+    }
 
     #[test]
     fn protocol_example_can_omit_unit_ids() {
