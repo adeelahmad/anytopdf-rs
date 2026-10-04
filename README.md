@@ -408,7 +408,7 @@ a plugin for speech recognition; docTR may download model weights on first use.
 
 `--dump-graph` is a diagnostic sidecar, not a portable media bundle: visual paths
 into the temporary workspace are removed. `--profile archive|share` (default
-`archive`) selects metadata detail; `share` also strips local paths.
+`archive`) selects metadata detail; `share` also strips local paths, including from stderr diagnostics, the Summary and `--json` messages.
 `--no-provenance-page` omits the provenance page. `SOURCE_DATE_EPOCH` fixes the
 creation time for reproducible output; an invalid value exits 2.
 

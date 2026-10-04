@@ -15,7 +15,7 @@ use anytopdf_core::{
 };
 use anytopdf_pdf::{EmbeddedFile, SearchablePdfRenderer, embed_files};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
-use exit::{CliError, ExitClass, fail, tag};
+use exit::{CliError, ExitClass, Redactor, fail, tag};
 use regex::Regex;
 use std::{
     path::{Path, PathBuf},
@@ -248,7 +248,21 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
     let json = args.json;
     let profile = args.profile;
     let mut outcome = ConvertOutcome::default();
-    let result = convert_inner(args, policy, &mut outcome);
+    let mut redactor = Redactor::new(profile == Profile::Share);
+    for path in args
+        .inputs
+        .iter()
+        .chain(&args.transcripts)
+        .chain(args.output.iter())
+        .chain(args.output_dir.iter())
+        .chain(args.dump_graph.iter())
+    {
+        redactor.add_parent_of(path);
+    }
+    let result = convert_inner(args, policy, &mut outcome, &mut redactor).map_err(|e| CliError {
+        class: e.class,
+        error: anyhow::anyhow!("{}", redactor.apply(&format!("{:#}", e.error))),
+    });
     if json {
         let exit_code = result.as_ref().map_or_else(|e| e.class.code(), |_| 0);
         let status = match (&result, outcome.skipped.is_empty()) {
@@ -285,6 +299,7 @@ fn convert_inner(
     args: ConvertArgs,
     policy: &RuntimePluginPolicy,
     outcome: &mut ConvertOutcome,
+    redactor: &mut Redactor,
 ) -> Result<(), CliError> {
     if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
         return Err(fail(
@@ -413,8 +428,10 @@ fn convert_inner(
     let mut run = tag(ExitClass::Input, pipeline.ingest(&inputs, args.quiet))?;
     run.warnings.append(&mut warnings);
 
+    redactor.add_dir(&run.context.workspace.join("x"));
+    let redactor = &*redactor;
     for diagnostic in &run.warnings {
-        print_diagnostic(diagnostic);
+        print_redacted(diagnostic, redactor);
     }
 
     let shown = |path: &Path| {
@@ -431,7 +448,7 @@ fn convert_inner(
             serde_json::json!({
                 "code": d.code.as_str(),
                 "severity": if d.severity == Severity::Info { "info" } else { "warning" },
-                "message": d.message,
+                "message": redactor.apply(&d.message),
             })
         })
         .collect();
@@ -442,12 +459,12 @@ fn convert_inner(
             serde_json::json!({
                 "input": d.input.as_deref().map_or_else(String::new, shown),
                 "code": d.code.as_str(),
-                "message": d.message,
+                "message": redactor.apply(&d.message),
             })
         })
         .collect();
     if !skipped.is_empty() {
-        exit::print_summary(run.graph.sources.len(), &skipped);
+        exit::print_summary(run.graph.sources.len(), &skipped, redactor);
         if args.fail_fast {
             return Err(fail(
                 ExitClass::FailFast,
@@ -529,7 +546,14 @@ fn convert_inner(
     for (i, (source_path, graph)) in docs.into_iter().enumerate() {
         run.graph = graph;
         let staged = run.context.workspace.join(format!("result-{i}.pdf"));
-        let doc = stage_document(&pipeline, &run, &args.renderer, args.strict, &staged)?;
+        let doc = stage_document(
+            &pipeline,
+            &run,
+            &args.renderer,
+            args.strict,
+            &staged,
+            redactor,
+        )?;
         staged_docs.push((source_path, doc));
     }
 
@@ -573,7 +597,7 @@ fn convert_inner(
         }));
         outcome.converted.extend(doc.sources.clone());
         if !args.quiet {
-            eprintln!("Wrote {} ({} pages)", out_path.display(), doc.pages);
+            eprintln!("Wrote {} ({} pages)", redactor.path(out_path), doc.pages);
         }
     }
     Ok(())
@@ -592,10 +616,14 @@ fn stage_document(
     renderer: &str,
     strict: bool,
     staged: &Path,
+    redactor: &Redactor,
 ) -> Result<StagedDocument, CliError> {
     let report = tag(ExitClass::Render, pipeline.render(run, renderer, staged))?;
     for warning in &report.warnings {
-        print_diagnostic(&Diagnostic::new(DiagnosticCode::RenderWarning, warning));
+        print_redacted(
+            &Diagnostic::new(DiagnosticCode::RenderWarning, warning),
+            redactor,
+        );
     }
     if strict && !report.warnings.is_empty() {
         return Err(fail(
@@ -642,10 +670,13 @@ fn stage_document(
     let (bytes, sidecars) = match embed_files(&bytes, &files) {
         Ok(embedded) => (embedded, None),
         Err(e) => {
-            print_diagnostic(&Diagnostic::new(
-                DiagnosticCode::ManifestSidecar,
-                format!("could not embed manifest and chunks ({e}); writing sidecar files"),
-            ));
+            print_redacted(
+                &Diagnostic::new(
+                    DiagnosticCode::ManifestSidecar,
+                    format!("could not embed manifest and chunks ({e}); writing sidecar files"),
+                ),
+                redactor,
+            );
             (bytes, Some((manifest, chunks)))
         }
     };
@@ -658,11 +689,19 @@ fn stage_document(
 }
 
 fn print_diagnostic(d: &Diagnostic) {
+    print_redacted(d, &Redactor::default());
+}
+
+fn print_redacted(d: &Diagnostic, redactor: &Redactor) {
     let level = match d.severity {
         Severity::Info => "INFO",
         Severity::Warning => "WARNING",
     };
-    eprintln!("{level} [{}]: {}", d.code.as_str(), d.message);
+    eprintln!(
+        "{level} [{}]: {}",
+        d.code.as_str(),
+        redactor.apply(&d.message)
+    );
 }
 
 fn doctor(json: bool) -> Result<()> {
