@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/probe/v1",
+  "title": "anytopdf probe",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source",
+    "importer"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "anytopdf.probe/1"
+    },
+    "source": {
+      "type": "object"
+    },
+    "importer": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

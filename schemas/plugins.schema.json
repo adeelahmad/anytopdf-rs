@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/plugins/v1",
+  "title": "anytopdf plugins",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "plugins"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "anytopdf.plugins/1"
+    },
+    "plugins": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "kind",
+          "extensions",
+          "mime_types",
+          "priority"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mime_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priority": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}
