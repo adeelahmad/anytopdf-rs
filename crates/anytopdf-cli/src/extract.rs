@@ -51,7 +51,7 @@ pub fn extract(path: &Path) -> Result<Value, CliError> {
                 DiagnosticCode::ExtractVersionMismatch,
                 format!("{label} schema_version {found:?} != expected {expected:?}"),
             );
-            crate::print_diagnostic(&d);
+            crate::convert::print_diagnostic(&d);
             warnings.push(json!({"code": d.code.as_str(), "message": d.message}));
         }
     }
