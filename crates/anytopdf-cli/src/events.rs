@@ -1,3 +1,4 @@
+use serde_json::{Value, json};
 use std::io::Write;
 
 pub(crate) enum RunStatus {
@@ -60,20 +61,148 @@ pub(crate) enum Event {
 }
 
 pub(crate) struct EventWriter<W: Write> {
-    _out: W,
+    out: W,
+    seq: u64,
+    broken: bool,
+}
+
+impl Event {
+    fn name_and_fields(&self) -> (&'static str, Vec<(&'static str, Value)>) {
+        match self {
+            Event::RunStarted { profile, inputs } => (
+                "run.started",
+                vec![("profile", json!(profile)), ("inputs", json!(inputs))],
+            ),
+            Event::RunFinished {
+                status,
+                exit_code,
+                error,
+            } => {
+                let status = match status {
+                    RunStatus::Ok => "ok",
+                    RunStatus::Partial => "partial",
+                    RunStatus::Failed => "failed",
+                };
+                let mut fields = vec![("status", json!(status)), ("exit_code", json!(exit_code))];
+                if let Some(error) = error {
+                    fields.push(("error", json!(error)));
+                }
+                ("run.finished", fields)
+            }
+            Event::StageStarted { stage } => ("stage.started", vec![("stage", json!(stage))]),
+            Event::StageFinished { stage } => ("stage.finished", vec![("stage", json!(stage))]),
+            Event::SourceStarted { index, input } => (
+                "source.started",
+                vec![("index", json!(index)), ("input", json!(input))],
+            ),
+            Event::SourceImported {
+                index,
+                input,
+                units,
+            } => (
+                "source.imported",
+                vec![
+                    ("index", json!(index)),
+                    ("input", json!(input)),
+                    ("units", json!(units)),
+                ],
+            ),
+            Event::SourceSkipped { index, input, code } => (
+                "source.skipped",
+                vec![
+                    ("index", json!(index)),
+                    ("input", json!(input)),
+                    ("code", json!(code)),
+                ],
+            ),
+            Event::UnitStarted {
+                unit,
+                source,
+                enricher,
+            } => (
+                "unit.started",
+                vec![
+                    ("unit", json!(unit)),
+                    ("source", json!(source)),
+                    ("enricher", json!(enricher)),
+                ],
+            ),
+            Event::UnitFinished {
+                unit,
+                source,
+                enricher,
+            } => (
+                "unit.finished",
+                vec![
+                    ("unit", json!(unit)),
+                    ("source", json!(source)),
+                    ("enricher", json!(enricher)),
+                ],
+            ),
+            Event::Diagnostic {
+                code,
+                severity,
+                message,
+                input,
+            } => {
+                let mut fields = vec![
+                    ("code", json!(code)),
+                    ("severity", json!(severity)),
+                    ("message", json!(message)),
+                ];
+                if let Some(input) = input {
+                    fields.push(("input", json!(input)));
+                }
+                ("diagnostic", fields)
+            }
+            Event::OutputWritten { path, kind, pages } => {
+                let mut fields = vec![("path", json!(path)), ("kind", json!(kind))];
+                if let Some(pages) = pages {
+                    fields.push(("pages", json!(pages)));
+                }
+                ("output.written", fields)
+            }
+        }
+    }
 }
 
 impl<W: Write> EventWriter<W> {
     pub(crate) fn new(out: W) -> Self {
-        Self { _out: out }
+        Self {
+            out,
+            seq: 0,
+            broken: false,
+        }
     }
 
-    pub(crate) fn emit(&mut self, _event: &Event) {
-        panic!("SUB-AGENT-TODO: serialize typed envelope (schema_version, seq, event, payload in catalog order) + '\\n', write_all then flush, seq += 1; on first error set broken and skip later emits; never panic");
+    pub(crate) fn emit(&mut self, event: &Event) {
+        if self.broken {
+            return;
+        }
+        let (name, fields) = event.name_and_fields();
+        let mut line = format!(
+            "{{\"schema_version\":\"anytopdf.events/1\",\"seq\":{},\"event\":{}",
+            self.seq,
+            json!(name)
+        );
+        for (key, value) in fields {
+            line.push_str(&format!(",\"{key}\":{value}"));
+        }
+        line.push_str("}\n");
+        if self
+            .out
+            .write_all(line.as_bytes())
+            .and_then(|()| self.out.flush())
+            .is_err()
+        {
+            self.broken = true;
+            return;
+        }
+        self.seq += 1;
     }
 
     pub(crate) fn is_broken(&self) -> bool {
-        panic!("SUB-AGENT-TODO: return the broken flag set by the first write/flush error");
+        self.broken
     }
 }
 
