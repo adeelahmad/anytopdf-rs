@@ -75,6 +75,18 @@ pub fn fail(class: ExitClass, message: impl std::fmt::Display) -> CliError {
     }
 }
 
+/// Print the batch summary and per-input skip reasons to stderr.
+pub fn print_summary(converted: usize, skipped: &[&anytopdf_core::Diagnostic]) {
+    eprintln!("Summary: {converted} converted, {} skipped", skipped.len());
+    for d in skipped {
+        let input = d
+            .input
+            .as_ref()
+            .map_or_else(String::new, |p| p.display().to_string());
+        eprintln!("  skipped {input}: [{}] {}", d.code.as_str(), d.message);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
