@@ -22,14 +22,14 @@ impl Pipeline {
         Self { registry }
     }
 
-    // agentic:shim — emits nothing; GREEN moves the ingest body here
     pub fn ingest_observed(
         &self,
         paths: &[PathBuf],
         quiet: bool,
         _observer: &mut dyn PipelineObserver,
     ) -> Result<PipelineRun> {
-        self.ingest(paths, quiet)
+        let _ = (paths, quiet);
+        panic!("SUB-AGENT-TODO: move ingest body here, emitting PipelineEvents to observer")
     }
 
     pub fn ingest(&self, paths: &[PathBuf], quiet: bool) -> Result<PipelineRun> {

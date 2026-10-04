@@ -1,7 +1,6 @@
 use crate::DiagnosticCode;
 use std::path::PathBuf;
 
-// agentic:shim (whole file: replaced by the real observer types in GREEN)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
     Discover,
@@ -14,8 +13,7 @@ impl Stage {
     pub const ALL: [Stage; 4] = [Stage::Discover, Stage::Import, Stage::Enrich, Stage::Render];
 
     pub fn as_str(self) -> &'static str {
-        let _ = self;
-        ""
+        panic!("SUB-AGENT-TODO: match self to discover|import|enrich|render")
     }
 }
 
