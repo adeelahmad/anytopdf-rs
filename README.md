@@ -133,6 +133,7 @@ anytopdf convert . --filter 'invoice|receipt' -o receipts.pdf
 anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
+anytopdf extract archive.pdf --json
 ```
 
 Video defaults combine interval sampling and FFmpeg scene-change sampling and
@@ -154,6 +155,13 @@ traceability). Schemas live in `schemas/`. The `share` profile omits absolute
 paths. If embedding fails, the same JSON is written beside the PDF as
 `<output>.manifest.json` and `<output>.chunks.json` and an informational
 `manifest.sidecar` notice is printed.
+
+`anytopdf extract <pdf> --json` prints one `anytopdf.extract/1` document
+(`schemas/extract.schema.json`) with `origin` (`embedded` or `sidecar`), the
+`manifest`, the `chunks` and `warnings`. A manifest or chunks `schema_version`
+other than the supported one adds an `extract.version-mismatch` warning (also
+on stderr) but still exits 0. A PDF with no embedded or sidecar manifest exits
+3 (input).
 
 ## Roadmap
 

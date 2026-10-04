@@ -1,5 +1,6 @@
 mod argv;
 mod exit;
+mod extract;
 use anyhow::{Context, Result, bail};
 use anytopdf_builtin::{
     BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, detect_providers, discover_inputs,
@@ -55,6 +56,12 @@ enum Commands {
     },
     Plugins {
         /// Emit one JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    Extract {
+        pdf: PathBuf,
+        /// Emit one JSON document on stdout (extract always does).
         #[arg(long)]
         json: bool,
     },
@@ -169,6 +176,11 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Convert(args) => convert(*args, &policy),
         Commands::Doctor { json } => Ok(doctor(json)?),
         Commands::Plugins { json } => Ok(plugins(&policy, json)?),
+        Commands::Extract { pdf, .. } => {
+            let doc = extract::extract(&pdf)?;
+            println!("{}", serde_json::to_string_pretty(&doc)?);
+            Ok(())
+        }
         Commands::Probe { input, .. } => probe(&input, &policy),
     }
 }
