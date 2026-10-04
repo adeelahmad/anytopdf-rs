@@ -42,7 +42,9 @@ fn shown(profile: Profile, path: &Path) -> String {
 }
 
 fn emit(sink: &mut Sink, event: Event) {
-    if let Some(writer) = sink {
+    if let Some(writer) = sink
+        && !writer.is_broken()
+    {
         writer.emit(&event);
     }
 }
@@ -153,19 +155,18 @@ pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result
         (Ok(()), true) => RunStatus::Ok,
         (Ok(()), false) => RunStatus::Partial,
     };
-    if result.is_ok() {
-        emit(
-            &mut sink,
-            Event::RunFinished {
-                status: match status {
-                    RunStatus::Partial => RunStatus::Partial,
-                    _ => RunStatus::Ok,
-                },
-                exit_code,
-                error: None,
+    emit(
+        &mut sink,
+        Event::RunFinished {
+            status: match status {
+                RunStatus::Failed => RunStatus::Failed,
+                RunStatus::Partial => RunStatus::Partial,
+                RunStatus::Ok => RunStatus::Ok,
             },
-        );
-    }
+            exit_code,
+            error: result.as_ref().err().map(|e| format!("{:#}", e.error)),
+        },
+    );
     if json {
         let status = match status {
             RunStatus::Failed => "failed",

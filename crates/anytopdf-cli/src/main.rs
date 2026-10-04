@@ -29,10 +29,14 @@ fn main() -> ExitCode {
             return ExitCode::from(class.code());
         }
     };
+    let events = matches!(&cli.command, Commands::Convert(a) if a.events);
     match run(cli) {
         Ok(()) => ExitCode::from(ExitClass::Success.code()),
         Err(e) => {
-            eprintln!("error: {:#}", e.error);
+            if !events {
+                use std::io::Write;
+                let _ = writeln!(std::io::stderr(), "error: {:#}", e.error);
+            }
             ExitCode::from(e.class.code())
         }
     }
