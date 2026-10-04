@@ -230,7 +230,12 @@ fn same_inputs_and_source_date_epoch_give_identical_pdf_and_dump_bytes() {
 #[test]
 fn share_profile_keeps_absolute_paths_out_of_graph_dump() {
     let (dir, notes) = fixture_dir();
-    let root = dir.path().to_string_lossy().into_owned();
+    let raw = dir.path().to_string_lossy().into_owned();
+    let root = fs::canonicalize(dir.path())
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let bare = root.strip_prefix(r"\\?\").unwrap_or(&root).to_owned();
     let (pdf, json) = (dir.path().join("s.pdf"), dir.path().join("s.json"));
     ok(&run(
         &[&notes],
@@ -242,7 +247,7 @@ fn share_profile_keeps_absolute_paths_out_of_graph_dump() {
     let dump = load(&json);
     let leaks: Vec<_> = all_strings(&dump)
         .into_iter()
-        .filter(|s| s.contains(&root))
+        .filter(|s| s.contains(&root) || s.contains(&bare) || s.contains(&raw))
         .collect();
     assert!(leaks.is_empty(), "share dump leaks: {leaks:?}");
     assert_eq!(dump["sources"][0]["path"], "notes.txt");
@@ -254,7 +259,7 @@ fn share_profile_keeps_absolute_paths_out_of_graph_dump() {
         .as_str()
         .unwrap_or("");
     assert!(
-        path.contains(&root),
+        path.contains(&root) || path.contains(&bare),
         "archive dump lacks source.path under {root}: {path:?}"
     );
 }
