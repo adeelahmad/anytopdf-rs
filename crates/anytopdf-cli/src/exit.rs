@@ -73,15 +73,87 @@ pub fn fail(class: ExitClass, message: impl std::fmt::Display) -> CliError {
     }
 }
 
+/// Strips local directory prefixes from user-visible text (share profile only).
+#[derive(Default)]
+pub struct Redactor {
+    enabled: bool,
+    dirs: Vec<String>,
+}
+
+impl Redactor {
+    pub fn new(enabled: bool) -> Self {
+        Redactor {
+            enabled,
+            dirs: Vec::new(),
+        }
+    }
+
+    /// Register the directory containing `path`, as typed, absolute and canonical.
+    pub fn add_parent_of(&mut self, path: &std::path::Path) {
+        if !self.enabled {
+            return;
+        }
+        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        for candidate in [Some(absolute.clone()), absolute.canonicalize().ok()]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(parent) = candidate.parent() {
+                self.add_dir(parent);
+            }
+        }
+    }
+
+    pub fn add_dir(&mut self, dir: &std::path::Path) {
+        if !self.enabled || dir.parent().is_none() {
+            return;
+        }
+        let text = dir.to_string_lossy().into_owned();
+        let mut forms = vec![text.clone()];
+        if let Some(stripped) = text.strip_prefix(r"\\?\") {
+            forms.push(stripped.to_string());
+        }
+        for form in forms {
+            if !self.dirs.contains(&form) {
+                self.dirs.push(form);
+            }
+        }
+        self.dirs.sort_by_key(|d| std::cmp::Reverse(d.len()));
+    }
+
+    pub fn apply(&self, text: &str) -> String {
+        let mut out = text.to_string();
+        for dir in &self.dirs {
+            for sep in ['/', '\\'] {
+                out = out.replace(&format!("{dir}{sep}"), "");
+            }
+            out = out.replace(dir.as_str(), ".");
+        }
+        out
+    }
+
+    pub fn path(&self, path: &std::path::Path) -> String {
+        self.apply(&path.display().to_string())
+    }
+}
+
 /// Print the batch summary and per-input skip reasons to stderr.
-pub fn print_summary(converted: usize, skipped: &[&anytopdf_core::Diagnostic]) {
+pub fn print_summary(
+    converted: usize,
+    skipped: &[&anytopdf_core::Diagnostic],
+    redactor: &Redactor,
+) {
     eprintln!("Summary: {converted} converted, {} skipped", skipped.len());
     for d in skipped {
         let input = d
             .input
             .as_ref()
-            .map_or_else(String::new, |p| p.display().to_string());
-        eprintln!("  skipped {input}: [{}] {}", d.code.as_str(), d.message);
+            .map_or_else(String::new, |p| redactor.path(p));
+        eprintln!(
+            "  skipped {input}: [{}] {}",
+            d.code.as_str(),
+            redactor.apply(&d.message)
+        );
     }
 }
 
