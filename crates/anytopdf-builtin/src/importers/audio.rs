@@ -75,3 +75,22 @@ impl Importer for AudioImporter {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audio_placeholder_names_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("talk.mp3");
+        std::fs::write(&path, b"not really audio").unwrap();
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        let outcome = AudioImporter.import(&ctx, SourceRecord::new(path)).unwrap();
+        let text = outcome.units[0].visible_text.as_deref().unwrap();
+        assert!(text.starts_with("Audio source: talk.mp3\n\n"), "{text:?}");
+    }
+}

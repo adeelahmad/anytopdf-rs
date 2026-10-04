@@ -187,4 +187,24 @@ mod tests {
         assert_eq!(d.severity, Severity::Info);
         assert!(d.message.contains("exiftool"), "{}", d.message);
     }
+
+    #[test]
+    fn source_filename_is_the_base_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("dir")).unwrap();
+        let path = dir.path().join("dir").join("report.txt");
+        std::fs::write(&path, b"hello\n").unwrap();
+        let mut source = SourceRecord::new(path);
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        MetadataEnricher.enrich_source(&ctx, &mut source).unwrap();
+        assert_eq!(source.metadata["source.filename"], "report.txt");
+        assert!(
+            source.metadata["source.path"].ends_with("report.txt"),
+            "{:?}",
+            source.metadata["source.path"]
+        );
+    }
 }
