@@ -489,9 +489,8 @@ pub(crate) fn print_redacted(d: &Diagnostic, redactor: &Redactor) {
     );
 }
 
-// agentic:shim
 fn exhausted_provider(_warnings: &[Diagnostic], _ocr: OcrMode) -> Option<&Diagnostic> {
-    None
+    panic!("SUB-AGENT-TODO: return the first warning with provider_exhausted set when ocr is not Auto/Off, else None")
 }
 
 #[cfg(test)]
