@@ -1,6 +1,5 @@
 use anyhow::Result;
 use anytopdf_core::*;
-use printpdf::*;
 use std::path::PathBuf;
 
 pub(crate) fn subset_document_font(bytes: &[u8], graph: &DocumentGraph) -> Result<Vec<u8>> {
@@ -72,6 +71,7 @@ pub(crate) fn find_system_font() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use printpdf::*;
 
     #[test]
     fn font_subset_retains_visible_and_metadata_characters() {
