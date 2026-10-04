@@ -64,6 +64,10 @@ struct ConvertArgs {
     #[arg(long)]
     strict: bool,
 
+    /// Abort without publishing when any input fails (default: skip failing inputs and continue).
+    #[arg(long)]
+    fail_fast: bool,
+
     #[arg(long, default_value = "pdf")]
     renderer: String,
 
@@ -245,6 +249,17 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
 
     for diagnostic in &run.warnings {
         print_diagnostic(diagnostic);
+    }
+
+    let skipped: Vec<&Diagnostic> = run.warnings.iter().filter(|d| d.code.is_skip()).collect();
+    if !skipped.is_empty() {
+        exit::print_summary(run.graph.sources.len(), &skipped);
+        if args.fail_fast {
+            return Err(fail(
+                ExitClass::FailFast,
+                "--fail-fast stopped on a skipped input",
+            ));
+        }
     }
 
     if !matches!(args.ocr, OcrMode::Auto | OcrMode::Off)

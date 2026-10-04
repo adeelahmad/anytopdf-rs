@@ -333,7 +333,14 @@ keeps usable content. `--quiet` suppresses the success summary, not warnings.
 | 4 | provider | An explicitly requested provider (for example `--ocr tesseract`) is unavailable. |
 | 5 | strict | `--strict` stopped on warnings before publishing. |
 | 6 | render | Rendering failed; nothing was published. |
-| 7 | fail-fast | Reserved for stopping on the first failing input. |
+| 7 | fail-fast | `--fail-fast` stopped on a skipped input; nothing was published. |
+
+Batch behaviour (request Amendment 1): by default a failing input (corrupt,
+unsupported or unreadable) is skipped with a warning naming the file, the rest of
+the batch continues, and the run exits 0 if a PDF was published. stderr ends with
+`Summary: N converted, M skipped` and one `skipped <input>: [<code>] <reason>` line
+per skipped input. `--fail-fast` aborts without publishing and exits 7; `--strict`
+still exits 5 on any warning; if no input is usable the run exits 3.
 
 ### Diagnostics and strict mode
 
