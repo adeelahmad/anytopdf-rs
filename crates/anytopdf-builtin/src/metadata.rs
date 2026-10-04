@@ -37,12 +37,7 @@ impl SourceEnricher for MetadataEnricher {
             .insert("source.path".into(), source.path.display().to_string());
         source.metadata.insert(
             "source.filename".into(),
-            source
-                .path
-                .file_name()
-                .and_then(|x| x.to_str())
-                .unwrap_or("")
-                .to_string(),
+            anytopdf_core::basename(&source.path),
         );
 
         if let Ok(exiftool) = which::which("exiftool") {

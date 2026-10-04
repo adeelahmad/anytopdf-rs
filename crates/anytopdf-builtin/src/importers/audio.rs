@@ -44,19 +44,20 @@ impl Importer for AudioImporter {
     }
 
     fn import(&self, _ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
+        let name = anytopdf_core::basename(&source.path);
+        let name = if name.is_empty() {
+            "audio".into()
+        } else {
+            name
+        };
         let mut unit = Unit {
             id: uuid::Uuid::new_v4(),
             source_id: source.id,
             kind: UnitKind::Audio,
             visual_path: None,
             visible_text: Some(format!(
-                "Audio source: {}\n\nNo speech-to-text provider produced a transcript. \
-                 Supply --transcript or install/register a transcription plugin.",
-                source
-                    .path
-                    .file_name()
-                    .and_then(|x| x.to_str())
-                    .unwrap_or("audio")
+                "Audio source: {name}\n\nNo speech-to-text provider produced a transcript. \
+                 Supply --transcript or install/register a transcription plugin."
             )),
             time_range: None,
             anchor: None,

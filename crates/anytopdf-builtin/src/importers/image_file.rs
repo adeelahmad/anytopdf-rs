@@ -116,11 +116,7 @@ impl Importer for ImageImporter {
         image.save(&visual)?;
         let unit = Unit::visual(source.id, visual);
         let warnings = if frames > 1 {
-            let name = source
-                .path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy();
+            let name = anytopdf_core::basename(&source.path);
             vec![
                 Diagnostic::new(
                     DiagnosticCode::FramesNotImported,
