@@ -201,6 +201,10 @@ impl<W: Write> EventWriter<W> {
         self.seq += 1;
     }
 
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used by S3-05-T5 broken-pipe handling")
+    )]
     pub(crate) fn is_broken(&self) -> bool {
         self.broken
     }

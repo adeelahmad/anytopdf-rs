@@ -160,6 +160,10 @@ pub(crate) struct ConvertArgs {
     #[arg(short, long)]
     pub(crate) quiet: bool,
 
+    /// Write NDJSON progress events (schema anytopdf.events/1) to stderr instead of human-readable progress and diagnostics.
+    #[arg(long)]
+    pub(crate) events: bool,
+
     /// Emit one JSON document on stdout.
     #[arg(long)]
     pub(crate) json: bool,

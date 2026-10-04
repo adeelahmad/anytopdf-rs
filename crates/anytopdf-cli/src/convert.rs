@@ -1,4 +1,5 @@
 use crate::cli::ConvertArgs;
+use crate::events::{Event, EventWriter, RunStatus};
 use crate::exit::{CliError, ExitClass, Redactor, fail, tag};
 use crate::naming;
 use crate::publish::{checked_destination, publish_output};
@@ -7,13 +8,14 @@ use anytopdf_builtin::{
     BuiltinOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs, register_builtins,
 };
 use anytopdf_core::{
-    Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline, PipelineRun,
-    Profile, Registry, RuntimePluginPolicy, Severity, register_runtime_plugins_with_policy,
-    strip_workspace_paths,
+    Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline,
+    PipelineEvent, PipelineObserver, PipelineRun, Profile, Registry, RuntimePluginPolicy, Severity,
+    Stage, register_runtime_plugins_with_policy, strip_workspace_paths,
 };
 use anytopdf_pdf::{EmbeddedFile, SearchablePdfRenderer, embed_files};
 use regex::Regex;
 use std::{
+    io::Stderr,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -29,9 +31,105 @@ pub(crate) fn registry(
     (registry, warnings)
 }
 
+type Sink = Option<EventWriter<Stderr>>;
+
+fn shown(profile: Profile, path: &Path) -> String {
+    if profile == Profile::Share {
+        anytopdf_core::basename(path)
+    } else {
+        path.display().to_string()
+    }
+}
+
+fn emit(sink: &mut Sink, event: Event) {
+    if let Some(writer) = sink {
+        writer.emit(&event);
+    }
+}
+
+struct EventObserver<'a> {
+    sink: &'a mut Sink,
+    profile: Profile,
+}
+
+impl PipelineObserver for EventObserver<'_> {
+    fn on_event(&mut self, event: &PipelineEvent) {
+        let profile = self.profile;
+        let mapped = match event {
+            PipelineEvent::StageStarted(stage) => Event::StageStarted {
+                stage: Stage::as_str(*stage),
+            },
+            PipelineEvent::StageFinished(stage) => Event::StageFinished {
+                stage: Stage::as_str(*stage),
+            },
+            PipelineEvent::SourceStarted { index, path } => Event::SourceStarted {
+                index: *index,
+                input: shown(profile, path),
+            },
+            PipelineEvent::SourceImported { index, path, units } => Event::SourceImported {
+                index: *index,
+                input: shown(profile, path),
+                units: *units,
+            },
+            PipelineEvent::SourceSkipped { index, path, code } => Event::SourceSkipped {
+                index: *index,
+                input: shown(profile, path),
+                code: code.as_str().to_string(),
+            },
+            PipelineEvent::UnitStarted {
+                unit,
+                source,
+                enricher,
+            } => Event::UnitStarted {
+                unit: *unit,
+                source: *source,
+                enricher: enricher.clone(),
+            },
+            PipelineEvent::UnitFinished {
+                unit,
+                source,
+                enricher,
+            } => Event::UnitFinished {
+                unit: *unit,
+                source: *source,
+                enricher: enricher.clone(),
+            },
+        };
+        emit(self.sink, mapped);
+    }
+}
+
+fn report_diagnostic(sink: &mut Sink, d: &Diagnostic, redactor: &Redactor, profile: Profile) {
+    if sink.is_none() {
+        print_redacted(d, redactor);
+        return;
+    }
+    emit(
+        sink,
+        Event::Diagnostic {
+            code: d.code.as_str().to_string(),
+            severity: if d.severity == Severity::Info {
+                "info"
+            } else {
+                "warning"
+            },
+            message: redactor.apply(&d.message),
+            input: d.input.as_deref().map(|p| shown(profile, p)),
+        },
+    );
+}
+
 pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
     let json = args.json;
     let profile = args.profile;
+    let mut sink: Sink = args.events.then(|| EventWriter::new(std::io::stderr()));
+    emit(
+        &mut sink,
+        Event::RunStarted {
+            profile: profile.as_str(),
+            inputs: args.inputs.len(),
+        },
+    );
     let mut outcome = ConvertOutcome::default();
     let mut redactor = Redactor::new(profile == Profile::Share);
     for path in args
@@ -44,16 +142,35 @@ pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result
     {
         redactor.add_parent_of(path);
     }
-    let result = convert_inner(args, policy, &mut outcome, &mut redactor).map_err(|e| CliError {
-        class: e.class,
-        error: anyhow::anyhow!("{}", redactor.apply(&format!("{:#}", e.error))),
-    });
+    let result =
+        convert_inner(args, policy, &mut outcome, &mut redactor, &mut sink).map_err(|e| CliError {
+            class: e.class,
+            error: anyhow::anyhow!("{}", redactor.apply(&format!("{:#}", e.error))),
+        });
+    let exit_code = result.as_ref().map_or_else(|e| e.class.code(), |_| 0);
+    let status = match (&result, outcome.skipped.is_empty()) {
+        (Err(_), _) => RunStatus::Failed,
+        (Ok(()), true) => RunStatus::Ok,
+        (Ok(()), false) => RunStatus::Partial,
+    };
+    if result.is_ok() {
+        emit(
+            &mut sink,
+            Event::RunFinished {
+                status: match status {
+                    RunStatus::Partial => RunStatus::Partial,
+                    _ => RunStatus::Ok,
+                },
+                exit_code,
+                error: None,
+            },
+        );
+    }
     if json {
-        let exit_code = result.as_ref().map_or_else(|e| e.class.code(), |_| 0);
-        let status = match (&result, outcome.skipped.is_empty()) {
-            (Err(_), _) => "failed",
-            (Ok(()), true) => "ok",
-            (Ok(()), false) => "partial",
+        let status = match status {
+            RunStatus::Failed => "failed",
+            RunStatus::Ok => "ok",
+            RunStatus::Partial => "partial",
         };
         let mut payload = serde_json::json!({
             "schema_version": "anytopdf.convert/1",
@@ -85,6 +202,7 @@ fn convert_inner(
     policy: &RuntimePluginPolicy,
     outcome: &mut ConvertOutcome,
     redactor: &mut Redactor,
+    sink: &mut Sink,
 ) -> Result<(), CliError> {
     if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
         return Err(fail(
@@ -132,6 +250,12 @@ fn convert_inner(
             .context("invalid --filter regex"),
     )?;
 
+    emit(
+        sink,
+        Event::StageStarted {
+            stage: Stage::Discover.as_str(),
+        },
+    );
     let inputs = tag(
         ExitClass::Input,
         discover_inputs(
@@ -142,6 +266,13 @@ fn convert_inner(
             },
         ),
     )?;
+
+    emit(
+        sink,
+        Event::StageFinished {
+            stage: Stage::Discover.as_str(),
+        },
+    );
 
     // Keep command-line order (stable within a directory) so source order is predictable.
     let roots: Vec<PathBuf> = args
@@ -211,22 +342,23 @@ fn convert_inner(
 
     let (registry, mut warnings) = registry(opts, policy);
     let pipeline = Pipeline::new(registry);
-    let mut run = tag(ExitClass::Input, pipeline.ingest(&inputs, args.quiet))?;
+    let mut observer = EventObserver {
+        sink,
+        profile: args.profile,
+    };
+    let mut run = tag(
+        ExitClass::Input,
+        pipeline.ingest_observed(&inputs, args.quiet, &mut observer),
+    )?;
     run.warnings.append(&mut warnings);
 
     redactor.add_dir(&run.context.workspace.join("x"));
     let redactor = &*redactor;
     for diagnostic in &run.warnings {
-        print_redacted(diagnostic, redactor);
+        report_diagnostic(sink, diagnostic, redactor, args.profile);
     }
 
-    let shown = |path: &Path| {
-        if args.profile == Profile::Share {
-            anytopdf_core::basename(path)
-        } else {
-            path.display().to_string()
-        }
-    };
+    let shown = |path: &Path| shown(args.profile, path);
     outcome.diagnostics = run
         .warnings
         .iter()
@@ -250,7 +382,9 @@ fn convert_inner(
         })
         .collect();
     if !skipped.is_empty() {
-        crate::exit::print_summary(run.graph.sources.len(), &skipped, redactor);
+        if sink.is_none() {
+            crate::exit::print_summary(run.graph.sources.len(), &skipped, redactor);
+        }
         if args.fail_fast {
             return Err(fail(
                 ExitClass::FailFast,
@@ -324,19 +458,32 @@ fn convert_inner(
 
     // Render every document into staging before publishing any output.
     let mut staged_docs = Vec::new();
+    emit(
+        sink,
+        Event::StageStarted {
+            stage: Stage::Render.as_str(),
+        },
+    );
     for (i, (source_path, graph)) in docs.into_iter().enumerate() {
         run.graph = graph;
         let staged = run.context.workspace.join(format!("result-{i}.pdf"));
         let doc = stage_document(
             &pipeline,
             &run,
-            &args.renderer,
-            args.strict,
+            (&args.renderer, args.strict),
             &staged,
             redactor,
+            sink,
+            args.profile,
         )?;
         staged_docs.push((source_path, doc));
     }
+    emit(
+        sink,
+        Event::StageFinished {
+            stage: Stage::Render.as_str(),
+        },
+    );
 
     let mut published = Vec::new();
     if let Some(dir) = &args.output_dir {
@@ -359,16 +506,40 @@ fn convert_inner(
 
     for (out_path, (_, doc)) in published.iter().zip(&staged_docs) {
         publish_output(out_path, &doc.bytes, args.overwrite)?;
+        emit(
+            sink,
+            Event::OutputWritten {
+                path: shown(out_path),
+                kind: "pdf",
+                pages: Some(doc.pages),
+            },
+        );
         if let Some((manifest, chunks)) = &doc.sidecars {
             for (suffix, data) in [("manifest", manifest), ("chunks", chunks)] {
                 let mut name = out_path.as_os_str().to_owned();
                 name.push(format!(".{suffix}.json"));
                 publish_output(Path::new(&name), data, args.overwrite)?;
+                emit(
+                    sink,
+                    Event::OutputWritten {
+                        path: shown(Path::new(&name)),
+                        kind: suffix,
+                        pages: None,
+                    },
+                );
             }
         }
     }
     if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
         publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
+        emit(
+            sink,
+            Event::OutputWritten {
+                path: shown(path),
+                kind: "graph",
+                pages: None,
+            },
+        );
     }
 
     for (out_path, (_, doc)) in published.iter().zip(&staged_docs) {
@@ -377,7 +548,7 @@ fn convert_inner(
             "pages": doc.pages,
         }));
         outcome.converted.extend(doc.sources.clone());
-        if !args.quiet {
+        if !args.quiet && sink.is_none() {
             eprintln!("Wrote {} ({} pages)", redactor.path(out_path), doc.pages);
         }
     }
@@ -394,16 +565,19 @@ struct StagedDocument {
 fn stage_document(
     pipeline: &Pipeline,
     run: &PipelineRun,
-    renderer: &str,
-    strict: bool,
+    (renderer, strict): (&str, bool),
     staged: &Path,
     redactor: &Redactor,
+    sink: &mut Sink,
+    profile: Profile,
 ) -> Result<StagedDocument, CliError> {
     let report = tag(ExitClass::Render, pipeline.render(run, renderer, staged))?;
     for warning in &report.warnings {
-        print_redacted(
+        report_diagnostic(
+            sink,
             &Diagnostic::new(DiagnosticCode::RenderWarning, warning),
             redactor,
+            profile,
         );
     }
     if strict && !report.warnings.is_empty() {
@@ -451,12 +625,14 @@ fn stage_document(
     let (bytes, sidecars) = match embed_files(&bytes, &files) {
         Ok(embedded) => (embedded, None),
         Err(e) => {
-            print_redacted(
+            report_diagnostic(
+                sink,
                 &Diagnostic::new(
                     DiagnosticCode::ManifestSidecar,
                     format!("could not embed manifest and chunks ({e}); writing sidecar files"),
                 ),
                 redactor,
+                profile,
             );
             (bytes, Some((manifest, chunks)))
         }
