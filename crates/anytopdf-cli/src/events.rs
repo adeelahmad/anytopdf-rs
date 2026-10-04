@@ -1,4 +1,3 @@
-// agentic:shim RED compile shim (M-017); the scaffolder replaces this block.
 use std::io::Write;
 
 pub(crate) enum RunStatus {
@@ -69,13 +68,14 @@ impl<W: Write> EventWriter<W> {
         Self { _out: out }
     }
 
-    pub(crate) fn emit(&mut self, _event: &Event) {}
+    pub(crate) fn emit(&mut self, _event: &Event) {
+        panic!("SUB-AGENT-TODO: serialize typed envelope (schema_version, seq, event, payload in catalog order) + '\\n', write_all then flush, seq += 1; on first error set broken and skip later emits; never panic");
+    }
 
     pub(crate) fn is_broken(&self) -> bool {
-        false
+        panic!("SUB-AGENT-TODO: return the broken flag set by the first write/flush error");
     }
 }
-// agentic:shim-end
 
 #[cfg(test)]
 mod tests {
