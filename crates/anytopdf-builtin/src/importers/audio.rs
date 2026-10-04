@@ -59,6 +59,7 @@ impl Importer for AudioImporter {
                     .unwrap_or("audio")
             )),
             time_range: None,
+            anchor: None,
             annotations: vec![],
             metadata: Metadata::new(),
         };

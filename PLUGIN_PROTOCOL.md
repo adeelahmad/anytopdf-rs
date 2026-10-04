@@ -93,6 +93,13 @@ The plugin must write the response atomically.
 }
 ```
 
+Units may carry an optional `anchor` (tagged by `kind`: `time-span` with
+`start_seconds`/`end_seconds`, `region` with `x`/`y`/`width`/`height`, or
+`byte-range` with `start`/`end`). The host fills a default anchor when it is
+absent (time range, else full-frame region for visual units, else the whole
+source byte range) and never overwrites one a plugin supplies. Inverted or
+non-finite anchors fail validation.
+
 Plugins may create derived files only under the supplied workspace unless the
 user explicitly configured otherwise.
 
