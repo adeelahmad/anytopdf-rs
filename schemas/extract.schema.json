@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/extract/v1",
+  "title": "anytopdf extract",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "origin",
+    "manifest",
+    "chunks",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "anytopdf.extract/1"
+    },
+    "origin": {
+      "enum": [
+        "embedded",
+        "sidecar"
+      ]
+    },
+    "manifest": {
+      "type": "object"
+    },
+    "chunks": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
