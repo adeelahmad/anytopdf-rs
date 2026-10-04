@@ -91,11 +91,7 @@ impl Profile {
         }
         if *self == Profile::Share {
             for source in &mut out.sources {
-                source.path = source
-                    .path
-                    .file_name()
-                    .map(PathBuf::from)
-                    .unwrap_or_default();
+                source.path = PathBuf::from(crate::basename(&source.path));
             }
             for unit in &mut out.units {
                 unit.visual_path = None;

@@ -88,6 +88,18 @@ fn unit_anchor(graph: &DocumentGraph, unit: &Unit) -> Option<Anchor> {
     })
 }
 
+/// Provider name from a `provider.<name>.version` metadata key.
+pub fn provider_name(key: &str) -> Option<&str> {
+    key.strip_prefix("provider.")?.strip_suffix(".version")
+}
+
+/// Final path component, or empty when there is none.
+pub fn basename(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 impl Manifest {
     pub fn build(graph: &DocumentGraph, report: &RenderReport) -> Self {
         let meta = |key: &str| graph.metadata.get(key).cloned();
@@ -95,7 +107,7 @@ impl Manifest {
             .metadata
             .iter()
             .filter_map(|(k, v)| {
-                let name = k.strip_prefix("provider.")?.strip_suffix(".version")?;
+                let name = provider_name(k)?;
                 Some(ProviderEntry {
                     name: name.into(),
                     version: v.clone(),
@@ -110,11 +122,7 @@ impl Manifest {
                     graph.units.iter().filter(|u| u.source_id == s.id).collect();
                 ManifestSource {
                     id: s.id,
-                    name: s
-                        .path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                    name: basename(&s.path),
                     path: None,
                     media_type: s.detected_type.clone(),
                     sha256: s.sha256.clone().unwrap_or_default(),

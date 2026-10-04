@@ -6,10 +6,11 @@ use anytopdf_builtin::{
     register_builtins,
 };
 use anytopdf_core::{
-    Channel, Diagnostic, DiagnosticCode, Pipeline, Profile, Registry, RuntimePluginPolicy,
-    Severity, atomic_write, register_runtime_plugins_with_policy, strip_workspace_paths,
+    Channel, ChunkSet, Diagnostic, DiagnosticCode, Manifest, Pipeline, Profile, Registry,
+    RuntimePluginPolicy, Severity, atomic_write, register_runtime_plugins_with_policy,
+    strip_workspace_paths,
 };
-use anytopdf_pdf::SearchablePdfRenderer;
+use anytopdf_pdf::{EmbeddedFile, SearchablePdfRenderer, embed_files};
 use clap::{Parser, Subcommand};
 use exit::{CliError, ExitClass, fail, tag};
 use regex::Regex;
@@ -372,7 +373,38 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
             "renderer did not produce a valid PDF",
         ));
     }
+    let manifest = serde_json::to_vec_pretty(&Manifest::build(&run.graph, &report))?;
+    let chunks = serde_json::to_vec_pretty(&ChunkSet::build(&run.graph, &report))?;
+    let files = [
+        EmbeddedFile {
+            name: "anytopdf-manifest.json".into(),
+            mime_type: "application/json".into(),
+            bytes: manifest.clone(),
+        },
+        EmbeddedFile {
+            name: "anytopdf-chunks.json".into(),
+            mime_type: "application/json".into(),
+            bytes: chunks.clone(),
+        },
+    ];
+    let (bytes, sidecars) = match embed_files(&bytes, &files) {
+        Ok(embedded) => (embedded, None),
+        Err(e) => {
+            print_diagnostic(&Diagnostic::new(
+                DiagnosticCode::ManifestSidecar,
+                format!("could not embed manifest and chunks ({e}); writing sidecar files"),
+            ));
+            (bytes, Some((manifest, chunks)))
+        }
+    };
     publish_output(&args.output, &bytes, args.overwrite)?;
+    if let Some((manifest, chunks)) = sidecars {
+        for (suffix, data) in [("manifest", manifest), ("chunks", chunks)] {
+            let mut name = args.output.as_os_str().to_owned();
+            name.push(format!(".{suffix}.json"));
+            publish_output(Path::new(&name), &data, args.overwrite)?;
+        }
+    }
     if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
         publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
     }
