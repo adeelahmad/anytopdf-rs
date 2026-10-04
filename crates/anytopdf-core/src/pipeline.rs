@@ -204,6 +204,8 @@ impl Pipeline {
             }
         }
 
+        graph.assign_content_ids()?;
+
         Ok(PipelineRun {
             graph,
             warnings,
@@ -365,5 +367,58 @@ mod tests {
             "{:?}",
             run.warnings
         );
+    }
+
+    const IDENTITY_DIGEST: &str =
+        "eea2ca13a1da285c9365c7dd3fdfb68eb34445313f8eb1b994991728ae3d917a";
+
+    #[test]
+    fn ingest_records_digest_size_and_derived_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("id.txt");
+        std::fs::write(&path, b"Identity fixture\n").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        let run = Pipeline::new(registry).ingest(&[path], true).unwrap();
+        let source = &run.graph.sources[0];
+        assert_eq!(source.sha256.as_deref(), Some(IDENTITY_DIGEST));
+        assert_eq!(source.size, Some(17));
+        assert_eq!(source.id, content_source_id(IDENTITY_DIGEST, 0));
+        assert_eq!(run.graph.units[0].id, content_unit_id(source.id, 0));
+    }
+
+    struct CaptionLike(PathBuf);
+    impl Plugin for CaptionLike {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl GraphEnricher for CaptionLike {
+        fn enrich_graph(&self, _: &JobContext, graph: &mut DocumentGraph) -> Result<Vec<String>> {
+            let source = SourceRecord::new(self.0.clone());
+            graph.units.push(Unit::text(source.id, "caption".into()));
+            graph.sources.push(source);
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn caption_style_sources_added_by_enrichers_get_digests_and_derived_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main.txt");
+        let extra = dir.path().join("extra.txt");
+        std::fs::write(&main, b"main bytes\n").unwrap();
+        std::fs::write(&extra, b"Identity fixture\n").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        registry.register_graph_enricher(Arc::new(CaptionLike(extra)));
+        let run = Pipeline::new(registry).ingest(&[main], true).unwrap();
+        let added = run.graph.sources.last().unwrap();
+        assert_eq!(added.sha256.as_deref(), Some(IDENTITY_DIGEST));
+        assert_eq!(added.size, Some(17));
+        assert_eq!(added.id, content_source_id(IDENTITY_DIGEST, 0));
+        let unit = run.graph.units.last().unwrap();
+        assert_eq!(unit.source_id, added.id);
+        assert_eq!(unit.id, content_unit_id(added.id, 0));
     }
 }
