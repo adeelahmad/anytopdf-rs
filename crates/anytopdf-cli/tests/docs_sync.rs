@@ -147,3 +147,21 @@ fn events_are_documented_in_readme_changelog_and_architecture() {
         assert!(arch.contains(needle), "ARCHITECTURE.md missing {needle:?}");
     }
 }
+
+#[test]
+fn frames_are_documented_in_readme_and_changelog() {
+    let readme = repo_file("README.md");
+    assert!(readme.contains("--max-image-frames"), "README missing flag");
+    assert!(
+        !readme.contains("currently use their first frame/page"),
+        "README still says first frame only"
+    );
+    let changelog = repo_file("CHANGELOG.md");
+    let first = changelog.split("\n## ").nth(1).unwrap_or("");
+    for needle in ["--max-image-frames", "frame"] {
+        assert!(
+            first.contains(needle),
+            "CHANGELOG first section missing {needle:?}"
+        );
+    }
+}

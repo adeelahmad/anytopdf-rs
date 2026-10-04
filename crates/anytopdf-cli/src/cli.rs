@@ -140,6 +140,10 @@ pub(crate) struct ConvertArgs {
     #[arg(long, default_value_t = 0)]
     pub(crate) max_video_frames: usize,
 
+    /// Maximum frames to import from a multi-frame TIFF or GIF (0 means unlimited).
+    #[arg(long, default_value_t = 0)]
+    pub(crate) max_image_frames: usize,
+
     /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]
     pub(crate) no_embedded_subtitles: bool,
