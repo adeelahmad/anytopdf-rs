@@ -3,6 +3,8 @@ mod capabilities;
 mod cli;
 mod commands;
 mod convert;
+#[expect(dead_code, reason = "wired into convert by S3-05-T4")]
+mod events;
 mod exit;
 mod extract;
 mod naming;
