@@ -329,6 +329,7 @@ mod tests {
             y: 0.0,
             width: 1.0,
             height: 1.0,
+            frame: None,
         });
         visual.annotations.push(Annotation::text(
             AnnotationKind::Ocr,
@@ -370,6 +371,46 @@ mod tests {
         assert!(errors.is_empty(), "manifest invalid: {errors:?}");
         let errors = crate::schema::validate(&cs, &serde_json::to_value(&chunks).unwrap());
         assert!(errors.is_empty(), "chunks invalid: {errors:?}");
+    }
+
+    #[test]
+    fn frame_anchor_validates_and_negative_frame_is_rejected() {
+        let a = source("a.txt", "aa11", 10);
+        let mut visual = Unit::visual(a.id, "scan.tif".into());
+        visual.anchor = Some(
+            serde_json::from_value(json!({
+                "kind":"region","x":0.0,"y":0.0,"width":1.0,"height":1.0,"frame":1
+            }))
+            .unwrap(),
+        );
+        let report = report(&[(visual.id, range(1, 1))]);
+        let graph = DocumentGraph {
+            sources: vec![a],
+            units: vec![visual],
+            ..Default::default()
+        };
+        let manifest = serde_json::to_value(Manifest::build(&graph, &report)).unwrap();
+        let chunks = serde_json::to_value(ChunkSet::build(&graph, &report)).unwrap();
+        let (ms, cs) = (
+            read_schema("manifest.schema.json"),
+            read_schema("chunks.schema.json"),
+        );
+        let mut manifest_bad = manifest.clone();
+        let mut chunks_bad = chunks.clone();
+        assert_eq!(manifest["units"][0]["anchor"]["frame"], json!(1));
+        assert_eq!(chunks["chunks"][0]["anchor"]["frame"], json!(1));
+        assert!(crate::schema::validate(&ms, &manifest).is_empty());
+        assert!(crate::schema::validate(&cs, &chunks).is_empty());
+        manifest_bad["units"][0]["anchor"]["frame"] = json!(-1);
+        chunks_bad["chunks"][0]["anchor"]["frame"] = json!(-1);
+        assert!(
+            !crate::schema::validate(&ms, &manifest_bad).is_empty(),
+            "manifest schema must reject frame -1"
+        );
+        assert!(
+            !crate::schema::validate(&cs, &chunks_bad).is_empty(),
+            "chunks schema must reject frame -1"
+        );
     }
 
     #[test]

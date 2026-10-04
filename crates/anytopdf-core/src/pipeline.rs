@@ -446,6 +446,7 @@ mod tests {
                 y: 0.2,
                 width: 0.3,
                 height: 0.4,
+                frame: None,
             });
             Ok(outcome)
         }
@@ -479,7 +480,8 @@ mod tests {
                 x: 0.1,
                 y: 0.2,
                 width: 0.3,
-                height: 0.4
+                height: 0.4,
+                frame: None,
             })
         );
     }

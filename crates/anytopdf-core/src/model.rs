@@ -176,6 +176,9 @@ pub enum Anchor {
         y: f32,
         width: f32,
         height: f32,
+        // agentic:shim
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame: Option<u32>,
     },
     ByteRange {
         start: u64,
@@ -227,6 +230,7 @@ impl Unit {
                 y: 0.0,
                 width: 1.0,
                 height: 1.0,
+                frame: None,
             };
         }
         Anchor::ByteRange {
@@ -321,6 +325,7 @@ impl DocumentGraph {
                     y,
                     width,
                     height,
+                    ..
                 }) => anyhow::ensure!(
                     [x, y, width, height].iter().all(|n| n.is_finite()),
                     "non-finite anchor region"
@@ -513,6 +518,27 @@ mod tests {
         assert_eq!(region.height, 0.0);
     }
 
+    const FRAME_ONE: &str =
+        r#"{"kind":"region","x":0.0,"y":0.0,"width":1.0,"height":1.0,"frame":1}"#;
+
+    #[test]
+    fn region_anchor_frame_round_trips() {
+        let anchor: Anchor = serde_json::from_str(FRAME_ONE).unwrap();
+        assert!(matches!(anchor, Anchor::Region { frame: Some(1), .. }));
+        assert_eq!(serde_json::to_string(&anchor).unwrap(), FRAME_ONE);
+    }
+
+    #[test]
+    fn region_anchor_without_frame_serializes_as_before() {
+        let mut source = SourceRecord::new("s.bin".into());
+        source.size = Some(42);
+        let visual = Unit::visual(source.id, "v.png".into());
+        assert_eq!(
+            serde_json::to_string(&visual.default_anchor(&source)).unwrap(),
+            r#"{"kind":"region","x":0.0,"y":0.0,"width":1.0,"height":1.0}"#
+        );
+    }
+
     #[test]
     fn default_anchor_matches_unit_kind() {
         let mut source = SourceRecord::new("s.bin".into());
@@ -529,7 +555,8 @@ mod tests {
                 x: 0.0,
                 y: 0.0,
                 width: 1.0,
-                height: 1.0
+                height: 1.0,
+                frame: None,
             }
         );
         let mut timed = Unit::visual(source.id, "v.png".into());
@@ -592,7 +619,8 @@ mod tests {
                 x: f32::NAN,
                 y: 0.0,
                 width: 1.0,
-                height: 1.0
+                height: 1.0,
+                frame: None,
             })
             .is_err()
         );
@@ -609,7 +637,8 @@ mod tests {
                 x: 0.0,
                 y: 0.0,
                 width: 1.0,
-                height: 1.0
+                height: 1.0,
+                frame: None,
             })
             .is_ok()
         );
