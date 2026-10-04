@@ -144,6 +144,94 @@ anytopdf convert meeting.mp4 \
   -o meeting.pdf
 ```
 
+## Roadmap
+
+anytopdf is meant to produce an evidence file: one PDF that is both the human
+rendition and the machine index (embedded manifest, chunks, provenance and hashes),
+works offline, and is ready for agents to read. `- [x]` is merged on the sprint 2
+branch, `- [ ] (in progress, sprint 2)` is being built now, and `- [ ]` is planned.
+Per-release detail is in [ROADMAP.md](ROADMAP.md).
+
+### Searchable text and diagnostics
+- [x] Content-only hidden text layer (no paths or metadata, no per-page duplication)
+- [x] Typed diagnostics with stable codes and INFO/WARNING severities
+- [x] `--strict` ignores missing optional providers
+- [x] Provider version detection
+- [x] Warning for multi-frame TIFF/GIF input (imports frame 1, warns "imported 1 of N frames")
+- [ ] (in progress, sprint 2) Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
+- [ ] (in progress, sprint 2) `--transcript` is never silently ignored
+
+### CLI and automation
+- [ ] (in progress, sprint 2) Simple form `anytopdf <inputs...> -o out.pdf`, no subcommand, `-o` anywhere
+- [ ] (in progress, sprint 2) Automatic `<stem>.pdf` naming, numbered and never clobbering
+- [ ] (in progress, sprint 2) `--output-dir` writes one PDF per input
+- [ ] (in progress, sprint 2) Distinct exit codes
+- [ ] (in progress, sprint 2) Batch continues past failed inputs by default, `--fail-fast` to stop
+- [ ] (in progress, sprint 2) `--json` for convert, probe, doctor and plugins, with capabilities and published JSON Schemas
+- [ ] (in progress, sprint 2) Help text on every flag
+- [ ] NDJSON progress events
+
+### Evidence file and provenance
+- [x] Content-derived source and unit IDs with SHA-256 and size
+- [ ] (in progress, sprint 2) Source anchors (time span, bounding box, byte range) and a page map
+- [ ] (in progress, sprint 2) Embedded versioned manifest and chunks (or sidecar), plus `anytopdf extract --json`
+- [ ] (in progress, sprint 2) Byte-reproducible output with `SOURCE_DATE_EPOCH` and recorded provider versions
+- [ ] (in progress, sprint 2) Archive and share privacy profiles
+- [ ] (in progress, sprint 2) Provenance page as the last page (`--no-provenance-page` to omit)
+- [ ] Deterministic chunk IDs and semantic page/chunk headings
+- [ ] Provenance graph export
+- [ ] Incremental index mode
+- [ ] PDF/A-3, tagged PDF and bookmarks
+
+### Rendering
+- [x] Spike: layout and writer options
+- [ ] New renderer (parley layout, krilla writer, Rust 1.92 toolchain bump, invisible text via fill opacity)
+- [ ] Rendered Markdown
+- [ ] Arabic, Hebrew and CJK shaping
+
+### Input formats
+- [ ] PDF input (keep the text layer, OCR only textless pages)
+- [ ] HTML and URL snapshot
+- [ ] EML and mbox
+- [ ] Archives (zip, tar)
+- [ ] HEIC
+- [ ] Office documents (structure first, LibreOffice when present)
+- [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
+
+### Media enrichment
+- [ ] Whisper transcription (pluggable whisper.cpp)
+- [ ] Face presence, count and bounds
+- [ ] Object detection and scene classification providers
+- [ ] Barcode and QR extraction
+- [ ] Audio chapters and speaker turns
+- [ ] OCR-text-aware video frame retention
+
+### Intake channels
+- [ ] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
+- [ ] Shared job queue with watched folder and HTTP upload inputs
+- [ ] IMAP watcher (IDLE and polling, Paperless-ngx style rules, OAuth, DKIM/SPF sender allowlist, quarantine)
+- [ ] Email-to-print
+
+### Printing
+- [x] Spike: PAPPL printer feasibility
+- [ ] Network printer via IPP Everywhere, AirPrint and Mopria, built on PAPPL as an optional helper process
+- [ ] IPP over TLS with a password, localhost by default, print receipts on the provenance page
+- [ ] Remote printing over Tailscale or WireGuard with DNS-based discovery
+- [ ] Microsoft Universal Print investigation
+
+### Security and plugins
+- [ ] Untrusted-input handling shipped with the intake channels: sandboxed conversion without network, size and page caps, zip-bomb rejection, per-sender budgets
+- [ ] OS sandbox, descendant process containment and hard CPU, memory and disk quotas for runtime plugins
+
+### Builds and distribution
+- [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
+- [x] Spike: slim and full build shapes
+- [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
+- [ ] Homebrew, winget, scoop, cargo binstall, `curl | sh`, and npx/uvx wrappers
+- [ ] Signing and notarization
+- [ ] MCP server mode
+- [ ] Agent skill and `llms.txt`
+
 ## Dependencies
 
 Building from source:
