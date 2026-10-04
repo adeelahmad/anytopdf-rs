@@ -258,12 +258,7 @@ fn convert_inner(
         }
     }
 
-    if !matches!(args.ocr, OcrMode::Auto | OcrMode::Off)
-        && let Some(d) = run.warnings.iter().find(|d| {
-            d.code == DiagnosticCode::EnrichmentFailed
-                && d.message.contains("no OCR provider succeeded")
-        })
-    {
+    if let Some(d) = exhausted_provider(&run.warnings, args.ocr) {
         return Err(fail(ExitClass::Provider, &d.message));
     }
     if run.graph.units.is_empty() {
@@ -487,4 +482,51 @@ pub(crate) fn print_redacted(d: &Diagnostic, redactor: &Redactor) {
         d.code.as_str(),
         redactor.apply(&d.message)
     );
+}
+
+fn exhausted_provider(warnings: &[Diagnostic], ocr: OcrMode) -> Option<&Diagnostic> {
+    if matches!(ocr, OcrMode::Auto | OcrMode::Off) {
+        return None;
+    }
+    warnings.iter().find(|d| d.provider_exhausted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn diag(code: DiagnosticCode, message: &str, marked: bool) -> Diagnostic {
+        let mut d = Diagnostic::new(code, message);
+        d.provider_exhausted = marked;
+        d
+    }
+
+    #[test]
+    fn provider_class_comes_from_the_marker_not_the_message() {
+        let text = "ocr unit enrichment failed: every OCR provider failed: x";
+        let a = diag(DiagnosticCode::EnrichmentFailed, text, false);
+        let b = diag(
+            DiagnosticCode::ProviderFailed,
+            "exiftool failed for a.jpg: 1",
+            false,
+        );
+        let c = diag(DiagnosticCode::EnrichmentFailed, text, true);
+        let d = c.clone();
+        assert_eq!(
+            exhausted_provider(&[a.clone(), b.clone()], OcrMode::Tesseract),
+            None
+        );
+        assert_eq!(
+            exhausted_provider(&[a, b, c.clone()], OcrMode::Tesseract),
+            Some(&c)
+        );
+        assert_eq!(
+            exhausted_provider(std::slice::from_ref(&d), OcrMode::Auto),
+            None
+        );
+        assert_eq!(
+            exhausted_provider(std::slice::from_ref(&d), OcrMode::Off),
+            None
+        );
+    }
 }

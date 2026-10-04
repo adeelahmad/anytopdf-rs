@@ -1,4 +1,7 @@
-use crate::{Diagnostic, DiagnosticCode, DocumentGraph, JobContext, Registry, SourceRecord};
+use crate::{
+    Diagnostic, DiagnosticCode, DocumentGraph, JobContext, ProvidersExhausted, Registry,
+    SourceRecord,
+};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -191,13 +194,15 @@ impl Pipeline {
                         Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                         Err(e) => {
                             *unit = original;
-                            warnings.push(Diagnostic::new(
+                            let mut d = Diagnostic::new(
                                 DiagnosticCode::EnrichmentFailed,
                                 format!(
                                     "{} unit enrichment failed: {e:#}",
                                     enricher.descriptor().name
                                 ),
-                            ));
+                            );
+                            d.provider_exhausted = e.chain().any(|c| c.is::<ProvidersExhausted>());
+                            warnings.push(d);
                         }
                     }
                 }
@@ -484,5 +489,72 @@ mod tests {
                 frame: None,
             })
         );
+    }
+
+    struct ExhaustedEnricher {
+        typed: bool,
+    }
+    impl Plugin for ExhaustedEnricher {
+        fn descriptor(&self) -> PluginDescriptor {
+            PluginDescriptor {
+                name: "ocr-test".into(),
+                ..TextImport.descriptor()
+            }
+        }
+    }
+    impl UnitEnricher for ExhaustedEnricher {
+        fn supports(&self, _: &DocumentGraph, _: &Unit) -> bool {
+            true
+        }
+        fn enrich_unit(
+            &self,
+            _: &JobContext,
+            _: &DocumentGraph,
+            _: &mut Unit,
+        ) -> Result<Vec<String>> {
+            let message = "no OCR provider succeeded: x";
+            if self.typed {
+                Err(ProvidersExhausted {
+                    message: message.into(),
+                }
+                .into())
+            } else {
+                Err(anyhow::anyhow!(message))
+            }
+        }
+    }
+
+    fn enrichment_failures(typed: bool) -> Vec<Diagnostic> {
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), "text").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        registry.register_unit_enricher(Arc::new(ExhaustedEnricher { typed }));
+        let run = Pipeline::new(registry)
+            .ingest(&[input.path().into()], true)
+            .unwrap();
+        run.warnings
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::EnrichmentFailed)
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn typed_provider_exhaustion_is_marked_on_the_enrichment_diagnostic() {
+        let failures = enrichment_failures(true);
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].provider_exhausted);
+        assert_eq!(
+            failures[0].message,
+            "ocr-test unit enrichment failed: no OCR provider succeeded: x"
+        );
+    }
+
+    #[test]
+    fn plain_error_with_the_same_text_is_not_marked() {
+        let failures = enrichment_failures(false);
+        assert_eq!(failures.len(), 1);
+        assert!(!failures[0].provider_exhausted);
     }
 }

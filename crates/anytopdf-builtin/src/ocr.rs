@@ -125,7 +125,10 @@ impl UnitEnricher for OcrEnricher {
             }
         }
 
-        bail!("no OCR provider succeeded: {}", errors.join("; "))
+        Err(ProvidersExhausted {
+            message: format!("no OCR provider succeeded: {}", errors.join("; ")),
+        }
+        .into())
     }
 }
 
@@ -445,5 +448,23 @@ mod tests {
     fn tesseract_rejects_malformed_output() {
         assert!(parse_tesseract_tsv("bad headers", 100, 100).is_err());
         assert!(parse_tesseract_tsv("", 100, 100).is_err());
+    }
+
+    #[test]
+    fn explicit_provider_failure_returns_the_typed_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut unit = Unit::visual(uuid::Uuid::new_v4(), dir.path().join("missing.png"));
+        let graph = DocumentGraph::default();
+        let ctx = JobContext {
+            workspace: dir.path().to_path_buf(),
+            quiet: true,
+        };
+        let enricher = OcrEnricher::new(OcrMode::Tesseract, "eng".into());
+        let err = enricher.enrich_unit(&ctx, &graph, &mut unit).unwrap_err();
+        assert!(err.chain().any(|c| c.is::<ProvidersExhausted>()), "{err:#}");
+        assert!(
+            err.to_string().starts_with("no OCR provider succeeded: "),
+            "{err}"
+        );
     }
 }
