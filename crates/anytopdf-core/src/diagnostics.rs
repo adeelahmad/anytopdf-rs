@@ -102,6 +102,15 @@ pub struct Diagnostic {
     pub severity: Severity,
     pub message: String,
     pub input: Option<PathBuf>,
+    // agentic:shim
+    pub provider_exhausted: bool,
+}
+
+// agentic:shim
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+pub struct ProvidersExhausted {
+    pub message: String,
 }
 
 impl Diagnostic {
@@ -111,6 +120,7 @@ impl Diagnostic {
             severity: code.severity(),
             message: message.into(),
             input: None,
+            provider_exhausted: false,
         }
     }
 

@@ -488,3 +488,48 @@ pub(crate) fn print_redacted(d: &Diagnostic, redactor: &Redactor) {
         redactor.apply(&d.message)
     );
 }
+
+// agentic:shim
+fn exhausted_provider(_warnings: &[Diagnostic], _ocr: OcrMode) -> Option<&Diagnostic> {
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn diag(code: DiagnosticCode, message: &str, marked: bool) -> Diagnostic {
+        let mut d = Diagnostic::new(code, message);
+        d.provider_exhausted = marked;
+        d
+    }
+
+    #[test]
+    fn provider_class_comes_from_the_marker_not_the_message() {
+        let text = "ocr unit enrichment failed: no OCR provider succeeded: x";
+        let a = diag(DiagnosticCode::EnrichmentFailed, text, false);
+        let b = diag(
+            DiagnosticCode::ProviderFailed,
+            "exiftool failed for a.jpg: 1",
+            false,
+        );
+        let c = diag(DiagnosticCode::EnrichmentFailed, text, true);
+        let d = c.clone();
+        assert_eq!(
+            exhausted_provider(&[a.clone(), b.clone()], OcrMode::Tesseract),
+            None
+        );
+        assert_eq!(
+            exhausted_provider(&[a, b, c.clone()], OcrMode::Tesseract),
+            Some(&c)
+        );
+        assert_eq!(
+            exhausted_provider(std::slice::from_ref(&d), OcrMode::Auto),
+            None
+        );
+        assert_eq!(
+            exhausted_provider(std::slice::from_ref(&d), OcrMode::Off),
+            None
+        );
+    }
+}
