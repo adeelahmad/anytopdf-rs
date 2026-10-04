@@ -1,3 +1,4 @@
+mod argv;
 mod exit;
 use anyhow::{Context, Result, bail};
 use anytopdf_builtin::{
@@ -112,7 +113,7 @@ struct ConvertArgs {
 }
 
 fn main() -> ExitCode {
-    let cli = match Cli::try_parse() {
+    let cli = match Cli::try_parse_from(argv::normalize_args(std::env::args_os().collect())) {
         Ok(cli) => cli,
         Err(e) => {
             let class = if e.use_stderr() {
