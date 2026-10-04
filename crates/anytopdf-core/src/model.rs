@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
-use uuid::Uuid;
+pub use uuid::Uuid;
 
 pub type Metadata = BTreeMap<String, String>;
 
@@ -409,6 +409,14 @@ pub struct ImportOutcome {
 pub struct RenderReport {
     pub pages: usize,
     pub warnings: Vec<String>,
+    #[serde(default)]
+    pub unit_pages: BTreeMap<Uuid, PageRange>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageRange {
+    pub first: usize,
+    pub last: usize,
 }
 
 #[cfg(test)]
@@ -605,5 +613,13 @@ mod tests {
             })
             .is_ok()
         );
+    }
+
+    #[test]
+    fn render_report_without_unit_pages_still_deserializes() {
+        let report = serde_json::from_str::<RenderReport>(r#"{"pages":1,"warnings":[]}"#)
+            .expect("a v1 renderer report without unit_pages must parse");
+        assert!(report.unit_pages.is_empty());
+        assert_eq!(report.pages, 1);
     }
 }
