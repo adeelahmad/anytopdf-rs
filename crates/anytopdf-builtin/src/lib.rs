@@ -3,6 +3,7 @@ mod discovery;
 mod importers;
 mod metadata;
 mod ocr;
+mod providers;
 mod scene;
 
 use anytopdf_core::Registry;
@@ -10,6 +11,7 @@ use std::sync::Arc;
 
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
+pub use providers::{ProviderVersion, detect_providers};
 
 #[derive(Debug, Clone)]
 pub struct BuiltinOptions {
