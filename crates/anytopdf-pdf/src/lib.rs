@@ -4,7 +4,15 @@ use printpdf::*;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 mod attachments;
+mod fonts;
+mod layout;
+mod provenance;
 pub use attachments::{EmbeddedFile, embed_files, read_embedded_files};
+use fonts::{find_system_font, subset_document_font};
+use layout::{
+    annotation_line, hidden_text_ops, is_searchable_content, search_layer, time_line, wrap_text,
+};
+use provenance::provenance_pages;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -338,306 +346,10 @@ impl SearchablePdfRenderer {
     }
 }
 
-fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: String) -> Vec<Op> {
-    vec![
-        Op::SaveGraphicsState,
-        Op::StartTextSection,
-        Op::SetTextRenderingMode {
-            mode: TextRenderingMode::Invisible,
-        },
-        Op::SetTextCursor { pos },
-        Op::SetFont { font, size },
-        Op::ShowText {
-            items: vec![TextItem::Text(text)],
-        },
-        Op::EndTextSection,
-        Op::RestoreGraphicsState,
-    ]
-}
-
-fn subset_document_font(bytes: &[u8], graph: &DocumentGraph) -> Result<Vec<u8>> {
-    use allsorts::{binary::read::ReadScope, font_data::FontData, subset};
-    use std::collections::BTreeSet;
-
-    // ASCII also covers generated labels, annotation kinds, timestamps and numbers.
-    let mut characters: BTreeSet<char> = (' '..='~').collect();
-    characters.insert('–');
-    for (key, value) in &graph.metadata {
-        characters.extend(key.chars());
-        characters.extend(value.chars());
-    }
-    for source in &graph.sources {
-        characters.extend(source.path.to_string_lossy().chars());
-        for (key, value) in &source.metadata {
-            characters.extend(key.chars());
-            characters.extend(value.chars());
-        }
-    }
-    for unit in &graph.units {
-        if let Some(text) = &unit.visible_text {
-            characters.extend(text.chars());
-        }
-        for annotation in &unit.annotations {
-            characters.extend(annotation.text.chars());
-            characters.extend(annotation.provider.chars());
-        }
-    }
-    let face = ttf_parser::Face::parse(bytes, 0)?;
-    let mut glyphs = BTreeSet::from([0]);
-    glyphs.extend(
-        characters
-            .into_iter()
-            .filter_map(|ch| face.glyph_index(ch).map(|id| id.0)),
-    );
-    let font = ReadScope::new(bytes)
-        .read::<FontData<'_>>()
-        .map_err(|e| anyhow::anyhow!("read font for subsetting: {e:?}"))?;
-    let provider = font
-        .table_provider(0)
-        .map_err(|e| anyhow::anyhow!("read font tables: {e:?}"))?;
-    subset::subset(
-        &provider,
-        &glyphs.into_iter().collect::<Vec<_>>(),
-        &subset::SubsetProfile::Pdf,
-        subset::CmapTarget::Unicode,
-    )
-    .map_err(|e| anyhow::anyhow!("subset document font: {e:?}"))
-}
-
-fn is_searchable_content(kind: &AnnotationKind) -> bool {
-    use AnnotationKind::*;
-    matches!(*kind, Ocr | Caption | Transcript | Object | Barcode)
-}
-
-fn annotation_line(a: &Annotation) -> String {
-    format!("[{:?}][{}] {}", a.kind, a.provider, a.text)
-}
-
-fn time_line(t: TimeRange) -> String {
-    format!("[TIME] {:.3}-{:.3}s", t.start_seconds, t.end_seconds)
-}
-
-// Wrap first, then space every row strictly downward inside the page so rows
-// never overlap, wrap around, or get truncated. Spacing and font shrink when crowded.
-// Rows are confined below y = height_mm points (the unit the layout is tested in).
-fn search_layer(lines: &[String], width_mm: f32, height_mm: f32, font: &PdfFontHandle) -> Vec<Op> {
-    const MIN_ROW_COLUMNS: f32 = 64.0;
-    const MAX_STEP_PT: f32 = 1.13;
-    let row_width = ((width_mm - 3.0).max(0.5) / 25.4 * 72.0).max(MIN_ROW_COLUMNS);
-    let rows: Vec<String> = lines
-        .iter()
-        .flat_map(|line| wrap_text(line, row_width, &|_| 1.0))
-        .collect();
-    if rows.is_empty() {
-        return Vec::new();
-    }
-    let top = (height_mm - 1.0)
-        .min(height_mm / 25.4 * 72.0 - 1.0)
-        .max(1.0);
-    let step = (top * 0.9 / rows.len() as f32).min(MAX_STEP_PT);
-    let font_size = step.min(1.0);
-    let mut ops = Vec::new();
-    for (i, row) in rows.into_iter().enumerate() {
-        let y_pt = top - step * i as f32;
-        ops.extend(hidden_text_ops(
-            Point::new(Mm(1.0), Mm(y_pt * 25.4 / 72.0)),
-            font.clone(),
-            Pt(font_size),
-            row,
-        ));
-    }
-    ops
-}
-
-fn wrap_text(text: &str, width: f32, measure: &impl Fn(char) -> f32) -> Vec<String> {
-    let mut lines = Vec::new();
-    for paragraph in text.lines() {
-        let expanded = paragraph.replace('\t', "    ");
-        let mut line = String::new();
-        let mut used = 0.0;
-        for ch in expanded.chars().filter(|c| !c.is_control()) {
-            let advance = measure(ch).max(0.0);
-            if !line.is_empty() && used + advance > width {
-                // Prefer a word boundary, but split long unbroken tokens as well.
-                if let Some(boundary) = line.rfind(' ').filter(|i| *i > 0) {
-                    let remaining = line[boundary + 1..].to_string();
-                    lines.push(line[..boundary].to_string());
-                    line = remaining;
-                    used = line.chars().map(measure).sum();
-                } else {
-                    lines.push(std::mem::take(&mut line));
-                    used = 0.0;
-                }
-            }
-            line.push(ch);
-            used += advance;
-        }
-        lines.push(line);
-    }
-    if lines.is_empty() {
-        lines.push(String::new());
-    }
-    lines
-}
-
-fn find_system_font() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("ANYTOPDF_FONT") {
-        return Some(path.into());
-    }
-    [
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-        r"C:\Windows\Fonts\segoeui.ttf",
-        r"C:\Windows\Fonts\arial.ttf",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .find(|p| p.exists())
-}
-
-fn provenance_lines(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>) -> Vec<String> {
-    let mut lines = vec!["Provenance".to_string(), String::new()];
-    if let Some(profile) = graph.metadata.get("anytopdf.profile") {
-        lines.push(format!("Profile: {profile}"));
-    }
-    if let Some(t) = graph
-        .metadata
-        .get("anytopdf.created")
-        .and_then(|v| v.parse::<i64>().ok())
-        .and_then(|t| OffsetDateTime::from_unix_timestamp(t).ok())
-    {
-        lines.push(format!(
-            "Created: {:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-            t.year(),
-            t.month() as u8,
-            t.day(),
-            t.hour(),
-            t.minute(),
-            t.second()
-        ));
-    }
-    let mut providers: BTreeMap<String, String> = BTreeMap::new();
-    for (key, version) in &graph.metadata {
-        if let Some(name) = provider_name(key) {
-            providers.insert(name.to_string(), format!("{name} {version}"));
-        }
-    }
-    for annotation in graph.units.iter().flat_map(|u| &u.annotations) {
-        providers
-            .entry(annotation.provider.clone())
-            .or_insert_with(|| annotation.provider.clone());
-    }
-    lines.push("Providers:".into());
-    lines.extend(providers.into_values().map(|p| format!("  {p}")));
-    for source in &graph.sources {
-        lines.push(String::new());
-        let name = basename(&source.path);
-        lines.push(format!("Source: {name}"));
-        if let Some(hash) = &source.sha256 {
-            lines.push(format!("SHA-256: {hash}"));
-        }
-        if let Some(size) = source.size {
-            lines.push(format!("Size: {size} bytes"));
-        }
-        if let Some(ty) = &source.detected_type {
-            lines.push(format!("Type: {ty}"));
-        }
-        let (mut first, mut last) = (usize::MAX, 0);
-        for range in graph
-            .units
-            .iter()
-            .filter(|u| u.source_id == source.id)
-            .filter_map(|u| unit_pages.get(&u.id))
-        {
-            first = first.min(range.first);
-            last = last.max(range.last);
-        }
-        if last > 0 {
-            lines.push(format!("Pages: {first}–{last}"));
-        }
-    }
-    lines
-}
-
-fn provenance_pages(
-    graph: &DocumentGraph,
-    unit_pages: &BTreeMap<Uuid, PageRange>,
-    font: &PdfFontHandle,
-    measure: &impl Fn(char) -> f32,
-) -> Vec<PdfPage> {
-    let page_w = 210.0f32;
-    let page_h = 297.0f32;
-    let margin = 15.0f32;
-    let font_pt = 10.0f32;
-    let rows = (((page_h - margin * 2.0) / 4.5) as usize).max(1);
-    let wrapped = wrap_text(
-        &provenance_lines(graph, unit_pages).join("\n"),
-        (page_w - margin * 2.0) / 25.4 * 72.0 / font_pt,
-        measure,
-    );
-    wrapped
-        .chunks(rows)
-        .map(|chunk| {
-            let mut ops = vec![
-                Op::StartTextSection,
-                Op::SetTextRenderingMode {
-                    mode: TextRenderingMode::Fill,
-                },
-                Op::SetFont {
-                    font: font.clone(),
-                    size: Pt(font_pt),
-                },
-                Op::SetLineHeight { lh: Pt(13.0) },
-                Op::SetTextCursor {
-                    pos: Point::new(Mm(margin), Mm(page_h - margin)),
-                },
-            ];
-            for line in chunk {
-                ops.push(Op::ShowText {
-                    items: vec![TextItem::Text(line.clone())],
-                });
-                ops.push(Op::AddLineBreak);
-            }
-            ops.push(Op::EndTextSection);
-            PdfPage::new(Mm(page_w), Mm(page_h), ops)
-        })
-        .collect()
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
-
-    #[test]
-    fn wraps_long_tokens_without_losing_characters() {
-        let text = "W".repeat(300);
-        let lines = wrap_text(&text, 50.0, &|_| 1.0);
-        assert_eq!(lines.len(), 6);
-        assert_eq!(lines.concat(), text);
-    }
-
-    #[test]
-    fn wraps_by_glyph_width_and_preserves_indentation() {
-        let lines = wrap_text("    abc\n界界界界界", 4.0, &|c| {
-            if c == '界' { 2.0 } else { 0.5 }
-        });
-        assert_eq!(lines[0], "    abc");
-        assert_eq!(lines[1..], ["界界", "界界", "界"]);
-    }
-
-    #[test]
-    fn hidden_text_restores_graphics_state() {
-        let ops = hidden_text_ops(
-            Point::new(Mm(1.0), Mm(1.0)),
-            PdfFontHandle::Builtin(BuiltinFont::Helvetica),
-            Pt(1.0),
-            "searchable".into(),
-        );
-        assert!(matches!(ops.first(), Some(Op::SaveGraphicsState)));
-        assert!(matches!(ops.last(), Some(Op::RestoreGraphicsState)));
-    }
+    use crate::provenance::tests::prov_source;
 
     #[test]
     fn refuses_empty_graph_without_touching_destination() {
@@ -686,31 +398,7 @@ mod tests {
         assert!(report.warnings[0].starts_with("No Unicode font found"));
     }
 
-    #[test]
-    fn font_subset_retains_visible_and_metadata_characters() {
-        let bytes = BuiltinFont::Helvetica.get_subset_font().bytes;
-        let mut source = SourceRecord::new(PathBuf::from("résumé.txt"));
-        source.metadata.insert("label".into(), "café".into());
-        let graph = DocumentGraph {
-            units: vec![Unit::text(source.id, "Résumé éàç".into())],
-            sources: vec![source],
-            ..Default::default()
-        };
-        let subset = subset_document_font(&bytes, &graph).unwrap();
-        let original_face = ttf_parser::Face::parse(&bytes, 0).unwrap();
-        let subset_face = ttf_parser::Face::parse(&subset, 0).unwrap();
-        // The library's compact built-in fixture maps spaces to glyph zero.
-        for ch in "Résuméeàçcafé.txtlabelSOURCE".chars() {
-            assert!(
-                original_face.glyph_index(ch).is_some(),
-                "fixture lacks {ch}"
-            );
-            assert!(subset_face.glyph_index(ch).is_some(), "subset lost {ch}");
-        }
-        assert!(subset_face.number_of_glyphs() < original_face.number_of_glyphs());
-    }
-
-    fn invisible_items(pages: &[PdfPage]) -> Vec<Vec<String>> {
+    pub(crate) fn invisible_items(pages: &[PdfPage]) -> Vec<Vec<String>> {
         pages
             .iter()
             .map(|page| {
@@ -736,7 +424,7 @@ mod tests {
             .collect()
     }
 
-    fn helvetica() -> PdfFontHandle {
+    pub(crate) fn helvetica() -> PdfFontHandle {
         PdfFontHandle::Builtin(BuiltinFont::Helvetica)
     }
 
@@ -874,26 +562,6 @@ mod tests {
         assert_eq!(per_page[0], 1, "marker must be on page 0: {per_page:?}");
     }
 
-    #[test]
-    fn search_layer_rows_never_overlap_or_wrap() {
-        let lines: Vec<String> = (0..2000).map(|i| format!("row-{i:04}")).collect();
-        let ops = search_layer(&lines, 210.0, 297.0, &helvetica());
-        let ys: Vec<f32> = ops
-            .iter()
-            .filter_map(|op| match op {
-                Op::SetTextCursor { pos } => Some(pos.y.0),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(ys.len(), 2000, "one cursor per row");
-        for pair in ys.windows(2) {
-            assert!(pair[1] < pair[0], "y not strictly decreasing: {pair:?}");
-        }
-        assert!(ys.iter().all(|y| *y > 0.0 && *y < 297.0), "y out of page");
-        let shown = invisible_items(&[PdfPage::new(Mm(210.0), Mm(297.0), ops)]);
-        assert_eq!(shown[0], lines);
-    }
-
     fn determinism_graph(dir: &Path, text: &str, created: Option<&str>) -> DocumentGraph {
         let visual = dir.join("image.png");
         ::image::RgbImage::new(4, 3).save(&visual).unwrap();
@@ -979,99 +647,6 @@ mod tests {
         let id = doc.trailer.get(b"ID").unwrap().as_array().unwrap();
         let lens: Vec<usize> = id.iter().map(|o| o.as_str().unwrap().len()).collect();
         assert_eq!(lens, [16, 16], "/ID must be a pair of 16-byte digests");
-    }
-
-    fn prov_source(name: &str, hash: char, size: u64, ty: &str) -> SourceRecord {
-        let mut s = SourceRecord::new(PathBuf::from(format!("/home/user/private/{name}")));
-        s.sha256 = Some(hash.to_string().repeat(64));
-        s.size = Some(size);
-        s.detected_type = Some(ty.into());
-        s
-    }
-
-    fn prov_graph() -> (DocumentGraph, BTreeMap<Uuid, PageRange>) {
-        let a = prov_source("notes.txt", 'a', 17, "text/plain");
-        let b = prov_source("scan.png", 'b', 99, "image/png");
-        let ua = Unit::text(a.id, "hello".into());
-        let mut ub = Unit::text(b.id, "scan".into());
-        ub.annotations.push(Annotation::text(
-            AnnotationKind::Ocr,
-            "tesseract",
-            "scan words",
-        ));
-        let mut graph = DocumentGraph {
-            units: vec![ua.clone(), ub.clone()],
-            sources: vec![a, b],
-            ..Default::default()
-        };
-        for (k, v) in [
-            ("anytopdf.profile", "share"),
-            ("provider.tesseract.version", "5.5.0"),
-            ("anytopdf.created", "1700000000"),
-        ] {
-            graph.metadata.insert(k.into(), v.into());
-        }
-        let map = BTreeMap::from([
-            (ua.id, PageRange { first: 1, last: 1 }),
-            (ub.id, PageRange { first: 2, last: 3 }),
-        ]);
-        (graph, map)
-    }
-
-    #[test]
-    fn provenance_lists_every_source_with_hash_size_type_providers_profile_and_pages() {
-        let (graph, map) = prov_graph();
-        let lines = provenance_lines(&graph, &map);
-        let has = |needle: &str| lines.iter().any(|l| l.contains(needle));
-        assert!(has("Profile: share"), "{lines:?}");
-        assert!(has("Created: 2023-11-14T22:13:20Z"), "{lines:?}");
-        for (name, hash, size, pages) in
-            [("notes.txt", 'a', 17, "1–1"), ("scan.png", 'b', 99, "2–3")]
-        {
-            assert!(has(&format!("Source: {name}")), "{name}: {lines:?}");
-            assert!(
-                has(&format!("SHA-256: {}", hash.to_string().repeat(64))),
-                "{lines:?}"
-            );
-            assert!(has(&format!("Size: {size} bytes")), "{lines:?}");
-            assert!(has(&format!("Pages: {pages}")), "{lines:?}");
-        }
-        assert!(has("Providers:"), "{lines:?}");
-        assert!(has("tesseract 5.5.0"), "{lines:?}");
-        // "Type: text/plain" legitimately carries a slash; every other line must not.
-        assert!(
-            lines
-                .iter()
-                .filter(|l| !l.starts_with("Type:"))
-                .all(|l| !l.contains('/')),
-            "path separator leaked: {lines:?}"
-        );
-        assert!(!has("/home"), "{lines:?}");
-    }
-
-    #[test]
-    fn provenance_pages_are_visible_text() {
-        let (graph, map) = prov_graph();
-        let pages = provenance_pages(&graph, &map, &helvetica(), &|_| 1.0);
-        assert!(!pages.is_empty(), "no provenance pages produced");
-        let ops: Vec<&Op> = pages.iter().flat_map(|p| p.ops.iter()).collect();
-        assert!(ops.iter().any(|o| matches!(
-            o,
-            Op::SetTextRenderingMode {
-                mode: TextRenderingMode::Fill
-            }
-        )));
-        assert!(!ops.iter().any(|o| matches!(
-            o,
-            Op::SetTextRenderingMode {
-                mode: TextRenderingMode::Invisible
-            }
-        )));
-        assert!(ops.iter().any(|o| matches!(
-            o,
-            Op::ShowText { items } if items.iter().any(
-                |i| matches!(i, TextItem::Text(t) if t.contains("SHA-256:")))
-        )));
     }
 
     fn content_graph(dir: &Path) -> (DocumentGraph, Uuid, Uuid) {
