@@ -9,9 +9,9 @@ use anytopdf_builtin::{
     register_builtins,
 };
 use anytopdf_core::{
-    Channel, ChunkSet, Diagnostic, DiagnosticCode, Manifest, Pipeline, Profile, Registry,
-    RuntimePluginPolicy, Severity, atomic_write, register_runtime_plugins_with_policy,
-    strip_workspace_paths,
+    Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline, PipelineRun,
+    Profile, Registry, RuntimePluginPolicy, Severity, atomic_write,
+    register_runtime_plugins_with_policy, strip_workspace_paths,
 };
 use anytopdf_pdf::{EmbeddedFile, SearchablePdfRenderer, embed_files};
 use clap::{Parser, Subcommand};
@@ -104,6 +104,10 @@ struct ConvertArgs {
 
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// Write one PDF per input into this directory instead of one merged PDF.
+    #[arg(long, conflicts_with = "output")]
+    output_dir: Option<PathBuf>,
 
     #[arg(long)]
     filter: Option<String>,
@@ -330,32 +334,39 @@ fn convert_inner(
             .map(|p| p.canonicalize())
             .collect::<std::io::Result<Vec<_>>>()?,
     );
-    let out_path = match args.output.clone() {
-        Some(path) => path,
-        None => {
-            let base = naming::default_output(&args.inputs, &std::env::current_dir()?);
-            if args.overwrite {
-                base
-            } else {
-                naming::next_free_path(&base, &protected)?
+    let single = if args.output_dir.is_some() {
+        None
+    } else {
+        let out_path = match args.output.clone() {
+            Some(path) => path,
+            None => {
+                let base = naming::default_output(&args.inputs, &std::env::current_dir()?);
+                if args.overwrite {
+                    base
+                } else {
+                    naming::next_free_path(&base, &protected)?
+                }
             }
-        }
+        };
+        let output = tag(
+            ExitClass::Usage,
+            checked_destination(&out_path, &protected, args.overwrite),
+        )?;
+        Some((out_path, output))
     };
-    let output = tag(
-        ExitClass::Usage,
-        checked_destination(&out_path, &protected, args.overwrite),
-    )?;
+    let mut dump_dest = None;
     if let Some(path) = &args.dump_graph {
         let graph = tag(
             ExitClass::Usage,
             checked_destination(path, &protected, args.overwrite),
         )?;
-        if graph == output {
+        if single.as_ref().is_some_and(|(_, output)| graph == *output) {
             return Err(fail(
                 ExitClass::Usage,
                 "PDF and graph outputs must use different paths",
             ));
         }
+        dump_dest = Some(graph);
     }
 
     let opts = BuiltinOptions {
@@ -457,18 +468,112 @@ fn convert_inner(
     for (out, unit) in document.units.iter_mut().zip(&run.graph.units) {
         out.visual_path = unit.visual_path.clone();
     }
-    run.graph = document;
 
-    // Render into staging first, including runtime renderers, before publishing output.
-    let staged = run.context.workspace.join("result.pdf");
-    let report = tag(
-        ExitClass::Render,
-        pipeline.render(&run, &args.renderer, &staged),
-    )?;
+    let source_paths: Vec<PathBuf> = run.graph.sources.iter().map(|s| s.path.clone()).collect();
+    let whole = document;
+    let mut docs: Vec<(Option<PathBuf>, DocumentGraph)> = Vec::new();
+    if args.output_dir.is_some() {
+        for (source, path) in whole.sources.iter().zip(&source_paths) {
+            let units: Vec<_> = whole
+                .units
+                .iter()
+                .filter(|u| u.source_id == source.id)
+                .cloned()
+                .collect();
+            if units.is_empty() {
+                continue;
+            }
+            docs.push((
+                Some(path.clone()),
+                DocumentGraph {
+                    sources: vec![source.clone()],
+                    units,
+                    metadata: whole.metadata.clone(),
+                },
+            ));
+        }
+    } else {
+        docs.push((None, whole));
+    }
+
+    // Render every document into staging before publishing any output.
+    let mut staged_docs = Vec::new();
+    for (i, (source_path, graph)) in docs.into_iter().enumerate() {
+        run.graph = graph;
+        let staged = run.context.workspace.join(format!("result-{i}.pdf"));
+        let doc = stage_document(&pipeline, &run, &args.renderer, args.strict, &staged)?;
+        staged_docs.push((source_path, doc));
+    }
+
+    let mut published = Vec::new();
+    if let Some(dir) = &args.output_dir {
+        let dir = std::path::absolute(dir)?;
+        let mut taken = protected.clone();
+        taken.extend(dump_dest.clone());
+        for (source_path, _) in &staged_docs {
+            let stem = source_path.as_deref().and_then(Path::file_stem);
+            let base = dir.join(format!(
+                "{}.pdf",
+                stem.unwrap_or_default().to_string_lossy()
+            ));
+            let path = if args.overwrite {
+                run_local_name(&base, &taken)
+            } else {
+                naming::next_free_path(&base, &taken)?
+            };
+            taken.push(path.clone());
+            published.push(path);
+        }
+    } else if let Some((out_path, _)) = single {
+        published.push(out_path);
+    }
+
+    for (out_path, (_, doc)) in published.iter().zip(&staged_docs) {
+        publish_output(out_path, &doc.bytes, args.overwrite)?;
+        if let Some((manifest, chunks)) = &doc.sidecars {
+            for (suffix, data) in [("manifest", manifest), ("chunks", chunks)] {
+                let mut name = out_path.as_os_str().to_owned();
+                name.push(format!(".{suffix}.json"));
+                publish_output(Path::new(&name), data, args.overwrite)?;
+            }
+        }
+    }
+    if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
+        publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
+    }
+
+    for (out_path, (_, doc)) in published.iter().zip(&staged_docs) {
+        outcome.outputs.push(serde_json::json!({
+            "path": shown(out_path),
+            "pages": doc.pages,
+        }));
+        outcome.converted.extend(doc.sources.clone());
+        if !args.quiet {
+            eprintln!("Wrote {} ({} pages)", out_path.display(), doc.pages);
+        }
+    }
+    Ok(())
+}
+
+struct StagedDocument {
+    bytes: Vec<u8>,
+    pages: usize,
+    sources: Vec<serde_json::Value>,
+    sidecars: Option<(Vec<u8>, Vec<u8>)>,
+}
+
+fn stage_document(
+    pipeline: &Pipeline,
+    run: &PipelineRun,
+    renderer: &str,
+    strict: bool,
+    staged: &Path,
+) -> Result<StagedDocument, CliError> {
+    let report = tag(ExitClass::Render, pipeline.render(run, renderer, staged))?;
     for warning in &report.warnings {
         print_diagnostic(&Diagnostic::new(DiagnosticCode::RenderWarning, warning));
     }
-    if args.strict && !report.warnings.is_empty() {
+    if strict && !report.warnings.is_empty() {
         return Err(fail(
             ExitClass::Strict,
             "strict conversion stopped on rendering warnings",
@@ -476,7 +581,7 @@ fn convert_inner(
     }
     let bytes = tag(
         ExitClass::Render,
-        std::fs::read(&staged).context("renderer did not produce output"),
+        std::fs::read(staged).context("renderer did not produce output"),
     )?;
     if !bytes.starts_with(b"%PDF-") || report.pages == 0 {
         return Err(fail(
@@ -485,7 +590,7 @@ fn convert_inner(
         ));
     }
     let built = Manifest::build(&run.graph, &report);
-    let summary_sources: Vec<serde_json::Value> = built
+    let sources: Vec<serde_json::Value> = built
         .sources
         .iter()
         .map(|s| {
@@ -520,27 +625,25 @@ fn convert_inner(
             (bytes, Some((manifest, chunks)))
         }
     };
-    publish_output(&out_path, &bytes, args.overwrite)?;
-    if let Some((manifest, chunks)) = sidecars {
-        for (suffix, data) in [("manifest", manifest), ("chunks", chunks)] {
-            let mut name = out_path.as_os_str().to_owned();
-            name.push(format!(".{suffix}.json"));
-            publish_output(Path::new(&name), &data, args.overwrite)?;
-        }
-    }
-    if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
-        publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
-    }
+    Ok(StagedDocument {
+        bytes,
+        pages: report.pages,
+        sources,
+        sidecars,
+    })
+}
 
-    outcome.outputs.push(serde_json::json!({
-        "path": shown(&out_path),
-        "pages": report.pages,
-    }));
-    outcome.converted = summary_sources;
-    if !args.quiet {
-        eprintln!("Wrote {} ({} pages)", out_path.display(), report.pages);
+/// With --overwrite an existing file is replaceable, but names taken by this run or an input are not.
+fn run_local_name(base: &Path, taken: &[PathBuf]) -> PathBuf {
+    let is_taken = |p: &Path| std::path::absolute(p).is_ok_and(|a| taken.contains(&a));
+    if !is_taken(base) {
+        return base.to_path_buf();
     }
-    Ok(())
+    let stem = base.file_stem().unwrap_or_default().to_string_lossy();
+    (1..)
+        .map(|n| base.with_file_name(format!("{stem}-{n}.pdf")))
+        .find(|p| !is_taken(p))
+        .expect("unbounded range")
 }
 
 fn print_diagnostic(d: &Diagnostic) {
