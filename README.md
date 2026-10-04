@@ -337,7 +337,9 @@ anytopdf --plugin-timeout 30 --allow-plugin-kind importer plugins
 anytopdf --deny-plugin-kind renderer convert document.example -o result.pdf
 ```
 
-Existing outputs require `--overwrite`; input files and explicit transcripts are
+Without `-o`, output is `<input-stem>.pdf` for one input (else `anytopdf.pdf`) in the
+current directory, numbered (`notes-1.pdf`) if that name exists; `--overwrite` reuses the
+unnumbered name. An explicit existing `-o` requires `--overwrite`; input files and explicit transcripts are
 protected even with that flag. Put outputs outside input directories so subsequent
 directory scans do not ingest them. Writes are staged and atomically published.
 PDF and JSON outputs are separate file transactions. `--strict` refuses to publish

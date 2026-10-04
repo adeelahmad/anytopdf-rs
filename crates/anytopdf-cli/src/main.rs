@@ -1,6 +1,7 @@
 mod argv;
 mod exit;
 mod extract;
+mod naming;
 use anyhow::{Context, Result, bail};
 use anytopdf_builtin::{
     BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, detect_providers, discover_inputs,
@@ -94,8 +95,8 @@ struct ConvertArgs {
     #[arg(long, default_value = "pdf")]
     renderer: String,
 
-    #[arg(short, long, default_value = "anytopdf.pdf")]
-    output: PathBuf,
+    #[arg(short, long)]
+    output: Option<PathBuf>,
 
     #[arg(long)]
     filter: Option<String>,
@@ -270,9 +271,20 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
             .map(|p| p.canonicalize())
             .collect::<std::io::Result<Vec<_>>>()?,
     );
+    let out_path = match args.output.clone() {
+        Some(path) => path,
+        None => {
+            let base = naming::default_output(&args.inputs, &std::env::current_dir()?);
+            if args.overwrite {
+                base
+            } else {
+                naming::next_free_path(&base, &protected)?
+            }
+        }
+    };
     let output = tag(
         ExitClass::Usage,
-        checked_destination(&args.output, &protected, args.overwrite),
+        checked_destination(&out_path, &protected, args.overwrite),
     )?;
     if let Some(path) = &args.dump_graph {
         let graph = tag(
@@ -409,10 +421,10 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
             (bytes, Some((manifest, chunks)))
         }
     };
-    publish_output(&args.output, &bytes, args.overwrite)?;
+    publish_output(&out_path, &bytes, args.overwrite)?;
     if let Some((manifest, chunks)) = sidecars {
         for (suffix, data) in [("manifest", manifest), ("chunks", chunks)] {
-            let mut name = args.output.as_os_str().to_owned();
+            let mut name = out_path.as_os_str().to_owned();
             name.push(format!(".{suffix}.json"));
             publish_output(Path::new(&name), &data, args.overwrite)?;
         }
@@ -422,7 +434,7 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
     }
 
     if !args.quiet {
-        eprintln!("Wrote {} ({} pages)", args.output.display(), report.pages);
+        eprintln!("Wrote {} ({} pages)", out_path.display(), report.pages);
     }
     Ok(())
 }
