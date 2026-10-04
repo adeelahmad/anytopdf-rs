@@ -1,6 +1,6 @@
 use crate::{
-    Diagnostic, DiagnosticCode, DocumentGraph, JobContext, PipelineObserver, ProvidersExhausted,
-    Registry, SourceRecord,
+    Diagnostic, DiagnosticCode, DocumentGraph, JobContext, PipelineEvent, PipelineObserver,
+    ProvidersExhausted, Registry, SourceRecord, Stage,
 };
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -22,17 +22,20 @@ impl Pipeline {
         Self { registry }
     }
 
+    pub fn ingest(&self, paths: &[PathBuf], quiet: bool) -> Result<PipelineRun> {
+        struct Silent;
+        impl PipelineObserver for Silent {
+            fn on_event(&mut self, _: &PipelineEvent) {}
+        }
+        self.ingest_observed(paths, quiet, &mut Silent)
+    }
+
     pub fn ingest_observed(
         &self,
         paths: &[PathBuf],
         quiet: bool,
-        _observer: &mut dyn PipelineObserver,
+        observer: &mut dyn PipelineObserver,
     ) -> Result<PipelineRun> {
-        let _ = (paths, quiet);
-        panic!("SUB-AGENT-TODO: move ingest body here, emitting PipelineEvents to observer")
-    }
-
-    pub fn ingest(&self, paths: &[PathBuf], quiet: bool) -> Result<PipelineRun> {
         let workspace = tempfile::Builder::new()
             .prefix("anytopdf-")
             .tempdir()
@@ -49,7 +52,19 @@ impl Pipeline {
         let mut graph = DocumentGraph::default();
         let mut warnings: Vec<Diagnostic> = Vec::new();
 
-        for path in paths {
+        observer.on_event(&PipelineEvent::StageStarted(Stage::Import));
+        for (index, path) in paths.iter().enumerate() {
+            observer.on_event(&PipelineEvent::SourceStarted {
+                index,
+                path: path.clone(),
+            });
+            let skip = |observer: &mut dyn PipelineObserver, code| {
+                observer.on_event(&PipelineEvent::SourceSkipped {
+                    index,
+                    path: path.clone(),
+                    code,
+                })
+            };
             let canonical = match path.canonicalize() {
                 Ok(path) if path.is_file() => path,
                 Ok(_) => {
@@ -58,6 +73,7 @@ impl Pipeline {
                         path,
                         format!("input is not a file: {}", path.display()),
                     ));
+                    skip(observer, DiagnosticCode::InputNotFile);
                     continue;
                 }
                 Err(e) => {
@@ -66,6 +82,7 @@ impl Pipeline {
                         path,
                         format!("input {}: {e}", path.display()),
                     ));
+                    skip(observer, DiagnosticCode::InputUnreadable);
                     continue;
                 }
             };
@@ -103,6 +120,7 @@ impl Pipeline {
                         path,
                         e.to_string(),
                     ));
+                    skip(observer, DiagnosticCode::InputUnsupported);
                     continue;
                 }
             };
@@ -120,6 +138,7 @@ impl Pipeline {
                             path,
                             format!("invalid import from {}: {e:#}", path.display()),
                         ));
+                        skip(observer, DiagnosticCode::ImportInvalid);
                         continue;
                     }
                     if graph.sources.iter().any(|s| s.id == outcome.source.id)
@@ -133,23 +152,35 @@ impl Pipeline {
                             path,
                             format!("duplicate import IDs from {}", path.display()),
                         ));
+                        skip(observer, DiagnosticCode::ImportDuplicateId);
                         continue;
                     }
                     warnings.extend(outcome.warnings.iter().map(|s| Diagnostic::from_wire(s)));
+                    observer.on_event(&PipelineEvent::SourceImported {
+                        index,
+                        path: path.clone(),
+                        units: outcome.units.len(),
+                    });
                     graph.sources.push(outcome.source);
                     graph.units.extend(outcome.units);
                 }
-                Err(e) => warnings.push(Diagnostic::for_input(
-                    DiagnosticCode::ImportFailed,
-                    path,
-                    format!(
-                        "{} import failed for {}: {e:#}",
-                        importer.descriptor().name,
-                        path.display()
-                    ),
-                )),
+                Err(e) => {
+                    warnings.push(Diagnostic::for_input(
+                        DiagnosticCode::ImportFailed,
+                        path,
+                        format!(
+                            "{} import failed for {}: {e:#}",
+                            importer.descriptor().name,
+                            path.display()
+                        ),
+                    ));
+                    skip(observer, DiagnosticCode::ImportFailed);
+                }
             }
         }
+
+        observer.on_event(&PipelineEvent::StageFinished(Stage::Import));
+        observer.on_event(&PipelineEvent::StageStarted(Stage::Enrich));
 
         // Graph enrichers handle cross-unit semantics such as associating a
         // complete transcript with sampled video frames while also preserving a
@@ -179,8 +210,19 @@ impl Pipeline {
         // One consistent snapshot per provider avoids cloning the entire graph for every unit.
         for enricher in self.registry.unit_enrichers() {
             let snapshot = graph.clone();
-            for unit in &mut graph.units {
+            for (unit_index, unit) in graph.units.iter_mut().enumerate() {
                 if enricher.supports(&snapshot, unit) {
+                    let source_index = snapshot
+                        .sources
+                        .iter()
+                        .position(|s| s.id == unit.source_id)
+                        .unwrap_or_default();
+                    let name = enricher.descriptor().name;
+                    observer.on_event(&PipelineEvent::UnitStarted {
+                        unit: unit_index,
+                        source: source_index,
+                        enricher: name.clone(),
+                    });
                     let original = unit.clone();
                     match enricher
                         .enrich_unit(&ctx, &snapshot, unit)
@@ -215,10 +257,16 @@ impl Pipeline {
                             warnings.push(d);
                         }
                     }
+                    observer.on_event(&PipelineEvent::UnitFinished {
+                        unit: unit_index,
+                        source: source_index,
+                        enricher: name,
+                    });
                 }
             }
         }
 
+        observer.on_event(&PipelineEvent::StageFinished(Stage::Enrich));
         graph.assign_content_ids()?;
         for unit in &mut graph.units {
             if unit.anchor.is_none()

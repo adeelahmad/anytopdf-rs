@@ -13,7 +13,12 @@ impl Stage {
     pub const ALL: [Stage; 4] = [Stage::Discover, Stage::Import, Stage::Enrich, Stage::Render];
 
     pub fn as_str(self) -> &'static str {
-        panic!("SUB-AGENT-TODO: match self to discover|import|enrich|render")
+        match self {
+            Stage::Discover => "discover",
+            Stage::Import => "import",
+            Stage::Enrich => "enrich",
+            Stage::Render => "render",
+        }
     }
 }
 
