@@ -234,6 +234,19 @@ PDF and JSON outputs are separate file transactions. `--strict` refuses to publi
 when ingestion or rendering produces warnings; normal mode reports warnings and
 keeps usable content. `--quiet` suppresses the success summary, not warnings.
 
+### Exit codes
+
+| Code | Class | Meaning |
+|---|---|---|
+| 0 | success | The PDF was published. |
+| 1 | internal | Unexpected failure. |
+| 2 | usage | Invalid option or value. |
+| 3 | input | Missing, unreadable or unusable input. |
+| 4 | provider | An explicitly requested provider (for example `--ocr tesseract`) is unavailable. |
+| 5 | strict | `--strict` stopped on warnings before publishing. |
+| 6 | render | Rendering failed; nothing was published. |
+| 7 | fail-fast | Reserved for stopping on the first failing input. |
+
 ### Diagnostics and strict mode
 
 Each notice prints to stderr as `INFO [code]: message` or `WARNING [code]: message`.
