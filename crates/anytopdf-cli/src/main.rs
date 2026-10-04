@@ -6,8 +6,8 @@ use anytopdf_builtin::{
     register_builtins,
 };
 use anytopdf_core::{
-    Diagnostic, DiagnosticCode, Pipeline, Registry, RuntimePluginPolicy, Severity, atomic_write,
-    register_runtime_plugins_with_policy,
+    Channel, Diagnostic, DiagnosticCode, Pipeline, Profile, Registry, RuntimePluginPolicy,
+    Severity, atomic_write, register_runtime_plugins_with_policy, strip_workspace_paths,
 };
 use anytopdf_pdf::SearchablePdfRenderer;
 use clap::{Parser, Subcommand};
@@ -122,6 +122,14 @@ struct ConvertArgs {
     #[arg(long)]
     dump_graph: Option<PathBuf>,
 
+    /// Output profile: archive keeps provenance detail, share strips local paths.
+    #[arg(long, default_value = "archive")]
+    profile: Profile,
+
+    /// Omit the provenance page from the PDF.
+    #[arg(long)]
+    no_provenance_page: bool,
+
     #[arg(short, long)]
     quiet: bool,
 }
@@ -199,6 +207,17 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
             ));
         }
     }
+    let created = match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(v) => tag(
+            ExitClass::Usage,
+            v.trim()
+                .parse::<i64>()
+                .map_err(|_| anyhow::anyhow!("SOURCE_DATE_EPOCH must be an integer: {v:?}")),
+        )?,
+        Err(_) => std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64),
+    };
     let filter = tag(
         ExitClass::Usage,
         args.filter
@@ -218,6 +237,15 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
             },
         ),
     )?;
+
+    // Keep command-line order (stable within a directory) so source order is predictable.
+    let roots: Vec<PathBuf> = args
+        .inputs
+        .iter()
+        .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
+        .collect();
+    let mut inputs = inputs;
+    inputs.sort_by_key(|i| roots.iter().position(|r| i.starts_with(r)));
 
     if inputs.is_empty() {
         return Err(fail(ExitClass::Input, "no input files matched"));
@@ -295,6 +323,30 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
         ));
     }
 
+    let metadata = &mut run.graph.metadata;
+    metadata.insert("anytopdf.profile".into(), args.profile.as_str().into());
+    metadata.insert("anytopdf.created".into(), created.to_string());
+    if args.no_provenance_page {
+        metadata.insert("anytopdf.provenance-page".into(), "off".into());
+    }
+    for p in detect_providers() {
+        if let Some(version) = p.version {
+            metadata.insert(format!("provider.{}.version", p.name), version);
+        }
+    }
+    let dump = args.dump_graph.as_ref().map(|_| {
+        args.profile.filter(
+            &strip_workspace_paths(&run.graph, &run.context.workspace),
+            Channel::GraphDump,
+        )
+    });
+    // Rendering still needs workspace images, so keep each unit's visual path.
+    let mut document = args.profile.filter(&run.graph, Channel::Document);
+    for (out, unit) in document.units.iter_mut().zip(&run.graph.units) {
+        out.visual_path = unit.visual_path.clone();
+    }
+    run.graph = document;
+
     // Render into staging first, including runtime renderers, before publishing output.
     let staged = run.context.workspace.join("result.pdf");
     let report = tag(
@@ -321,12 +373,8 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
         ));
     }
     publish_output(&args.output, &bytes, args.overwrite)?;
-    if let Some(path) = &args.dump_graph {
-        publish_output(
-            path,
-            &serde_json::to_vec_pretty(&run.graph)?,
-            args.overwrite,
-        )?;
+    if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
+        publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
     }
 
     if !args.quiet {
