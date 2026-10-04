@@ -5,6 +5,7 @@ mod output;
 mod pipeline;
 mod plugin;
 mod process;
+mod profile;
 mod registry;
 pub mod schema;
 
@@ -15,4 +16,5 @@ pub use output::*;
 pub use pipeline::*;
 pub use plugin::*;
 pub use process::*;
+pub use profile::*;
 pub use registry::*;
