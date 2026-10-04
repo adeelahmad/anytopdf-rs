@@ -7,4 +7,4 @@ JSON Schema contracts for every machine-readable `--json` surface.
 - A required `"schema_version": {"const": "anytopdf.<name>/<N>"}`. Any breaking change bumps `<N>` in both places.
 - Only the validator subset is used (`anytopdf_core::schema::validate`): `type`, `required`, `properties`, `additionalProperties`, `items`, `enum`, `const`, `minimum`, `minItems`, `anyOf`, `oneOf`, and local `$ref`/`$defs`. Annotation keywords are ignored; any other keyword fails closed. There are no remote `$ref`s.
 
-The sprint commits exactly 8 files: convert, probe, doctor, plugins, capabilities, extract, manifest and chunks. Under `--json`, stdout carries exactly one JSON document and every diagnostic goes to stderr.
+The sprint commits exactly 9 files: convert, probe, doctor, plugins, capabilities, extract, manifest, chunks and events. `convert --events` writes `anytopdf.events/1` NDJSON to stderr, one object per line, with a gapless `seq` and no timestamps. Under `--json`, stdout carries exactly one JSON document and every diagnostic goes to stderr.

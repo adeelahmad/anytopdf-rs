@@ -1,0 +1,362 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/events/v1",
+  "title": "anytopdf events (one NDJSON line)",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "profile",
+        "inputs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "run.started"
+        },
+        "profile": {
+          "enum": [
+            "archive",
+            "share"
+          ]
+        },
+        "inputs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "status",
+        "exit_code"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "run.finished"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "failed"
+          ]
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "stage"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "stage.started"
+        },
+        "stage": {
+          "enum": [
+            "discover",
+            "import",
+            "enrich",
+            "render"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "stage"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "stage.finished"
+        },
+        "stage": {
+          "enum": [
+            "discover",
+            "import",
+            "enrich",
+            "render"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "index",
+        "input"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "source.started"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "index",
+        "input",
+        "units"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "source.imported"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input": {
+          "type": "string"
+        },
+        "units": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "index",
+        "input",
+        "code"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "source.skipped"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "unit"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "unit.started"
+        },
+        "unit": {},
+        "source": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "enricher": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "unit"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "unit.finished"
+        },
+        "unit": {},
+        "source": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "enricher": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "code",
+        "severity",
+        "message"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "diagnostic"
+        },
+        "code": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "seq",
+        "event",
+        "path",
+        "kind"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "anytopdf.events/1"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event": {
+          "const": "output.written"
+        },
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "pdf",
+            "manifest",
+            "chunks",
+            "graph"
+          ]
+        },
+        "pages": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  ]
+}
