@@ -12,6 +12,8 @@ image.workspace = true
 printpdf.workspace = true
 ttf-parser.workspace = true
 allsorts.workspace = true
+lopdf = { version = "0.44", default-features = false }
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

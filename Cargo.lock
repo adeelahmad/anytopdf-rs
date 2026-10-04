@@ -185,7 +185,9 @@ dependencies = [
  "anyhow",
  "anytopdf-core",
  "image",
+ "lopdf",
  "printpdf",
+ "sha2",
  "tempfile",
  "ttf-parser",
 ]
