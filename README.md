@@ -326,8 +326,11 @@ binary itself remains a single executable and uses the system Vision framework.
 Running without a subcommand shows help. `probe FILE` reports the selected importer
 without decoding media, extracting frames, or running enrichers.
 
-`probe`, `doctor` and `plugins` accept `--json` and then write exactly one versioned JSON
+`convert`, `probe`, `doctor` and `plugins` accept `--json` and then write exactly one versioned JSON
 document to stdout (diagnostics go to stderr); contracts live in `schemas/`.
+`convert --json` always emits one `anytopdf.convert/1` document, including on failure
+(`status` is `ok`, `partial` when inputs were skipped but exit is 0, or `failed`; `exit_code`
+mirrors the process exit code). With `--profile share`, paths in it are base names.
 
 ```bash
 anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
