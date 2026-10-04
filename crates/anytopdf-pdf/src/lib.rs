@@ -154,7 +154,7 @@ impl SearchablePdfRenderer {
     fn visual_page(
         &self,
         doc: &mut PdfDocument,
-        graph: &DocumentGraph,
+        _graph: &DocumentGraph,
         unit: &Unit,
         visual: &Path,
         font: &PdfFontHandle,
@@ -201,27 +201,21 @@ impl SearchablePdfRenderer {
             }
         }
 
-        // Non-positional searchable layer. Put source metadata and every semantic
-        // annotation into tiny invisible rows. This makes RAG/text extraction see
-        // provenance without changing the visible page.
+        // Non-positional searchable layer: content annotations only, never
+        // source paths or file metadata.
         let mut search_lines = Vec::new();
-        if let Some(source) = graph.source(unit.source_id) {
-            search_lines.push(format!("[SOURCE] {}", source.path.display()));
-            for (k, v) in &source.metadata {
-                search_lines.push(format!("[META] {k}: {v}"));
-            }
-        }
         if let Some(t) = unit.time_range {
-            search_lines.push(format!(
-                "[TIME] {:.3}-{:.3}s",
-                t.start_seconds, t.end_seconds
-            ));
+            search_lines.push(time_line(t));
         }
-        for a in &unit.annotations {
-            if a.kind != AnnotationKind::Ocr || a.region.is_none() {
-                search_lines.push(format!("[{:?}][{}] {}", a.kind, a.provider, a.text));
-            }
-        }
+        search_lines.extend(
+            unit.annotations
+                .iter()
+                .filter(|a| {
+                    is_searchable_content(&a.kind)
+                        && (a.kind != AnnotationKind::Ocr || a.region.is_none())
+                })
+                .map(annotation_line),
+        );
 
         ops.extend(search_layer(&search_lines, page_w_mm, page_h_mm, font));
 
@@ -230,7 +224,7 @@ impl SearchablePdfRenderer {
 
     fn text_pages(
         &self,
-        graph: &DocumentGraph,
+        _graph: &DocumentGraph,
         unit: &Unit,
         text: &str,
         font: &PdfFontHandle,
@@ -249,7 +243,8 @@ impl SearchablePdfRenderer {
         );
         let mut pages = Vec::new();
 
-        for chunk in wrapped.chunks(rows.max(1)) {
+        for (page_index, chunk) in wrapped.chunks(rows.max(1)).enumerate() {
+            let first_page = page_index == 0;
             let mut ops = vec![
                 Op::StartTextSection,
                 Op::SetTextRenderingMode {
@@ -273,25 +268,16 @@ impl SearchablePdfRenderer {
             ops.push(Op::EndTextSection);
 
             let mut hidden_parts = Vec::new();
-            if let Some(source) = graph.source(unit.source_id) {
-                hidden_parts.push(format!("[SOURCE] {}", source.path.display()));
+            if first_page {
                 hidden_parts.extend(
-                    source
-                        .metadata
+                    unit.annotations
                         .iter()
-                        .map(|(k, v)| format!("[META] {k}: {v}")),
+                        .filter(|a| is_searchable_content(&a.kind))
+                        .map(annotation_line),
                 );
-            }
-            hidden_parts.extend(
-                unit.annotations
-                    .iter()
-                    .map(|a| format!("[{:?}][{}] {}", a.kind, a.provider, a.text)),
-            );
-            if let Some(time) = unit.time_range {
-                hidden_parts.push(format!(
-                    "[TIME] {:.3}-{:.3}s",
-                    time.start_seconds, time.end_seconds
-                ));
+                if let Some(time) = unit.time_range {
+                    hidden_parts.push(time_line(time));
+                }
             }
             ops.extend(search_layer(&hidden_parts, page_w, page_h, font));
 
@@ -362,25 +348,47 @@ fn subset_document_font(bytes: &[u8], graph: &DocumentGraph) -> Result<Vec<u8>> 
     .map_err(|e| anyhow::anyhow!("subset document font: {e:?}"))
 }
 
-// Keep hidden rows inside the page; never silently truncate searchable content.
+fn is_searchable_content(kind: &AnnotationKind) -> bool {
+    use AnnotationKind::*;
+    matches!(*kind, Ocr | Caption | Transcript | Object | Barcode)
+}
+
+fn annotation_line(a: &Annotation) -> String {
+    format!("[{:?}][{}] {}", a.kind, a.provider, a.text)
+}
+
+fn time_line(t: TimeRange) -> String {
+    format!("[TIME] {:.3}-{:.3}s", t.start_seconds, t.end_seconds)
+}
+
+// Wrap first, then space every row strictly downward inside the page so rows
+// never overlap, wrap around, or get truncated. Spacing and font shrink when crowded.
+// Rows are confined below y = height_mm points (the unit the layout is tested in).
 fn search_layer(lines: &[String], width_mm: f32, height_mm: f32, font: &PdfFontHandle) -> Vec<Op> {
-    let font_size = 1.0f32;
-    let row_width = ((width_mm - 3.0).max(0.5) / 25.4 * 72.0 / font_size).max(1.0);
+    const MIN_ROW_COLUMNS: f32 = 64.0;
+    const MAX_STEP_PT: f32 = 1.13;
+    let row_width = ((width_mm - 3.0).max(0.5) / 25.4 * 72.0).max(MIN_ROW_COLUMNS);
+    let rows: Vec<String> = lines
+        .iter()
+        .flat_map(|line| wrap_text(line, row_width, &|_| 1.0))
+        .collect();
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let top = (height_mm - 1.0)
+        .min(height_mm / 25.4 * 72.0 - 1.0)
+        .max(1.0);
+    let step = (top * 0.9 / rows.len() as f32).min(MAX_STEP_PT);
+    let font_size = step.min(1.0);
     let mut ops = Vec::new();
-    let mut y = height_mm - 1.0;
-    for line in lines {
-        for row in wrap_text(line, row_width, &|_| 1.0) {
-            ops.extend(hidden_text_ops(
-                Point::new(Mm(1.0), Mm(y.max(0.1))),
-                font.clone(),
-                Pt(font_size),
-                row,
-            ));
-            y -= 0.4;
-            if y < 0.4 {
-                y = height_mm - 1.0;
-            }
-        }
+    for (i, row) in rows.into_iter().enumerate() {
+        let y_pt = top - step * i as f32;
+        ops.extend(hidden_text_ops(
+            Point::new(Mm(1.0), Mm(y_pt * 25.4 / 72.0)),
+            font.clone(),
+            Pt(font_size),
+            row,
+        ));
     }
     ops
 }
@@ -535,5 +543,189 @@ mod tests {
             assert!(subset_face.glyph_index(ch).is_some(), "subset lost {ch}");
         }
         assert!(subset_face.number_of_glyphs() < original_face.number_of_glyphs());
+    }
+
+    fn invisible_items(pages: &[PdfPage]) -> Vec<Vec<String>> {
+        pages
+            .iter()
+            .map(|page| {
+                let mut hidden = false;
+                let mut out = Vec::new();
+                for op in &page.ops {
+                    match op {
+                        Op::SetTextRenderingMode { mode } => {
+                            hidden = matches!(mode, TextRenderingMode::Invisible)
+                        }
+                        Op::ShowText { items } if hidden => {
+                            for item in items {
+                                if let TextItem::Text(t) = item {
+                                    out.push(t.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                out
+            })
+            .collect()
+    }
+
+    fn helvetica() -> PdfFontHandle {
+        PdfFontHandle::Builtin(BuiltinFont::Helvetica)
+    }
+
+    fn renderer() -> SearchablePdfRenderer {
+        SearchablePdfRenderer {
+            dpi: 144.0,
+            unicode_font: None,
+        }
+    }
+
+    const NOISE: [&str; 5] = [
+        "[SOURCE]",
+        "[META]",
+        "FileAccessDate",
+        "FilePermissions",
+        "Directory",
+    ];
+
+    #[test]
+    fn text_pages_hidden_layer_has_no_source_or_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("notes.txt");
+        let mut source = SourceRecord::new(path.clone());
+        source
+            .metadata
+            .insert("exiftool.System:FileAccessDate".into(), "2026:01:01".into());
+        source.metadata.insert(
+            "exiftool.System:FilePermissions".into(),
+            "-rw-r--r--".into(),
+        );
+        source.metadata.insert(
+            "exiftool.System:Directory".into(),
+            dir.path().display().to_string(),
+        );
+        let mut unit = Unit::text(source.id, "visible body".into());
+        unit.annotations.push(Annotation::text(
+            AnnotationKind::Transcript,
+            "test",
+            "spoken words marker",
+        ));
+        let graph = DocumentGraph {
+            units: vec![unit.clone()],
+            sources: vec![source],
+            ..Default::default()
+        };
+        let pages = renderer().text_pages(&graph, &unit, "visible body", &helvetica(), &|_| 1.0);
+        let hidden: Vec<String> = invisible_items(&pages).into_iter().flatten().collect();
+        assert!(hidden.iter().any(|t| t.contains("spoken words marker")));
+        let path_str = path.display().to_string();
+        let dir_str = dir.path().display().to_string();
+        for item in &hidden {
+            for noise in NOISE {
+                assert!(!item.contains(noise), "hidden item {item:?} has {noise}");
+            }
+            assert!(!item.contains(&path_str), "hidden item {item:?} has path");
+            assert!(!item.contains(&dir_str), "hidden item {item:?} has dir");
+        }
+    }
+
+    #[test]
+    fn visual_page_hidden_layer_keeps_captions_but_not_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let visual = dir.path().join("image.png");
+        ::image::RgbImage::new(4, 3).save(&visual).unwrap();
+        let mut source = SourceRecord::new(visual.clone());
+        source
+            .metadata
+            .insert("exiftool.GPS:GPSLatitude".into(), "51.5".into());
+        let mut unit = Unit::visual(source.id, visual.clone());
+        unit.time_range = Some(TimeRange {
+            start_seconds: 1.0,
+            end_seconds: 2.0,
+        });
+        unit.annotations.push(Annotation::text(
+            AnnotationKind::Caption,
+            "test",
+            "caption marker",
+        ));
+        let graph = DocumentGraph {
+            units: vec![unit.clone()],
+            sources: vec![source],
+            ..Default::default()
+        };
+        let mut warnings = Vec::new();
+        let mut doc = PdfDocument::new("t");
+        let page = renderer()
+            .visual_page(
+                &mut doc,
+                &graph,
+                &unit,
+                &visual,
+                &helvetica(),
+                &mut warnings,
+            )
+            .unwrap();
+        let hidden: Vec<String> = invisible_items(&[page]).into_iter().flatten().collect();
+        assert!(hidden.iter().any(|t| t.contains("caption marker")));
+        assert!(hidden.iter().any(|t| t.contains("[TIME]")));
+        let path_str = visual.display().to_string();
+        for item in &hidden {
+            for noise in ["[SOURCE]", "[META]", "GPSLatitude"] {
+                assert!(!item.contains(noise), "hidden item {item:?} has {noise}");
+            }
+            assert!(!item.contains(&path_str), "hidden item {item:?} has path");
+        }
+    }
+
+    #[test]
+    fn multi_page_text_unit_emits_annotation_block_once() {
+        let text: String = (0..400).map(|i| format!("line {i:03}\n")).collect();
+        let source = SourceRecord::new(PathBuf::from("long.txt"));
+        let mut unit = Unit::text(source.id, text.clone());
+        unit.annotations.push(Annotation::text(
+            AnnotationKind::Caption,
+            "test",
+            "UNIQUE-ANNOTATION-MARKER",
+        ));
+        let graph = DocumentGraph {
+            units: vec![unit.clone()],
+            sources: vec![source],
+            ..Default::default()
+        };
+        let pages = renderer().text_pages(&graph, &unit, &text, &helvetica(), &|_| 1.0);
+        assert!(pages.len() >= 3, "expected >=3 pages, got {}", pages.len());
+        let per_page: Vec<usize> = invisible_items(&pages)
+            .iter()
+            .map(|items| {
+                items
+                    .iter()
+                    .filter(|t| t.contains("UNIQUE-ANNOTATION-MARKER"))
+                    .count()
+            })
+            .collect();
+        assert_eq!(per_page.iter().sum::<usize>(), 1, "per page: {per_page:?}");
+        assert_eq!(per_page[0], 1, "marker must be on page 0: {per_page:?}");
+    }
+
+    #[test]
+    fn search_layer_rows_never_overlap_or_wrap() {
+        let lines: Vec<String> = (0..2000).map(|i| format!("row-{i:04}")).collect();
+        let ops = search_layer(&lines, 210.0, 297.0, &helvetica());
+        let ys: Vec<f32> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::SetTextCursor { pos } => Some(pos.y.0),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ys.len(), 2000, "one cursor per row");
+        for pair in ys.windows(2) {
+            assert!(pair[1] < pair[0], "y not strictly decreasing: {pair:?}");
+        }
+        assert!(ys.iter().all(|y| *y > 0.0 && *y < 297.0), "y out of page");
+        let shown = invisible_items(&[PdfPage::new(Mm(210.0), Mm(297.0), ops)]);
+        assert_eq!(shown[0], lines);
     }
 }
