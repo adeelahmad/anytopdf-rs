@@ -1,4 +1,4 @@
-use crate::cli::Cli;
+use crate::Cli;
 use clap::CommandFactory;
 use std::ffi::OsString;
 
