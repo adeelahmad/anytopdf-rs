@@ -1,6 +1,7 @@
 use anyhow::{Result, bail};
 use anytopdf_core::*;
 use printpdf::*;
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -44,6 +45,16 @@ impl Renderer for SearchablePdfRenderer {
             bail!("PDF DPI must be finite and positive");
         }
         let mut doc = PdfDocument::new("anytopdf");
+        if let Some(created) = graph
+            .metadata
+            .get("anytopdf.created")
+            .and_then(|v| v.parse::<i64>().ok())
+            .and_then(|t| OffsetDateTime::from_unix_timestamp(t).ok())
+        {
+            doc.metadata.info.creation_date = created;
+            doc.metadata.info.modification_date = created;
+            doc.metadata.info.metadata_date = created;
+        }
         let mut pdf_warnings = Vec::new();
         let mut own_warnings = Vec::new();
         let mut pages = Vec::new();
@@ -114,13 +125,22 @@ impl Renderer for SearchablePdfRenderer {
         let page_count = pages.len();
         doc.with_pages(pages);
         let mut save_warnings = Vec::new();
-        let bytes = doc.save(
+        let mut lo = doc.to_lopdf_document(
             &PdfSaveOptions {
                 subset_fonts: true,
                 ..Default::default()
             },
             &mut save_warnings,
         );
+        // printpdf draws random trailer IDs; derive them from the content instead.
+        lo.trailer.remove(b"ID");
+        let mut unsealed = Vec::new();
+        lo.save_to(&mut unsealed)?;
+        let digest = Sha256::digest(&unsealed);
+        let id = lopdf::Object::string_literal(digest[..16].to_vec());
+        lo.trailer.set("ID", vec![id.clone(), id]);
+        let mut bytes = Vec::new();
+        lo.save_to(&mut bytes)?;
 
         atomic_write(output, &bytes)?;
 
@@ -146,7 +166,12 @@ impl SearchablePdfRenderer {
             let mut warnings = Vec::new();
             let font = ParsedFont::from_bytes(bytes, 0, &mut warnings)
                 .ok_or_else(|| anyhow::anyhow!("could not parse Unicode font"))?;
-            return Ok(PdfFontHandle::External(doc.add_font(&font)));
+            let id = FontId("F0".into());
+            doc.resources
+                .fonts
+                .map
+                .insert(id.clone(), PdfFont::new(font));
+            return Ok(PdfFontHandle::External(id));
         }
         Ok(PdfFontHandle::Builtin(BuiltinFont::Helvetica))
     }
@@ -169,7 +194,11 @@ impl SearchablePdfRenderer {
         let page_w_mm = dimensions.0 as f32 / self.dpi * 25.4;
         let page_h_mm = dimensions.1 as f32 / self.dpi * 25.4;
 
-        let image_id = doc.add_image(&raw);
+        let image_id = XObjectId(format!("Img{}", doc.resources.xobjects.map.len()));
+        doc.resources
+            .xobjects
+            .map
+            .insert(image_id.clone(), XObject::Image(raw));
         let mut ops = vec![Op::UseXobject {
             id: image_id,
             transform: XObjectTransform {
@@ -727,5 +756,92 @@ mod tests {
         assert!(ys.iter().all(|y| *y > 0.0 && *y < 297.0), "y out of page");
         let shown = invisible_items(&[PdfPage::new(Mm(210.0), Mm(297.0), ops)]);
         assert_eq!(shown[0], lines);
+    }
+
+    fn determinism_graph(dir: &Path, text: &str, created: Option<&str>) -> DocumentGraph {
+        let visual = dir.join("image.png");
+        ::image::RgbImage::new(4, 3).save(&visual).unwrap();
+        let mut source = SourceRecord::new(PathBuf::from("input.txt"));
+        source.metadata.insert("label".into(), "fixed".into());
+        let mut graph = DocumentGraph {
+            units: vec![
+                Unit::text(source.id, text.into()),
+                Unit::visual(source.id, visual),
+            ],
+            sources: vec![source],
+            ..Default::default()
+        };
+        if let Some(created) = created {
+            graph
+                .metadata
+                .insert("anytopdf.created".into(), created.into());
+        }
+        graph
+    }
+
+    fn render_bytes(dir: &Path, graph: &DocumentGraph, name: &str) -> (Vec<u8>, usize) {
+        let ctx = JobContext {
+            workspace: dir.into(),
+            quiet: true,
+        };
+        let out = dir.join(name);
+        let report = renderer().render(&ctx, graph, &out).unwrap();
+        (fs::read(out).unwrap(), report.pages)
+    }
+
+    fn trailer_id(bytes: &[u8]) -> String {
+        let doc = lopdf::Document::load_mem(bytes).unwrap();
+        format!("{:?}", doc.trailer.get(b"ID"))
+    }
+
+    const DET_TEXT: &str = "determinism marker\nsecond line\nthird line";
+
+    #[test]
+    fn rendering_the_same_graph_twice_is_byte_identical() {
+        let dir = tempfile::tempdir().unwrap();
+        let graph = determinism_graph(dir.path(), DET_TEXT, None);
+        let (a, _) = render_bytes(dir.path(), &graph, "a.pdf");
+        let (b, _) = render_bytes(dir.path(), &graph, "b.pdf");
+        assert!(a == b, "same graph rendered to different bytes");
+        let other = determinism_graph(
+            dir.path(),
+            "determinism markes\nsecond line\nthird line",
+            None,
+        );
+        let (c, _) = render_bytes(dir.path(), &other, "c.pdf");
+        assert_ne!(trailer_id(&a), trailer_id(&c), "/ID must depend on content");
+    }
+
+    #[test]
+    fn info_dates_follow_graph_created_epoch() {
+        let dir = tempfile::tempdir().unwrap();
+        let graph = determinism_graph(dir.path(), DET_TEXT, Some("1700000000"));
+        let (bytes, _) = render_bytes(dir.path(), &graph, "dated.pdf");
+        let doc = lopdf::Document::load_mem(&bytes).unwrap();
+        let info = doc.trailer.get(b"Info").unwrap().as_reference().unwrap();
+        let info = doc.get_dictionary(info).unwrap();
+        for key in [&b"CreationDate"[..], &b"ModDate"[..]] {
+            let value = info.get(key).unwrap().as_str().unwrap();
+            let value = String::from_utf8_lossy(value).to_string();
+            assert!(value.starts_with("D:20231114221320"), "{key:?} = {value}");
+        }
+    }
+
+    #[test]
+    fn deterministic_output_keeps_text_extractable_and_page_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let graph = determinism_graph(dir.path(), DET_TEXT, None);
+        let (bytes, pages) = render_bytes(dir.path(), &graph, "text.pdf");
+        let doc = lopdf::Document::load_mem(&bytes).unwrap();
+        let numbers: Vec<u32> = doc.get_pages().keys().copied().collect();
+        assert_eq!(numbers.len(), pages);
+        let text: String = numbers
+            .iter()
+            .map(|n| doc.extract_text(&[*n]).unwrap_or_default())
+            .collect();
+        assert!(text.contains("determinism marker"), "extracted: {text:?}");
+        let id = doc.trailer.get(b"ID").unwrap().as_array().unwrap();
+        let lens: Vec<usize> = id.iter().map(|o| o.as_str().unwrap().len()).collect();
+        assert_eq!(lens, [16, 16], "/ID must be a pair of 16-byte digests");
     }
 }
