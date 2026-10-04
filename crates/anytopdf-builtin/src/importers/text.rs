@@ -63,10 +63,7 @@ impl Importer for TextImporter {
         let (text, warnings) = match String::from_utf8(bytes) {
             Ok(text) => (text, vec![]),
             Err(e) => {
-                let name = source
-                    .path
-                    .file_name()
-                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                let name = anytopdf_core::basename(&source.path);
                 let warning = Diagnostic::new(
                     DiagnosticCode::LossyDecode,
                     format!("{name} is not valid UTF-8; invalid bytes were replaced"),

@@ -37,12 +37,7 @@ impl SourceEnricher for MetadataEnricher {
             .insert("source.path".into(), source.path.display().to_string());
         source.metadata.insert(
             "source.filename".into(),
-            source
-                .path
-                .file_name()
-                .and_then(|x| x.to_str())
-                .unwrap_or("")
-                .to_string(),
+            anytopdf_core::basename(&source.path),
         );
 
         if let Ok(exiftool) = which::which("exiftool") {
@@ -186,5 +181,25 @@ mod tests {
         assert_eq!(d.code, DiagnosticCode::ProviderMissing);
         assert_eq!(d.severity, Severity::Info);
         assert!(d.message.contains("exiftool"), "{}", d.message);
+    }
+
+    #[test]
+    fn source_filename_is_the_base_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("dir")).unwrap();
+        let path = dir.path().join("dir").join("report.txt");
+        std::fs::write(&path, b"hello\n").unwrap();
+        let mut source = SourceRecord::new(path);
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        MetadataEnricher.enrich_source(&ctx, &mut source).unwrap();
+        assert_eq!(source.metadata["source.filename"], "report.txt");
+        assert!(
+            source.metadata["source.path"].ends_with("report.txt"),
+            "{:?}",
+            source.metadata["source.path"]
+        );
     }
 }
