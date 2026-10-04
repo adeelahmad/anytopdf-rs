@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0
+
+Searchable-PDF fidelity, identity, and CLI contract release.
+
+### Behaviour changes
+
+- The invisible text layer is content-only; provenance moves out of it (supersedes the
+  earlier provenance-in-text-layer behaviour).
+- A visible back-matter provenance page is added; disable it with `--no-provenance-page`.
+- `--profile archive` and `--profile share` select output profiles.
+- Sources carry content-derived IDs, SHA-256 and size.
+- Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
+- Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
+- The graph dump no longer contains workspace paths.
+- Diagnostics use typed codes (for example `plugin.warning`).
+- `--strict` ignores informational notices.
+- Exit codes 0-7 classify failures; batch conversion tolerates failures unless `--fail-fast`.
+- `convert` is implicit, `-o` may appear anywhere, and default output naming is derived from the input.
+- `--json` output with published schemas, and a `capabilities` command.
+- The PDF embeds a manifest and chunks; `extract` recovers attachments.
+- Input fidelity: video frames are validated, file types are sniffed, lossy decoding is
+  reported, and `--transcript` supplies audio transcripts.
+- `--output-dir` selects the batch output directory.
+- Updated help text.
+- Release builds enable LTO and strip symbols.
+
 ## 0.1.0
 
 Initial searchable-media release: raster images, plain text/Markdown, SRT/VTT,

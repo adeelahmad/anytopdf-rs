@@ -100,6 +100,10 @@ absent (time range, else full-frame region for visual units, else the whole
 source byte range) and never overwrites one a plugin supplies. Inverted or
 non-finite anchors fail validation.
 
+Units may also carry an optional `unit_pages` field (additive; the host fills it with the
+page range a unit occupies in the rendered PDF). Plugins must ignore it on requests and
+the protocol stays at `"protocol": 1`.
+
 Plugins may create derived files only under the supplied workspace unless the
 user explicitly configured otherwise.
 
