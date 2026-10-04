@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use anytopdf_core::{
-    Diagnostic, DiagnosticCode, ImportOutcome, Importer, JobContext, Plugin, PluginDescriptor,
-    ProbeScore, SourceRecord, Unit,
+    Anchor, Diagnostic, DiagnosticCode, ImportOutcome, Importer, JobContext, Plugin,
+    PluginDescriptor, ProbeScore, SourceRecord, Unit,
 };
 use image::ImageDecoder;
 use std::io::BufReader;
@@ -50,6 +50,63 @@ fn frame_count(path: &Path, format: Option<image::ImageFormat>) -> usize {
             .map_or(1, |d| d.into_frames().count()),
         _ => 1,
     }
+}
+
+fn decode_tiff_pages(path: &Path, limit: usize) -> Result<Vec<image::DynamicImage>> {
+    use tiff::ColorType;
+    use tiff::decoder::{Decoder, DecodingResult};
+    let mut decoder = Decoder::new(BufReader::new(std::fs::File::open(path)?))?;
+    let mut pages = Vec::new();
+    loop {
+        let page = (|| -> Result<image::DynamicImage> {
+            let (w, h) = decoder.dimensions()?;
+            let color = decoder.colortype()?;
+            let data = match decoder.read_image()? {
+                DecodingResult::U8(v) => v,
+                DecodingResult::U16(v) => v.into_iter().map(|x| (x >> 8) as u8).collect(),
+                _ => anyhow::bail!("unsupported TIFF sample type"),
+            };
+            let bad = || anyhow::anyhow!("TIFF page buffer does not match its dimensions");
+            Ok(match color {
+                ColorType::Gray(8 | 16) => image::DynamicImage::ImageLuma8(
+                    image::GrayImage::from_raw(w, h, data).ok_or_else(bad)?,
+                ),
+                ColorType::GrayA(8 | 16) => image::DynamicImage::ImageLumaA8(
+                    image::GrayAlphaImage::from_raw(w, h, data).ok_or_else(bad)?,
+                ),
+                ColorType::RGB(8 | 16) => image::DynamicImage::ImageRgb8(
+                    image::RgbImage::from_raw(w, h, data).ok_or_else(bad)?,
+                ),
+                ColorType::RGBA(8 | 16) => image::DynamicImage::ImageRgba8(
+                    image::RgbaImage::from_raw(w, h, data).ok_or_else(bad)?,
+                ),
+                other => anyhow::bail!("unsupported TIFF colour type {other:?}"),
+            })
+        })();
+        match page {
+            Ok(img) => pages.push(img),
+            Err(e) if pages.is_empty() => return Err(e),
+            Err(_) => break,
+        }
+        if pages.len() >= limit || !decoder.more_images() || decoder.next_image().is_err() {
+            break;
+        }
+    }
+    Ok(pages)
+}
+
+fn decode_gif_frames(path: &Path, limit: usize) -> Result<Vec<image::DynamicImage>> {
+    use image::AnimationDecoder;
+    let decoder = image::codecs::gif::GifDecoder::new(BufReader::new(std::fs::File::open(path)?))?;
+    let mut frames = Vec::new();
+    for frame in decoder.into_frames().take(limit) {
+        match frame {
+            Ok(f) => frames.push(image::DynamicImage::ImageRgba8(f.into_buffer())),
+            Err(e) if frames.is_empty() => return Err(e.into()),
+            Err(_) => break,
+        }
+    }
+    Ok(frames)
 }
 
 pub struct ImageImporter {
@@ -119,9 +176,11 @@ impl Importer for ImageImporter {
 
     fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
         let reader = image::ImageReader::open(&source.path)?.with_guessed_format()?;
-        let frames = frame_count(&source.path, reader.format());
-        // SUB-AGENT-TODO: import min(frames, self.max_frames) frames (0 = unlimited) per tasks.md T2
-        let _cap = self.max_frames;
+        let format = reader.format();
+        let frames = frame_count(&source.path, format);
+        if frames > 1 {
+            return self.import_frames(ctx, source, format, frames);
+        }
         let mut decoder = reader
             .into_decoder()
             .with_context(|| format!("decode {}", source.path.display()))?;
@@ -131,12 +190,53 @@ impl Importer for ImageImporter {
         let visual = ctx.workspace.join(format!("image-{}.png", source.id));
         image.save(&visual)?;
         let unit = Unit::visual(source.id, visual);
-        let warnings = if frames > 1 {
+        Ok(ImportOutcome {
+            source,
+            units: vec![unit],
+            warnings: vec![],
+        })
+    }
+}
+
+impl ImageImporter {
+    fn import_frames(
+        &self,
+        ctx: &JobContext,
+        source: SourceRecord,
+        format: Option<image::ImageFormat>,
+        total: usize,
+    ) -> Result<ImportOutcome> {
+        let limit = if self.max_frames > 0 {
+            total.min(self.max_frames)
+        } else {
+            total
+        };
+        let images = if format == Some(image::ImageFormat::Tiff) {
+            decode_tiff_pages(&source.path, limit)
+        } else {
+            decode_gif_frames(&source.path, limit)
+        }
+        .with_context(|| format!("decode {}", source.path.display()))?;
+        let mut units = Vec::with_capacity(images.len());
+        for (k, image) in images.iter().enumerate() {
+            let visual = ctx.workspace.join(format!("image-{}-{k}.png", source.id));
+            image.save(&visual)?;
+            let mut unit = Unit::visual(source.id, visual);
+            unit.anchor = Some(Anchor::Region {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+                frame: Some(k as u32),
+            });
+            units.push(unit);
+        }
+        let warnings = if units.len() < total {
             let name = anytopdf_core::basename(&source.path);
             vec![
                 Diagnostic::new(
                     DiagnosticCode::FramesNotImported,
-                    format!("{name}: imported 1 of {frames} frames"),
+                    format!("{name}: imported {} of {total} frames", units.len()),
                 )
                 .to_string(),
             ]
@@ -145,7 +245,7 @@ impl Importer for ImageImporter {
         };
         Ok(ImportOutcome {
             source,
-            units: vec![unit],
+            units,
             warnings,
         })
     }
