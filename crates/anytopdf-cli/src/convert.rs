@@ -258,12 +258,7 @@ fn convert_inner(
         }
     }
 
-    if !matches!(args.ocr, OcrMode::Auto | OcrMode::Off)
-        && let Some(d) = run.warnings.iter().find(|d| {
-            d.code == DiagnosticCode::EnrichmentFailed
-                && d.message.contains("no OCR provider succeeded")
-        })
-    {
+    if let Some(d) = exhausted_provider(&run.warnings, args.ocr) {
         return Err(fail(ExitClass::Provider, &d.message));
     }
     if run.graph.units.is_empty() {
@@ -489,8 +484,11 @@ pub(crate) fn print_redacted(d: &Diagnostic, redactor: &Redactor) {
     );
 }
 
-fn exhausted_provider(_warnings: &[Diagnostic], _ocr: OcrMode) -> Option<&Diagnostic> {
-    panic!("SUB-AGENT-TODO: return the first warning with provider_exhausted set when ocr is not Auto/Off, else None")
+fn exhausted_provider(warnings: &[Diagnostic], ocr: OcrMode) -> Option<&Diagnostic> {
+    if matches!(ocr, OcrMode::Auto | OcrMode::Off) {
+        return None;
+    }
+    warnings.iter().find(|d| d.provider_exhausted)
 }
 
 #[cfg(test)]
@@ -505,7 +503,7 @@ mod tests {
 
     #[test]
     fn provider_class_comes_from_the_marker_not_the_message() {
-        let text = "ocr unit enrichment failed: no OCR provider succeeded: x";
+        let text = "ocr unit enrichment failed: every OCR provider failed: x";
         let a = diag(DiagnosticCode::EnrichmentFailed, text, false);
         let b = diag(
             DiagnosticCode::ProviderFailed,

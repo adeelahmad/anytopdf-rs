@@ -1,4 +1,7 @@
-use crate::{Diagnostic, DiagnosticCode, DocumentGraph, JobContext, Registry, SourceRecord};
+use crate::{
+    Diagnostic, DiagnosticCode, DocumentGraph, JobContext, ProvidersExhausted, Registry,
+    SourceRecord,
+};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -191,13 +194,15 @@ impl Pipeline {
                         Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                         Err(e) => {
                             *unit = original;
-                            warnings.push(Diagnostic::new(
+                            let mut d = Diagnostic::new(
                                 DiagnosticCode::EnrichmentFailed,
                                 format!(
                                     "{} unit enrichment failed: {e:#}",
                                     enricher.descriptor().name
                                 ),
-                            ));
+                            );
+                            d.provider_exhausted = e.chain().any(|c| c.is::<ProvidersExhausted>());
+                            warnings.push(d);
                         }
                     }
                 }

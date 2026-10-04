@@ -125,7 +125,10 @@ impl UnitEnricher for OcrEnricher {
             }
         }
 
-        bail!("no OCR provider succeeded: {}", errors.join("; "))
+        Err(ProvidersExhausted {
+            message: format!("no OCR provider succeeded: {}", errors.join("; ")),
+        }
+        .into())
     }
 }
 
