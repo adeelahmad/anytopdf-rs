@@ -62,8 +62,17 @@ impl GraphEnricher for CaptionEnricher {
         let mut associated = BTreeSet::new();
         for source in &media {
             let mut files = sidecars(&source.path);
+            let stem = source.path.file_stem();
+            let same_stem = media.iter().filter(|m| m.path.file_stem() == stem).count();
             if media.len() == 1 {
                 files.extend(self.explicit.iter().cloned());
+            } else if same_stem == 1 {
+                files.extend(
+                    self.explicit
+                        .iter()
+                        .filter(|p| p.file_stem() == stem)
+                        .cloned(),
+                );
             }
             let mut seen = BTreeSet::new();
             let mut cues = Vec::new();
@@ -137,6 +146,19 @@ impl GraphEnricher for CaptionEnricher {
             };
             if associated.contains(&path) || graph.sources.iter().any(|s| s.path == path) {
                 continue;
+            }
+            if media.len() > 1 {
+                warnings.push(
+                    Diagnostic::new(
+                        DiagnosticCode::TranscriptAmbiguous,
+                        format!(
+                            "transcript {} matches none of {} media sources by file name; kept as its own source",
+                            path.display(),
+                            media.len()
+                        ),
+                    )
+                    .to_string(),
+                );
             }
             match parse_file(&path) {
                 Ok(cues) => {
@@ -429,5 +451,88 @@ mod tests {
             graph.source(graph.units[0].source_id).unwrap().path,
             transcript.canonicalize().unwrap()
         );
+    }
+    fn two_audio_graph(dir: &Path) -> (DocumentGraph, uuid::Uuid) {
+        let mut graph = DocumentGraph::default();
+        let mut first_id = uuid::Uuid::nil();
+        for name in ["a.mp3", "b.mp3"] {
+            let path = dir.join(name);
+            fs::write(&path, b"x").unwrap();
+            let mut source = SourceRecord::new(path);
+            source.detected_type = Some("audio/mpeg".into());
+            if name == "a.mp3" {
+                first_id = source.id;
+            }
+            let mut unit = Unit::text(source.id, String::new());
+            unit.kind = UnitKind::Audio;
+            unit.visible_text = None;
+            graph.units.push(unit);
+            graph.sources.push(source);
+        }
+        (graph, first_id)
+    }
+
+    #[test]
+    fn transcript_with_several_media_sources_warns_ambiguous() {
+        let media_dir = tempfile::tempdir().unwrap();
+        let note_dir = tempfile::tempdir().unwrap();
+        let notes = note_dir.path().join("notes.srt");
+        fs::write(&notes, "1\n00:00:00,000 --> 00:00:01,000\nhello\n").unwrap();
+        let (mut graph, _) = two_audio_graph(media_dir.path());
+        let ctx = JobContext {
+            workspace: media_dir.path().into(),
+            quiet: true,
+        };
+        let warnings = CaptionEnricher::new(vec![notes.clone()], false)
+            .enrich_graph(&ctx, &mut graph)
+            .unwrap();
+        let ambiguous: Vec<_> = warnings
+            .iter()
+            .map(|w| Diagnostic::from_wire(w))
+            .filter(|d| d.code == DiagnosticCode::TranscriptAmbiguous)
+            .collect();
+        assert_eq!(ambiguous.len(), 1, "warnings: {warnings:?}");
+        assert!(ambiguous[0].message.contains("notes.srt"));
+        assert!(ambiguous[0].message.contains("2 media"));
+        assert!(
+            graph
+                .sources
+                .iter()
+                .any(|s| s.path == notes.canonicalize().unwrap())
+        );
+    }
+
+    #[test]
+    fn transcript_matching_one_media_stem_is_associated() {
+        let media_dir = tempfile::tempdir().unwrap();
+        let note_dir = tempfile::tempdir().unwrap();
+        let transcript = note_dir.path().join("a.srt");
+        fs::write(
+            &transcript,
+            "1\n00:00:00,000 --> 00:00:01,000\nalpha line\n",
+        )
+        .unwrap();
+        let (mut graph, a_id) = two_audio_graph(media_dir.path());
+        let ctx = JobContext {
+            workspace: media_dir.path().into(),
+            quiet: true,
+        };
+        let warnings = CaptionEnricher::new(vec![transcript.clone()], false)
+            .enrich_graph(&ctx, &mut graph)
+            .unwrap();
+        assert!(
+            !warnings
+                .iter()
+                .any(|w| Diagnostic::from_wire(w).code == DiagnosticCode::TranscriptAmbiguous),
+            "warnings: {warnings:?}"
+        );
+        assert!(graph.units.iter().any(|u| {
+            u.source_id == a_id
+                && u.visible_text
+                    .as_deref()
+                    .is_some_and(|t| t.contains("alpha line"))
+        }));
+        let canonical = transcript.canonicalize().unwrap();
+        assert!(graph.sources.iter().all(|s| s.path != canonical));
     }
 }
