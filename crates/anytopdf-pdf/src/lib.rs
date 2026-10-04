@@ -520,10 +520,7 @@ fn provenance_lines(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange
     }
     let mut providers: BTreeMap<String, String> = BTreeMap::new();
     for (key, version) in &graph.metadata {
-        if let Some(name) = key
-            .strip_prefix("provider.")
-            .and_then(|k| k.strip_suffix(".version"))
-        {
+        if let Some(name) = provider_name(key) {
             providers.insert(name.to_string(), format!("{name} {version}"));
         }
     }
@@ -536,11 +533,7 @@ fn provenance_lines(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange
     lines.extend(providers.into_values().map(|p| format!("  {p}")));
     for source in &graph.sources {
         lines.push(String::new());
-        let name = source
-            .path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = basename(&source.path);
         lines.push(format!("Source: {name}"));
         if let Some(hash) = &source.sha256 {
             lines.push(format!("SHA-256: {hash}"));

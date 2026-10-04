@@ -145,6 +145,16 @@ anytopdf convert meeting.mp4 \
   -o meeting.pdf
 ```
 
+### Embedded manifest and chunks
+
+Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
+(`anytopdf.manifest/1`: sources with SHA-256 and size, units, providers, profile)
+and `anytopdf-chunks.json` (`anytopdf.chunks/1`: one chunk per unit with page
+traceability). Schemas live in `schemas/`. The `share` profile omits absolute
+paths. If embedding fails, the same JSON is written beside the PDF as
+`<output>.manifest.json` and `<output>.chunks.json` and an informational
+`manifest.sidecar` notice is printed.
+
 ## Roadmap
 
 anytopdf is meant to produce an evidence file: one PDF that is both the human
