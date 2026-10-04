@@ -39,7 +39,9 @@ Every fact becomes an `Annotation` with provenance:
 - arbitrary future annotations
 
 The PDF renderer paints the visual page normally and emits searchable annotations
-using PDF text rendering mode 3 (invisible). Text/transcript units become normal
+using PDF text rendering mode 3 (invisible). The hidden layer carries content only
+(OCR, captions, transcripts, objects, barcodes, time ranges); source paths and file
+metadata are never written into it. Text/transcript units become normal
 visible text pages.
 
 The built-in project intentionally limits face enrichment to neutral facts such
