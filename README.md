@@ -167,8 +167,8 @@ on stderr) but still exits 0. A PDF with no embedded or sidecar manifest exits
 
 anytopdf is meant to produce an evidence file: one PDF that is both the human
 rendition and the machine index (embedded manifest, chunks, provenance and hashes),
-works offline, and is ready for agents to read. `- [x]` is merged on the sprint 2
-branch, `- [ ] (in progress, sprint 2)` is being built now, and `- [ ]` is planned.
+works offline, and is ready for agents to read. `- [x]` is implemented on the sprint 2
+branch and `- [ ]` is planned.
 Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Searchable text and diagnostics
@@ -177,26 +177,26 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] `--strict` ignores missing optional providers
 - [x] Provider version detection
 - [x] Warning for multi-frame TIFF/GIF input (imports frame 1, warns "imported 1 of N frames")
-- [ ] (in progress, sprint 2) Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
-- [ ] (in progress, sprint 2) `--transcript` is never silently ignored
+- [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
+- [x] `--transcript` is never silently ignored
 
 ### CLI and automation
-- [ ] (in progress, sprint 2) Simple form `anytopdf <inputs...> -o out.pdf`, no subcommand, `-o` anywhere
-- [ ] (in progress, sprint 2) Automatic `<stem>.pdf` naming, numbered and never clobbering
-- [ ] (in progress, sprint 2) `--output-dir` writes one PDF per input
-- [ ] (in progress, sprint 2) Distinct exit codes
-- [ ] (in progress, sprint 2) Batch continues past failed inputs by default, `--fail-fast` to stop
-- [ ] (in progress, sprint 2) `--json` for convert, probe, doctor and plugins, with capabilities and published JSON Schemas
-- [ ] (in progress, sprint 2) Help text on every flag
+- [x] Simple form `anytopdf <inputs...> -o out.pdf`, no subcommand, `-o` anywhere
+- [x] Automatic `<stem>.pdf` naming, numbered and never clobbering
+- [x] `--output-dir` writes one PDF per input
+- [x] Distinct exit codes
+- [x] Batch continues past failed inputs by default, `--fail-fast` to stop
+- [x] `--json` for convert, probe, doctor and plugins, with capabilities and published JSON Schemas
+- [x] Help text on every flag
 - [ ] NDJSON progress events
 
 ### Evidence file and provenance
 - [x] Content-derived source and unit IDs with SHA-256 and size
-- [ ] (in progress, sprint 2) Source anchors (time span, bounding box, byte range) and a page map
-- [ ] (in progress, sprint 2) Embedded versioned manifest and chunks (or sidecar), plus `anytopdf extract --json`
-- [ ] (in progress, sprint 2) Byte-reproducible output with `SOURCE_DATE_EPOCH` and recorded provider versions
-- [ ] (in progress, sprint 2) Archive and share privacy profiles
-- [ ] (in progress, sprint 2) Provenance page as the last page (`--no-provenance-page` to omit)
+- [x] Source anchors (time span, bounding box, byte range) and a page map
+- [x] Embedded versioned manifest and chunks (or sidecar), plus `anytopdf extract --json`
+- [x] Byte-reproducible output with `SOURCE_DATE_EPOCH` and recorded provider versions
+- [x] Archive and share privacy profiles
+- [x] Provenance page as the last page (`--no-provenance-page` to omit)
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
