@@ -544,12 +544,8 @@ fn convert_inner(
                 "{}.pdf",
                 stem.unwrap_or_default().to_string_lossy()
             ));
-            let path = if args.overwrite {
-                run_local_name(&base, &taken)
-            } else {
-                naming::next_free_path(&base, &taken)?
-            };
-            taken.push(path.clone());
+            let path = naming::next_free(&base, &taken, !args.overwrite)?;
+            taken.push(naming::resolve(&path)?);
             published.push(path);
         }
     } else if let Some((out_path, _)) = single {
@@ -659,19 +655,6 @@ fn stage_document(
         sources,
         sidecars,
     })
-}
-
-/// With --overwrite an existing file is replaceable, but names taken by this run or an input are not.
-fn run_local_name(base: &Path, taken: &[PathBuf]) -> PathBuf {
-    let is_taken = |p: &Path| std::path::absolute(p).is_ok_and(|a| taken.contains(&a));
-    if !is_taken(base) {
-        return base.to_path_buf();
-    }
-    let stem = base.file_stem().unwrap_or_default().to_string_lossy();
-    (1..)
-        .map(|n| base.with_file_name(format!("{stem}-{n}.pdf")))
-        .find(|p| !is_taken(p))
-        .expect("unbounded range")
 }
 
 fn print_diagnostic(d: &Diagnostic) {
@@ -796,28 +779,7 @@ fn probe(path: &Path, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
 }
 
 fn checked_destination(path: &Path, sources: &[PathBuf], overwrite: bool) -> Result<PathBuf> {
-    let absolute = if path.exists() {
-        path.canonicalize()?
-    } else {
-        // Resolve existing ancestors to catch symlink aliases even for new files.
-        let absolute = std::path::absolute(path)?;
-        let mut ancestor = absolute.as_path();
-        let mut missing = Vec::new();
-        while !ancestor.exists() {
-            missing.push(
-                ancestor
-                    .file_name()
-                    .context("invalid output path")?
-                    .to_os_string(),
-            );
-            ancestor = ancestor.parent().context("invalid output parent")?;
-        }
-        let mut resolved = ancestor.canonicalize()?;
-        for part in missing.into_iter().rev() {
-            resolved.push(part);
-        }
-        resolved
-    };
+    let absolute = naming::resolve(path)?;
     if sources.contains(&absolute) {
         bail!("output would overwrite an input: {}", path.display());
     }

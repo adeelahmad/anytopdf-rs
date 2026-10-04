@@ -1,7 +1,29 @@
+use anyhow::Context;
 use std::path::{Path, PathBuf};
 
+/// Absolute path with the nearest existing ancestor canonicalized, so new files compare equal to
+/// canonical `protected` entries (verbatim `\\?\` prefixes on Windows, symlinks elsewhere).
+pub fn resolve(path: &Path) -> anyhow::Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    let mut ancestor = absolute.as_path();
+    let mut missing = Vec::new();
+    while !ancestor.exists() {
+        missing.push(ancestor.file_name().context("invalid output path")?);
+        ancestor = ancestor.parent().context("invalid output parent")?;
+    }
+    let mut resolved = ancestor.canonicalize()?;
+    resolved.extend(missing.into_iter().rev());
+    Ok(resolved)
+}
+
 pub fn next_free_path(base: &Path, protected: &[PathBuf]) -> anyhow::Result<PathBuf> {
-    let taken = |p: &Path| p.exists() || protected.iter().any(|q| q == p);
+    next_free(base, protected, true)
+}
+
+/// `disk_counts` false lets an existing file be replaced; only `protected` names are taken.
+pub fn next_free(base: &Path, protected: &[PathBuf], disk_counts: bool) -> anyhow::Result<PathBuf> {
+    let taken =
+        |p: &Path| (disk_counts && p.exists()) || resolve(p).is_ok_and(|r| protected.contains(&r));
     if !taken(base) {
         return Ok(base.to_path_buf());
     }
