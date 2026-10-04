@@ -14,7 +14,7 @@ use anytopdf_core::{
     register_runtime_plugins_with_policy, strip_workspace_paths,
 };
 use anytopdf_pdf::{EmbeddedFile, SearchablePdfRenderer, embed_files};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, builder::TypedValueParser};
 use exit::{CliError, ExitClass, fail, tag};
 use regex::Regex;
 use std::{
@@ -50,18 +50,23 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Convert media and documents into one searchable PDF.
     Convert(Box<ConvertArgs>),
+    /// Report which optional runtime providers are available.
     Doctor {
         /// Emit one JSON document on stdout.
         #[arg(long)]
         json: bool,
     },
+    /// List discovered runtime plugins and their capabilities.
     Plugins {
         /// Emit one JSON document on stdout.
         #[arg(long)]
         json: bool,
     },
+    /// Extract text and provenance from a PDF produced by anytopdf.
     Extract {
+        /// PDF file to read.
         pdf: PathBuf,
         /// Emit one JSON document on stdout (extract always does).
         #[arg(long)]
@@ -73,7 +78,9 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Detect the format and importer for an input without converting it.
     Probe {
+        /// File to inspect.
         input: PathBuf,
         /// Emit one JSON document on stdout (probe always does).
         #[arg(long)]
@@ -83,6 +90,7 @@ enum Commands {
 
 #[derive(Debug, clap::Args)]
 struct ConvertArgs {
+    /// Files or directories to convert.
     #[arg(required = true)]
     inputs: Vec<PathBuf>,
 
@@ -99,9 +107,11 @@ struct ConvertArgs {
     #[arg(long)]
     fail_fast: bool,
 
+    /// Renderer plugin that writes the output.
     #[arg(long, default_value = "pdf")]
     renderer: String,
 
+    /// Output PDF path.
     #[arg(short, long)]
     output: Option<PathBuf>,
 
@@ -109,36 +119,53 @@ struct ConvertArgs {
     #[arg(long, conflicts_with = "output")]
     output_dir: Option<PathBuf>,
 
+    /// Only convert discovered inputs whose path matches this regular expression.
     #[arg(long)]
     filter: Option<String>,
 
+    /// Include hidden files and directories during discovery.
     #[arg(long)]
     include_hidden: bool,
 
-    #[arg(long, default_value = "auto")]
+    /// OCR provider selection.
+    #[arg(long, default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new([
+        clap::builder::PossibleValue::new("auto"),
+        clap::builder::PossibleValue::new("vision"),
+        clap::builder::PossibleValue::new("doctr"),
+        clap::builder::PossibleValue::new("tesseract"),
+        clap::builder::PossibleValue::new("off").alias("none"),
+    ]).try_map(|s| s.parse::<OcrMode>()))]
     ocr: OcrMode,
 
+    /// OCR language code.
     #[arg(long, default_value = "eng")]
     lang: String,
 
+    /// Transcript file to attach to media (repeatable).
     #[arg(long = "transcript")]
     transcripts: Vec<PathBuf>,
 
+    /// Seconds between sampled video frames.
     #[arg(long, default_value_t = 5.0)]
     video_interval: f64,
 
+    /// Scene-change sensitivity for video frame selection.
     #[arg(long, default_value_t = 0.30)]
     scene_threshold: f64,
 
+    /// Perceptual-hash distance below which video frames count as duplicates.
     #[arg(long, default_value_t = 4)]
     dedupe_distance: u32,
 
+    /// Maximum video frames to keep (0 means unlimited).
     #[arg(long, default_value_t = 0)]
     max_video_frames: usize,
 
+    /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]
     no_embedded_subtitles: bool,
 
+    /// Write the normalized document graph as JSON to this path.
     #[arg(long)]
     dump_graph: Option<PathBuf>,
 
@@ -150,6 +177,7 @@ struct ConvertArgs {
     #[arg(long)]
     no_provenance_page: bool,
 
+    /// Suppress progress and diagnostic output on stderr.
     #[arg(short, long)]
     quiet: bool,
 
@@ -846,5 +874,42 @@ mod tests {
         std::fs::write(&path, "keep").unwrap();
         assert!(publish_output(&path, b"replace", false).is_err());
         assert_eq!(std::fs::read_to_string(path).unwrap(), "keep");
+    }
+
+    fn help_offenders(cmd: &clap::Command, path: &str, out: &mut Vec<String>) {
+        for arg in cmd.get_arguments() {
+            if matches!(arg.get_id().as_str(), "help" | "version") {
+                continue;
+            }
+            let has = |s: Option<&clap::builder::StyledStr>| {
+                s.is_some_and(|text| !text.to_string().trim().is_empty())
+            };
+            if !has(arg.get_help()) && !has(arg.get_long_help()) {
+                out.push(format!("{path} arg `{}`", arg.get_id()));
+            }
+        }
+        for sub in cmd.get_subcommands() {
+            if sub.get_name() == "help" {
+                continue;
+            }
+            let sub_path = format!("{path} {}", sub.get_name());
+            let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
+            if about.trim().is_empty() {
+                out.push(format!("{sub_path} subcommand about"));
+            }
+            help_offenders(sub, &sub_path, out);
+        }
+    }
+
+    #[test]
+    fn every_subcommand_and_argument_has_help() {
+        use clap::CommandFactory;
+        let mut offenders = Vec::new();
+        help_offenders(&Cli::command(), "anytopdf", &mut offenders);
+        assert!(
+            offenders.is_empty(),
+            "missing help text: {}",
+            offenders.join(", ")
+        );
     }
 }
