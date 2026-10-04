@@ -156,3 +156,29 @@ publishes output through a temporary file beside the destination. Source paths
 remain protected. JSON graph dumps retain diagnostic workspace paths rather than
 copying derived assets. Runtime plugin policy and timeouts are documented in
 `PLUGIN_PROTOCOL.md`; the host does not claim OS-level sandboxing.
+
+## Diagnostics
+
+Every warning or notice is a typed Diagnostic with a stable code (plugin-supplied warning
+strings map to `plugin.warning`). Informational diagnostics never fail `--strict`.
+
+## Identity and anchors
+
+Source IDs are content-derived from the file SHA-256 plus an occurrence index, so the same
+bytes yield the same ID. Units carry an anchor (time span, region, or byte range) filled by
+the host when a plugin omits it.
+
+## Profiles and channels
+
+Output profiles (`archive`, `share`) choose which channels are embedded. The invisible text
+layer holds content only; provenance is a visible back-matter page.
+
+## Manifest and attachments
+
+The PDF embeds a manifest and attachment chunks describing the sources. The `extract`
+command recovers them.
+
+## CLI contract
+
+Failures map to exit codes 0-7. `--json` output follows published schemas, and the
+`capabilities` command reports available providers.
