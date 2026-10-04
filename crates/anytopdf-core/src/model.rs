@@ -176,7 +176,6 @@ pub enum Anchor {
         y: f32,
         width: f32,
         height: f32,
-        // agentic:shim
         #[serde(default, skip_serializing_if = "Option::is_none")]
         frame: Option<u32>,
     },
