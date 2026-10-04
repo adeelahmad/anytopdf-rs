@@ -105,3 +105,19 @@ fn plugin_protocol_documents_additive_fields() {
         "PLUGIN_PROTOCOL.md must still state protocol 1"
     );
 }
+
+#[test]
+fn schemas_readme_lists_the_events_schema() {
+    let readme = repo_file("schemas/README.md");
+    let absent = missing(
+        &readme,
+        &[
+            "exactly 9 files",
+            "events",
+            "anytopdf.events/1",
+            "--events",
+            "stderr",
+        ],
+    );
+    assert!(absent.is_empty(), "schemas/README.md is missing {absent:?}");
+}
