@@ -121,3 +121,29 @@ fn schemas_readme_lists_the_events_schema() {
     );
     assert!(absent.is_empty(), "schemas/README.md is missing {absent:?}");
 }
+
+#[test]
+fn events_are_documented_in_readme_changelog_and_architecture() {
+    let readme = repo_file("README.md");
+    for needle in [
+        "--events",
+        "NDJSON",
+        "anytopdf.events/1",
+        "run.finished",
+        "- [x] NDJSON progress events",
+    ] {
+        assert!(readme.contains(needle), "README.md missing {needle:?}");
+    }
+    let changelog = repo_file("CHANGELOG.md");
+    let first = changelog.split("\n## ").nth(1).unwrap_or("");
+    for needle in ["--events", "NDJSON"] {
+        assert!(
+            first.contains(needle),
+            "CHANGELOG first section missing {needle:?}"
+        );
+    }
+    let arch = repo_file("ARCHITECTURE.md");
+    for needle in ["observer", "--events"] {
+        assert!(arch.contains(needle), "ARCHITECTURE.md missing {needle:?}");
+    }
+}
