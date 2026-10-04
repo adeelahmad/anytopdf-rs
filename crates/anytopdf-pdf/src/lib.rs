@@ -3,6 +3,8 @@ use anytopdf_core::*;
 use printpdf::*;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+mod attachments;
+pub use attachments::{EmbeddedFile, embed_files, read_embedded_files};
 use std::{
     fs,
     path::{Path, PathBuf},
