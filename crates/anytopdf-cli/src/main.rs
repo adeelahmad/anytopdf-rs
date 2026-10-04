@@ -1,3 +1,4 @@
+mod exit;
 use anyhow::{Context, Result, bail};
 use anytopdf_builtin::{
     BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, discover_inputs, register_builtins,
@@ -8,9 +9,11 @@ use anytopdf_core::{
 };
 use anytopdf_pdf::SearchablePdfRenderer;
 use clap::{Parser, Subcommand};
+use exit::{CliError, ExitClass, fail, tag};
 use regex::Regex;
 use std::{
     path::{Path, PathBuf},
+    process::ExitCode,
     sync::Arc,
     time::Duration,
 };
@@ -104,9 +107,29 @@ struct ConvertArgs {
     quiet: bool,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+fn main() -> ExitCode {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            let class = if e.use_stderr() {
+                ExitClass::Usage
+            } else {
+                ExitClass::Success
+            };
+            let _ = e.print();
+            return ExitCode::from(class.code());
+        }
+    };
+    match run(cli) {
+        Ok(()) => ExitCode::from(ExitClass::Success.code()),
+        Err(e) => {
+            eprintln!("error: {:#}", e.error);
+            ExitCode::from(e.class.code())
+        }
+    }
+}
 
+fn run(cli: Cli) -> Result<(), CliError> {
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
         timeout: Duration::from_secs(cli.plugin_timeout),
@@ -116,8 +139,8 @@ fn main() -> Result<()> {
     };
     match cli.command {
         Commands::Convert(args) => convert(*args, &policy),
-        Commands::Doctor => doctor(),
-        Commands::Plugins => plugins(&policy),
+        Commands::Doctor => Ok(doctor()?),
+        Commands::Plugins => Ok(plugins(&policy)?),
         Commands::Probe { input } => probe(&input, &policy),
     }
 }
@@ -130,38 +153,55 @@ fn registry(opts: BuiltinOptions, policy: &RuntimePluginPolicy) -> (Registry, Ve
     (registry, warnings)
 }
 
-fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<()> {
+fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
     if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
-        bail!("--video-interval must be finite and greater than zero");
+        return Err(fail(
+            ExitClass::Usage,
+            "--video-interval must be finite and greater than zero",
+        ));
     }
     if !args.scene_threshold.is_finite() || !(0.0..=1.0).contains(&args.scene_threshold) {
-        bail!("--scene-threshold must be between 0 and 1");
+        return Err(fail(
+            ExitClass::Usage,
+            "--scene-threshold must be between 0 and 1",
+        ));
     }
     if args.dedupe_distance > 64 {
-        bail!("--dedupe-distance must be between 0 and 64");
+        return Err(fail(
+            ExitClass::Usage,
+            "--dedupe-distance must be between 0 and 64",
+        ));
     }
     for path in &args.transcripts {
         if !path.is_file() {
-            bail!("transcript not found: {}", path.display());
+            return Err(fail(
+                ExitClass::Input,
+                format!("transcript not found: {}", path.display()),
+            ));
         }
     }
-    let filter = args
-        .filter
-        .as_deref()
-        .map(Regex::new)
-        .transpose()
-        .context("invalid --filter regex")?;
+    let filter = tag(
+        ExitClass::Usage,
+        args.filter
+            .as_deref()
+            .map(Regex::new)
+            .transpose()
+            .context("invalid --filter regex"),
+    )?;
 
-    let inputs = discover_inputs(
-        &args.inputs,
-        &DiscoveryOptions {
-            include_hidden: args.include_hidden,
-            filter,
-        },
+    let inputs = tag(
+        ExitClass::Input,
+        discover_inputs(
+            &args.inputs,
+            &DiscoveryOptions {
+                include_hidden: args.include_hidden,
+                filter,
+            },
+        ),
     )?;
 
     if inputs.is_empty() {
-        bail!("no input files matched");
+        return Err(fail(ExitClass::Input, "no input files matched"));
     }
     let mut protected = inputs.clone();
     protected.extend(
@@ -170,10 +210,20 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<()> {
             .map(|p| p.canonicalize())
             .collect::<std::io::Result<Vec<_>>>()?,
     );
-    let output = checked_destination(&args.output, &protected, args.overwrite)?;
+    let output = tag(
+        ExitClass::Usage,
+        checked_destination(&args.output, &protected, args.overwrite),
+    )?;
     if let Some(path) = &args.dump_graph {
-        if checked_destination(path, &protected, args.overwrite)? == output {
-            bail!("PDF and graph outputs must use different paths");
+        let graph = tag(
+            ExitClass::Usage,
+            checked_destination(path, &protected, args.overwrite),
+        )?;
+        if graph == output {
+            return Err(fail(
+                ExitClass::Usage,
+                "PDF and graph outputs must use different paths",
+            ));
         }
     }
 
@@ -190,32 +240,55 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<()> {
 
     let (registry, mut warnings) = registry(opts, policy);
     let pipeline = Pipeline::new(registry);
-    let mut run = pipeline.ingest(&inputs, args.quiet)?;
+    let mut run = tag(ExitClass::Input, pipeline.ingest(&inputs, args.quiet))?;
     run.warnings.append(&mut warnings);
 
     for diagnostic in &run.warnings {
         print_diagnostic(diagnostic);
     }
 
+    if !matches!(args.ocr, OcrMode::Auto | OcrMode::Off)
+        && let Some(d) = run.warnings.iter().find(|d| {
+            d.code == DiagnosticCode::EnrichmentFailed
+                && d.message.contains("no OCR provider succeeded")
+        })
+    {
+        return Err(fail(ExitClass::Provider, &d.message));
+    }
     if run.graph.units.is_empty() {
-        bail!("no usable content was imported");
+        return Err(fail(ExitClass::Input, "no usable content was imported"));
     }
     if args.strict && run.warnings.iter().any(|d| d.severity >= Severity::Warning) {
-        bail!("strict conversion stopped on ingestion warnings");
+        return Err(fail(
+            ExitClass::Strict,
+            "strict conversion stopped on ingestion warnings",
+        ));
     }
 
     // Render into staging first, including runtime renderers, before publishing output.
     let staged = run.context.workspace.join("result.pdf");
-    let report = pipeline.render(&run, &args.renderer, &staged)?;
+    let report = tag(
+        ExitClass::Render,
+        pipeline.render(&run, &args.renderer, &staged),
+    )?;
     for warning in &report.warnings {
         print_diagnostic(&Diagnostic::new(DiagnosticCode::RenderWarning, warning));
     }
     if args.strict && !report.warnings.is_empty() {
-        bail!("strict conversion stopped on rendering warnings");
+        return Err(fail(
+            ExitClass::Strict,
+            "strict conversion stopped on rendering warnings",
+        ));
     }
-    let bytes = std::fs::read(&staged).context("renderer did not produce output")?;
+    let bytes = tag(
+        ExitClass::Render,
+        std::fs::read(&staged).context("renderer did not produce output"),
+    )?;
     if !bytes.starts_with(b"%PDF-") || report.pages == 0 {
-        bail!("renderer did not produce a valid PDF");
+        return Err(fail(
+            ExitClass::Render,
+            "renderer did not produce a valid PDF",
+        ));
     }
     publish_output(&args.output, &bytes, args.overwrite)?;
     if let Some(path) = &args.dump_graph {
@@ -288,12 +361,14 @@ fn plugins(policy: &RuntimePluginPolicy) -> Result<()> {
     Ok(())
 }
 
-fn probe(path: &Path, policy: &RuntimePluginPolicy) -> Result<()> {
-    let path = path
-        .canonicalize()
-        .with_context(|| format!("input not found: {}", path.display()))?;
+fn probe(path: &Path, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+    let path = tag(
+        ExitClass::Input,
+        path.canonicalize()
+            .with_context(|| format!("input not found: {}", path.display())),
+    )?;
     if !path.is_file() {
-        bail!("probe requires a file");
+        return Err(fail(ExitClass::Input, "probe requires a file"));
     }
     let (registry, warnings) = registry(BuiltinOptions::default(), policy);
     for warning in warnings {
