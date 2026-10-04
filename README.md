@@ -308,6 +308,9 @@ binary itself remains a single executable and uses the system Vision framework.
 Running without a subcommand shows help. `probe FILE` reports the selected importer
 without decoding media, extracting frames, or running enrichers.
 
+`probe`, `doctor` and `plugins` accept `--json` and then write exactly one versioned JSON
+document to stdout (diagnostics go to stderr); contracts live in `schemas/`.
+
 ```bash
 anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
 anytopdf convert notes.txt -o notes.pdf --overwrite

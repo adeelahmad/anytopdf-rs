@@ -2,7 +2,8 @@ mod argv;
 mod exit;
 use anyhow::{Context, Result, bail};
 use anytopdf_builtin::{
-    BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, discover_inputs, register_builtins,
+    BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, detect_providers, discover_inputs,
+    register_builtins,
 };
 use anytopdf_core::{
     Diagnostic, DiagnosticCode, Pipeline, Registry, RuntimePluginPolicy, Severity, atomic_write,
@@ -46,9 +47,22 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Commands {
     Convert(Box<ConvertArgs>),
-    Doctor,
-    Plugins,
-    Probe { input: PathBuf },
+    Doctor {
+        /// Emit one JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    Plugins {
+        /// Emit one JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    Probe {
+        input: PathBuf,
+        /// Emit one JSON document on stdout (probe always does).
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -144,9 +158,9 @@ fn run(cli: Cli) -> Result<(), CliError> {
     };
     match cli.command {
         Commands::Convert(args) => convert(*args, &policy),
-        Commands::Doctor => Ok(doctor()?),
-        Commands::Plugins => Ok(plugins(&policy)?),
-        Commands::Probe { input } => probe(&input, &policy),
+        Commands::Doctor { json } => Ok(doctor(json)?),
+        Commands::Plugins { json } => Ok(plugins(&policy, json)?),
+        Commands::Probe { input, .. } => probe(&input, &policy),
     }
 }
 
@@ -329,7 +343,30 @@ fn print_diagnostic(d: &Diagnostic) {
     eprintln!("{level} [{}]: {}", d.code.as_str(), d.message);
 }
 
-fn doctor() -> Result<()> {
+fn doctor(json: bool) -> Result<()> {
+    if json {
+        let providers: Vec<_> = detect_providers()
+            .into_iter()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name, "available": p.available,
+                    "path": p.path.map(|path| path.display().to_string()),
+                    "version": p.version
+                })
+            })
+            .collect();
+        let ocr: Vec<_> = OcrEnricher::status()
+            .into_iter()
+            .map(|s| serde_json::json!({"name": s.name, "available": s.available, "detail": s.detail}))
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": "anytopdf.doctor/1", "providers": providers, "ocr": ocr
+            }))?
+        );
+        return Ok(());
+    }
     println!("anytopdf provider diagnostics");
     println!();
 
@@ -353,13 +390,22 @@ fn doctor() -> Result<()> {
     Ok(())
 }
 
-fn plugins(policy: &RuntimePluginPolicy) -> Result<()> {
+fn plugins(policy: &RuntimePluginPolicy, json: bool) -> Result<()> {
     let (registry, warnings) = registry(BuiltinOptions::default(), policy);
     for warning in warnings {
         eprintln!("WARNING: {warning}");
     }
     let mut descriptors = registry.descriptors();
     descriptors.sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.name.cmp(&b.name)));
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": "anytopdf.plugins/1", "plugins": descriptors
+            }))?
+        );
+        return Ok(());
+    }
 
     for p in descriptors {
         println!(
@@ -398,6 +444,7 @@ fn probe(path: &Path, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
+            "schema_version": "anytopdf.probe/1",
             "source": source, "importer": importer.descriptor()
         }))?
     );

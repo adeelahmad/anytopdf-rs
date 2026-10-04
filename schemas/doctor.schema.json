@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/doctor/v1",
+  "title": "anytopdf doctor",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "providers",
+    "ocr"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "anytopdf.doctor/1"
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "available",
+          "path",
+          "version"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "ocr": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "available",
+          "detail"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
