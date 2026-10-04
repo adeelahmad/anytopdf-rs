@@ -1,4 +1,5 @@
 mod argv;
+mod capabilities;
 mod exit;
 mod extract;
 mod naming;
@@ -63,6 +64,12 @@ enum Commands {
     Extract {
         pdf: PathBuf,
         /// Emit one JSON document on stdout (extract always does).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Describe exit codes, diagnostic codes, profiles, OCR modes, importers and schemas.
+    Capabilities {
+        /// Emit one JSON document on stdout (capabilities always does).
         #[arg(long)]
         json: bool,
     },
@@ -184,6 +191,13 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Extract { pdf, .. } => {
             let doc = extract::extract(&pdf)?;
             println!("{}", serde_json::to_string_pretty(&doc)?);
+            Ok(())
+        }
+        Commands::Capabilities { .. } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&capabilities::capabilities()?)?
+            );
             Ok(())
         }
         Commands::Probe { input, .. } => probe(&input, &policy),

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExitClass {
     Success,
