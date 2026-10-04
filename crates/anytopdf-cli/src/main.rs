@@ -3,7 +3,8 @@ use anytopdf_builtin::{
     BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, discover_inputs, register_builtins,
 };
 use anytopdf_core::{
-    Pipeline, Registry, RuntimePluginPolicy, atomic_write, register_runtime_plugins_with_policy,
+    Diagnostic, Pipeline, Registry, RuntimePluginPolicy, atomic_write,
+    register_runtime_plugins_with_policy,
 };
 use anytopdf_pdf::SearchablePdfRenderer;
 use clap::{Parser, Subcommand};
@@ -120,7 +121,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn registry(opts: BuiltinOptions, policy: &RuntimePluginPolicy) -> (Registry, Vec<String>) {
+fn registry(opts: BuiltinOptions, policy: &RuntimePluginPolicy) -> (Registry, Vec<Diagnostic>) {
     let mut registry = Registry::default();
     register_builtins(&mut registry, opts);
     registry.register_renderer(Arc::new(SearchablePdfRenderer::default()));

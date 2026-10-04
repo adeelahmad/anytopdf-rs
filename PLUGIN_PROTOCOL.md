@@ -143,6 +143,10 @@ the direct child; independently spawned descendants are not guaranteed to stop.
 Captured output and response JSON are limited to 16 MiB each. Optional plugin
 failures become warnings; failed enrichers roll back graph mutations.
 
+Protocol v1 warning strings are unchanged on the wire. The host reports every
+plugin-supplied warning string as the diagnostic code `plugin.warning`, even if
+it imitates a built-in code, and the protocol number stays 1.
+
 ## Working example
 
 On Unix, copy `examples/anytopdf-plugin-example.py` into a trusted plugin directory,
