@@ -34,3 +34,7 @@ walkdir = "2.5"
 which = "8.0"
 ttf-parser = "0.25"
 allsorts = { package = "allsorts-azul", version = "0.17.2", default-features = false, features = ["flate2_rust"] }
+
+[profile.release]
+lto = true
+strip = true

@@ -284,3 +284,12 @@ Signing/notarization and automatic updates are not configured. Optional OCR/medi
 providers and fonts remain runtime prerequisites for their respective features.
 Complex-script shaping and bidirectional layout are not guaranteed. Runtime
 plugins are trusted executables; time/output limits are not an OS sandbox.
+
+## Release binary size
+
+Measured locally on macOS arm64 (host triple `aarch64-apple-darwin`), not
+Linux or Windows proof, with `cargo build --release` at commit `4ccdcce` on
+2026-10-04. Enabling `lto = true` and `strip = true` in `[profile.release]`:
+
+- before: 8584064 bytes
+- after: 6246336 bytes
