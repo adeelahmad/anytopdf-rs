@@ -709,10 +709,15 @@ fn doctor(json: bool) -> Result<()> {
     println!("anytopdf provider diagnostics");
     println!();
 
-    for command in ["ffmpeg", "ffprobe", "exiftool", "tesseract", "python3"] {
-        match which::which(command) {
-            Ok(path) => println!("[ok]   {command:<10} {}", path.display()),
-            Err(_) => println!("[miss] {command:<10}"),
+    for p in detect_providers() {
+        match p.path {
+            Some(path) => println!(
+                "[ok]   {:<10} {} {}",
+                p.name,
+                path.display(),
+                p.version.unwrap_or_default()
+            ),
+            None => println!("[miss] {:<10}", p.name),
         }
     }
 
