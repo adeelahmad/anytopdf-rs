@@ -334,7 +334,7 @@ fn convert_inner(
         scene_threshold: args.scene_threshold,
         dedupe_distance: args.dedupe_distance,
         max_video_frames: args.max_video_frames,
-        max_image_frames: 1,
+        max_image_frames: args.max_image_frames,
         ocr: args.ocr,
         ocr_language: args.lang,
         explicit_transcripts: args.transcripts,

@@ -184,7 +184,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Typed diagnostics with stable codes and INFO/WARNING severities
 - [x] `--strict` ignores missing optional providers
 - [x] Provider version detection
-- [x] Warning for multi-frame TIFF/GIF input (imports frame 1, warns "imported 1 of N frames")
+- [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
 - [x] `--transcript` is never silently ignored
 
@@ -406,7 +406,7 @@ or use `--no-plugins`; see `PLUGIN_PROTOCOL.md` for policy details.
 
 Images are decoded by content, normalized to PNG in the temporary workspace, and
 rotated according to EXIF orientation. OCR coordinates refer to that normalized
-image. GIF and multi-page TIFF inputs currently use their first frame/page.
+image. Every frame of a GIF or multi-page TIFF becomes a page carrying a `frame` anchor; `--max-image-frames N` caps the count (0 = unlimited). Frames are not deduplicated and each is OCRed.
 
 Fonts are loaded from the system, subset to the required glyphs, and embedded in the PDF. Set `ANYTOPDF_FONT` to a
 TTF file for a particular script or on minimal Linux installations. Missing glyphs
