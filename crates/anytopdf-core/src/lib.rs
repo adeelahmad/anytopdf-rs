@@ -6,6 +6,7 @@ mod pipeline;
 mod plugin;
 mod process;
 mod registry;
+pub mod schema;
 
 pub use diagnostics::*;
 pub use external::*;
