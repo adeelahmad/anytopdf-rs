@@ -1,5 +1,6 @@
 mod diagnostics;
 mod external;
+mod manifest;
 mod model;
 mod output;
 mod pipeline;
@@ -11,6 +12,7 @@ pub mod schema;
 
 pub use diagnostics::*;
 pub use external::*;
+pub use manifest::*;
 pub use model::*;
 pub use output::*;
 pub use pipeline::*;

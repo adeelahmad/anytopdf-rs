@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/manifest/v1",
+  "title": "anytopdf manifest",
+  "type": "object",
+  "required": ["schema_version", "generator", "profile", "providers", "sources", "units"],
+  "properties": {
+    "schema_version": {"const": "anytopdf.manifest/1"},
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {"name": {"type": "string"}, "version": {"type": "string"}}
+    },
+    "profile": {"type": "string"},
+    "created": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "version"],
+        "properties": {"name": {"type": "string"}, "version": {"type": "string"}}
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "sha256", "size", "metadata"],
+        "properties": {
+          "id": {"type": "string"},
+          "name": {"type": "string"},
+          "path": {"type": "string"},
+          "media_type": {"type": "string"},
+          "sha256": {"type": "string"},
+          "size": {"type": "integer", "minimum": 0},
+          "pages": {"$ref": "#/$defs/pages"},
+          "metadata": {"type": "object"}
+        }
+      }
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source_id", "kind", "anchor"],
+        "properties": {
+          "id": {"type": "string"},
+          "source_id": {"type": "string"},
+          "kind": {"type": "string", "enum": ["visual", "text", "audio", "existing-pdf", "generic"]},
+          "anchor": {"$ref": "#/$defs/anchor"},
+          "pages": {"$ref": "#/$defs/pages"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "pages": {
+      "type": "object",
+      "required": ["first", "last"],
+      "properties": {"first": {"type": "integer", "minimum": 1}, "last": {"type": "integer", "minimum": 1}}
+    },
+    "anchor": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {"kind": {"type": "string", "enum": ["time-span", "region", "byte-range"]}}
+    }
+  }
+}
