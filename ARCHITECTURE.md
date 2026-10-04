@@ -180,5 +180,5 @@ command recovers them.
 
 ## CLI contract
 
-Failures map to exit codes 0-7. `--json` output follows published schemas, and the
+Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
 `capabilities` command reports available providers.

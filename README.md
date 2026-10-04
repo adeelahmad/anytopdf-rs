@@ -146,6 +146,14 @@ anytopdf convert meeting.mp4 \
   -o meeting.pdf
 ```
 
+### Progress events
+
+`anytopdf convert --events` writes one NDJSON object per line to stderr
+(`anytopdf.events/1`, `schemas/events.schema.json`) instead of human progress and
+`error:` lines. Every run ends with exactly one `run.finished` event whose
+`status` (`ok`, `partial`, `failed`) and `exit_code` match the process exit code;
+a failed run adds an `error` message. A closed stderr pipe never panics.
+
 ### Embedded manifest and chunks
 
 Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
@@ -188,7 +196,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Batch continues past failed inputs by default, `--fail-fast` to stop
 - [x] `--json` for convert, probe, doctor and plugins, with capabilities and published JSON Schemas
 - [x] Help text on every flag
-- [ ] NDJSON progress events
+- [x] NDJSON progress events
 
 ### Evidence file and provenance
 - [x] Content-derived source and unit IDs with SHA-256 and size

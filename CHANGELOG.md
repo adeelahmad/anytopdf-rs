@@ -6,6 +6,8 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `--events` streams NDJSON progress events (`anytopdf.events/1`) to stderr; failing runs
+  end with one failed `run.finished` and print no human `error:` line.
 - The invisible text layer is content-only; provenance moves out of it (supersedes the
   earlier provenance-in-text-layer behaviour).
 - A visible back-matter provenance page is added; disable it with `--no-provenance-page`.
