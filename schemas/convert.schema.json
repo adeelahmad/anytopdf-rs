@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/convert/v1",
+  "title": "anytopdf convert",
+  "type": "object",
+  "required": ["schema_version", "status", "exit_code", "profile", "outputs", "summary", "diagnostics"],
+  "properties": {
+    "schema_version": {"const": "anytopdf.convert/1"},
+    "status": {"enum": ["ok", "partial", "failed"]},
+    "exit_code": {"type": "integer", "minimum": 0},
+    "profile": {"enum": ["archive", "share"]},
+    "error": {"type": "string"},
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "pages"],
+        "properties": {
+          "path": {"type": "string"},
+          "pages": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string"}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["converted", "skipped"],
+      "properties": {
+        "converted": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["input", "source_id", "sha256"],
+            "properties": {
+              "input": {"type": "string"},
+              "source_id": {"type": "string"},
+              "sha256": {"type": "string"}
+            }
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["input", "code"],
+            "properties": {
+              "input": {"type": "string"},
+              "code": {"type": "string"},
+              "message": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "message"],
+        "properties": {
+          "code": {"type": "string"},
+          "severity": {"enum": ["info", "warning"]},
+          "message": {"type": "string"}
+        }
+      }
+    }
+  }
+}

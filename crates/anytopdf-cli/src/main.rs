@@ -141,6 +141,10 @@ struct ConvertArgs {
 
     #[arg(short, long)]
     quiet: bool,
+
+    /// Emit one JSON document on stdout.
+    #[arg(long)]
+    json: bool,
 }
 
 fn main() -> ExitCode {
@@ -195,6 +199,47 @@ fn registry(opts: BuiltinOptions, policy: &RuntimePluginPolicy) -> (Registry, Ve
 }
 
 fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+    let json = args.json;
+    let profile = args.profile;
+    let mut outcome = ConvertOutcome::default();
+    let result = convert_inner(args, policy, &mut outcome);
+    if json {
+        let exit_code = result.as_ref().map_or_else(|e| e.class.code(), |_| 0);
+        let status = match (&result, outcome.skipped.is_empty()) {
+            (Err(_), _) => "failed",
+            (Ok(()), true) => "ok",
+            (Ok(()), false) => "partial",
+        };
+        let mut payload = serde_json::json!({
+            "schema_version": "anytopdf.convert/1",
+            "status": status,
+            "exit_code": exit_code,
+            "profile": profile.as_str(),
+            "outputs": outcome.outputs,
+            "summary": {"converted": outcome.converted, "skipped": outcome.skipped},
+            "diagnostics": outcome.diagnostics,
+        });
+        if let Err(e) = &result {
+            payload["error"] = format!("{:#}", e.error).into();
+        }
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    }
+    result
+}
+
+#[derive(Default)]
+struct ConvertOutcome {
+    outputs: Vec<serde_json::Value>,
+    converted: Vec<serde_json::Value>,
+    skipped: Vec<serde_json::Value>,
+    diagnostics: Vec<serde_json::Value>,
+}
+
+fn convert_inner(
+    args: ConvertArgs,
+    policy: &RuntimePluginPolicy,
+    outcome: &mut ConvertOutcome,
+) -> Result<(), CliError> {
     if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
         return Err(fail(
             ExitClass::Usage,
@@ -319,7 +364,35 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
         print_diagnostic(diagnostic);
     }
 
+    let shown = |path: &Path| {
+        if args.profile == Profile::Share {
+            anytopdf_core::basename(path)
+        } else {
+            path.display().to_string()
+        }
+    };
+    outcome.diagnostics = run
+        .warnings
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "code": d.code.as_str(),
+                "severity": if d.severity == Severity::Info { "info" } else { "warning" },
+                "message": d.message,
+            })
+        })
+        .collect();
     let skipped: Vec<&Diagnostic> = run.warnings.iter().filter(|d| d.code.is_skip()).collect();
+    outcome.skipped = skipped
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "input": d.input.as_deref().map_or_else(String::new, shown),
+                "code": d.code.as_str(),
+                "message": d.message,
+            })
+        })
+        .collect();
     if !skipped.is_empty() {
         exit::print_summary(run.graph.sources.len(), &skipped);
         if args.fail_fast {
@@ -397,7 +470,19 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
             "renderer did not produce a valid PDF",
         ));
     }
-    let manifest = serde_json::to_vec_pretty(&Manifest::build(&run.graph, &report))?;
+    let built = Manifest::build(&run.graph, &report);
+    let summary_sources: Vec<serde_json::Value> = built
+        .sources
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "input": s.path.clone().unwrap_or_else(|| s.name.clone()),
+                "source_id": s.id.to_string(),
+                "sha256": s.sha256,
+            })
+        })
+        .collect();
+    let manifest = serde_json::to_vec_pretty(&built)?;
     let chunks = serde_json::to_vec_pretty(&ChunkSet::build(&run.graph, &report))?;
     let files = [
         EmbeddedFile {
@@ -433,6 +518,11 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<(), CliErr
         publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
     }
 
+    outcome.outputs.push(serde_json::json!({
+        "path": shown(&out_path),
+        "pages": report.pages,
+    }));
+    outcome.converted = summary_sources;
     if !args.quiet {
         eprintln!("Wrote {} ({} pages)", out_path.display(), report.pages);
     }
