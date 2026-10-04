@@ -3,7 +3,7 @@ use anytopdf_builtin::{
     BuiltinOptions, DiscoveryOptions, OcrEnricher, OcrMode, discover_inputs, register_builtins,
 };
 use anytopdf_core::{
-    Diagnostic, Pipeline, Registry, RuntimePluginPolicy, atomic_write,
+    Diagnostic, DiagnosticCode, Pipeline, Registry, RuntimePluginPolicy, Severity, atomic_write,
     register_runtime_plugins_with_policy,
 };
 use anytopdf_pdf::SearchablePdfRenderer;
@@ -56,7 +56,8 @@ struct ConvertArgs {
     #[arg(long)]
     overwrite: bool,
 
-    /// Fail before publishing output when ingestion or rendering reports warnings.
+    /// Fail before publishing output when ingestion or rendering reports warnings;
+    /// informational notices are ignored.
     #[arg(long)]
     strict: bool,
 
@@ -192,14 +193,14 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<()> {
     let mut run = pipeline.ingest(&inputs, args.quiet)?;
     run.warnings.append(&mut warnings);
 
-    for warning in &run.warnings {
-        eprintln!("WARNING: {warning}");
+    for diagnostic in &run.warnings {
+        print_diagnostic(diagnostic);
     }
 
     if run.graph.units.is_empty() {
         bail!("no usable content was imported");
     }
-    if args.strict && !run.warnings.is_empty() {
+    if args.strict && run.warnings.iter().any(|d| d.severity >= Severity::Warning) {
         bail!("strict conversion stopped on ingestion warnings");
     }
 
@@ -207,7 +208,7 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<()> {
     let staged = run.context.workspace.join("result.pdf");
     let report = pipeline.render(&run, &args.renderer, &staged)?;
     for warning in &report.warnings {
-        eprintln!("WARNING: {warning}");
+        print_diagnostic(&Diagnostic::new(DiagnosticCode::RenderWarning, warning));
     }
     if args.strict && !report.warnings.is_empty() {
         bail!("strict conversion stopped on rendering warnings");
@@ -229,6 +230,14 @@ fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result<()> {
         eprintln!("Wrote {} ({} pages)", args.output.display(), report.pages);
     }
     Ok(())
+}
+
+fn print_diagnostic(d: &Diagnostic) {
+    let level = match d.severity {
+        Severity::Info => "INFO",
+        Severity::Warning => "WARNING",
+    };
+    eprintln!("{level} [{}]: {}", d.code.as_str(), d.message);
 }
 
 fn doctor() -> Result<()> {

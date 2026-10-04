@@ -62,14 +62,23 @@ impl SourceEnricher for MetadataEnricher {
                     }
                 }
             } else {
-                warnings.push(format!(
-                    "exiftool failed for {}: {}",
-                    source.path.display(),
-                    String::from_utf8_lossy(&out.stderr)
-                ));
+                warnings.push(
+                    Diagnostic::new(
+                        DiagnosticCode::ProviderFailed,
+                        format!(
+                            "exiftool failed for {}: {}",
+                            source.path.display(),
+                            String::from_utf8_lossy(&out.stderr)
+                        ),
+                    )
+                    .to_string(),
+                );
             }
         } else {
-            warnings.push("exiftool unavailable; rich EXIF/XMP metadata disabled".into());
+            warnings.push(missing_provider_notice(
+                "exiftool",
+                "rich EXIF/XMP metadata disabled",
+            ));
         }
 
         if source
@@ -113,11 +122,17 @@ impl SourceEnricher for MetadataEnricher {
                         }
                     }
                 } else {
-                    warnings.push(format!(
-                        "ffprobe failed for {}: {}",
-                        source.path.display(),
-                        String::from_utf8_lossy(&out.stderr)
-                    ));
+                    warnings.push(
+                        Diagnostic::new(
+                            DiagnosticCode::ProviderFailed,
+                            format!(
+                                "ffprobe failed for {}: {}",
+                                source.path.display(),
+                                String::from_utf8_lossy(&out.stderr)
+                            ),
+                        )
+                        .to_string(),
+                    );
                 }
             }
         }
@@ -147,5 +162,29 @@ fn flatten_value(prefix: &str, value: &Value, out: &mut Metadata) {
         other => {
             out.insert(prefix.into(), other.to_string());
         }
+    }
+}
+
+fn missing_provider_notice(provider: &str, consequence: &str) -> String {
+    Diagnostic::new(
+        DiagnosticCode::ProviderMissing,
+        format!("{provider} unavailable; {consequence}"),
+    )
+    .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_exiftool_notice_is_informational() {
+        let d = Diagnostic::from_wire(&missing_provider_notice(
+            "exiftool",
+            "rich EXIF/XMP metadata disabled",
+        ));
+        assert_eq!(d.code, DiagnosticCode::ProviderMissing);
+        assert_eq!(d.severity, Severity::Info);
+        assert!(d.message.contains("exiftool"), "{}", d.message);
     }
 }

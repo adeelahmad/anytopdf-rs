@@ -116,11 +116,7 @@ impl UnitEnricher for OcrEnricher {
             match result {
                 Ok(annotations) => {
                     if self.mode == OcrMode::Auto && index > 0 {
-                        warnings.push(format!(
-                            "OCR fallback selected {:?}; earlier providers unavailable: {}",
-                            provider,
-                            errors.join("; ")
-                        ));
+                        warnings.push(fallback_notice(provider, &errors));
                     }
                     unit.annotations.extend(annotations);
                     return Ok(warnings);
@@ -409,9 +405,32 @@ fn vision_ocr(path: &Path, lang: &str) -> Result<Vec<Annotation>> {
     Ok(out)
 }
 
+fn fallback_notice(provider: OcrMode, errors: &[String]) -> String {
+    Diagnostic::new(
+        DiagnosticCode::OcrFallback,
+        format!(
+            "OCR fallback selected {provider:?}; earlier providers unavailable: {}",
+            errors.join("; ")
+        ),
+    )
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_fallback_notice_is_informational() {
+        let d = Diagnostic::from_wire(&fallback_notice(
+            OcrMode::Tesseract,
+            &["Vision: unavailable".into()],
+        ));
+        assert_eq!(d.code, DiagnosticCode::OcrFallback);
+        assert_eq!(d.severity, Severity::Info);
+        assert!(d.message.contains("Tesseract"), "{}", d.message);
+        assert!(d.message.contains("Vision: unavailable"), "{}", d.message);
+    }
 
     #[test]
     fn tesseract_preserves_quotes_and_tabs_in_text() {
