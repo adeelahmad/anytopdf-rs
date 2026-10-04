@@ -19,6 +19,7 @@ pub struct BuiltinOptions {
     pub scene_threshold: f64,
     pub dedupe_distance: u32,
     pub max_video_frames: usize,
+    pub max_image_frames: usize,
     pub ocr: OcrMode,
     pub ocr_language: String,
     pub explicit_transcripts: Vec<std::path::PathBuf>,
@@ -32,6 +33,7 @@ impl Default for BuiltinOptions {
             scene_threshold: 0.30,
             dedupe_distance: 4,
             max_video_frames: 0,
+            max_image_frames: 0,
             ocr: OcrMode::Auto,
             ocr_language: "eng".to_string(),
             explicit_transcripts: Vec::new(),
@@ -43,7 +45,9 @@ impl Default for BuiltinOptions {
 pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_source_enricher(Arc::new(metadata::MetadataEnricher));
 
-    registry.register_importer(Arc::new(importers::ImageImporter));
+    registry.register_importer(Arc::new(importers::ImageImporter::new(
+        opts.max_image_frames,
+    )));
     registry.register_importer(Arc::new(importers::TextImporter));
     registry.register_importer(Arc::new(importers::SubtitleImporter));
     registry.register_importer(Arc::new(importers::VideoImporter::new(

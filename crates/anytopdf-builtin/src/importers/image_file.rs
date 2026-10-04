@@ -52,19 +52,19 @@ fn frame_count(path: &Path, format: Option<image::ImageFormat>) -> usize {
     }
 }
 
-pub struct ImageImporter;
+pub struct ImageImporter {
+    max_frames: usize,
+}
 
-// agentic:shim
 impl ImageImporter {
-    pub fn new(_max_frames: usize) -> Self {
-        Self
+    pub fn new(max_frames: usize) -> Self {
+        Self { max_frames }
     }
 }
 
-// agentic:shim
 impl Default for ImageImporter {
     fn default() -> Self {
-        Self
+        Self::new(0)
     }
 }
 
@@ -120,6 +120,8 @@ impl Importer for ImageImporter {
     fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
         let reader = image::ImageReader::open(&source.path)?.with_guessed_format()?;
         let frames = frame_count(&source.path, reader.format());
+        // SUB-AGENT-TODO: import min(frames, self.max_frames) frames (0 = unlimited) per tasks.md T2
+        let _cap = self.max_frames;
         let mut decoder = reader
             .into_decoder()
             .with_context(|| format!("decode {}", source.path.display()))?;
