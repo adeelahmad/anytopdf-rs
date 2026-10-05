@@ -120,6 +120,10 @@ image conversion; provider-specific dependencies are listed below.
 ./anytopdf doctor
 ```
 
+Homebrew, Scoop, cargo-binstall, `cargo install` and a container image with
+FFmpeg, ExifTool and Tesseract are described in
+[docs/distribution.md](docs/distribution.md).
+
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
 a supplied transcript or a plugin. PDF and Office importers are future work.
@@ -136,6 +140,7 @@ anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf mcp
 ```
 
 Video defaults combine interval sampling and FFmpeg scene-change sampling and
@@ -174,6 +179,41 @@ on stderr) but still exits 0. A version-matched manifest or chunks file that
 does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
+
+### MCP server
+
+`anytopdf mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio (newline-delimited JSON-RPC 2.0) so agents can call anytopdf
+as tools:
+
+| Tool | Runs | Returns |
+| --- | --- | --- |
+| `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
+| `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
+| `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
+| `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
+
+Each call re-runs the same executable, so tools keep the CLI's validation,
+overwrite protection, profiles and exit codes. The JSON document is returned as
+both text and `structuredContent`; a non-zero exit becomes a tool result with
+`isError: true` whose text starts with the exit code and class, followed by
+stderr. Global flags given before `mcp` (`--no-plugins`, `--plugin-timeout`,
+`--allow-plugin-kind`, `--deny-plugin-kind`) apply to every call. Paths are local
+to the server and relative paths resolve against its working directory, so give
+agents absolute paths. The server reads and writes files with your permissions,
+exactly like the CLI.
+
+Register it with an MCP client, for example Claude Code:
+
+```bash
+claude mcp add anytopdf -- anytopdf --no-plugins mcp
+```
+
+or in a client's JSON configuration:
+
+```json
+{"mcpServers": {"anytopdf": {"command": "anytopdf", "args": ["mcp"]}}}
+```
 
 ## Roadmap
 
@@ -260,9 +300,10 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
 - [x] Spike: slim and full build shapes
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
-- [ ] Homebrew, winget, scoop, cargo binstall, `curl | sh`, and npx/uvx wrappers
+- [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
+- [ ] Published Homebrew tap and Scoop bucket, winget, `curl | sh`, and npx/uvx wrappers
 - [ ] Signing and notarization
-- [ ] MCP server mode
+- [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`
 
 ## Dependencies

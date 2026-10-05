@@ -67,6 +67,8 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    Mcp,
 }
 
 #[derive(Debug, clap::Args)]

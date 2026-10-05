@@ -1,0 +1,12 @@
+# Keep the build context to sources; dist/docker carries prebuilt release binaries.
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!.cargo/
+!crates/
+!schemas/
+!README.md
+!ARCHITECTURE.md
+!PLUGIN_PROTOCOL.md
+!dist/docker/
