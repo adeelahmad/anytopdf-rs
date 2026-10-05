@@ -62,6 +62,8 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `anytopdf queue serve`: HTTP upload intake with a bearer token, localhost by default, TLS for any other address, 100 MB default upload cap
 - [x] archive importer (zip, tar, tar.gz) with path-traversal and zip-bomb limits
 - [x] Whisper transcription runtime plugin
+- [x] `anytopdf watch imap`: IMAP watcher with IDLE or polling, a sender allowlist with a DMARC check, XOAUTH2 and queue hand-off
+- [x] `--plugin-sandbox off|contain|strict`: opt-in process containment for runtime plugins on every platform, plus a filesystem and network sandbox on Linux and macOS
 - [x] PDF importer (Poppler page images plus the PDF's own text as the hidden layer; OCR only for textless pages) and HEIC/HEIF/AVIF importer
 - [x] `helpers/anytopdf-printer`: optional IPP Everywhere printer built on PAPPL, with a PWG/Apple raster importer
 - [x] `anytopdf print remote`: TLS print front for Tailscale/WireGuard with user passwords, a peer allowlist and DNS-SD discovery
@@ -85,7 +87,8 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 
 ## Security
 - [x] `SECURITY.md` with private reporting through GitHub, and the threat model in `docs/threat-model/`
-- [ ] OS sandbox and descendant process containment for runtime plugins (in progress), then hard CPU/memory/disk quotas
+- [x] opt-in OS sandbox (`--plugin-sandbox strict`, Linux and macOS) and descendant process containment (`contain`) for runtime plugins
+- [ ] hard CPU/memory/disk quotas for runtime plugins, sandboxing for external providers, Windows `strict`, and a decision on making `contain` the default (threat model Q18)
 - [ ] untrusted-input handling for intake channels (no network, size/page caps, zip-bomb rejection)
 - [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, IMAP watcher, remote print front, PAPPL printer helper, MCP server, new importers)
 - [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review

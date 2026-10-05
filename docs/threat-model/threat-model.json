@@ -487,6 +487,22 @@
       "source": "PLUGIN_PROTOCOL \"`--no-plugins`: bypass runtime discovery entirely\""
     },
     {
+      "name": "--plugin-sandbox",
+      "default": "off",
+      "effect": "contain or strict enables opt-in-plugin-sandbox",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Sandbox levels\""
+    },
+    {
+      "name": "--plugin-sandbox-allow-read",
+      "default": "none",
+      "effect": "widens reads allowed under opt-in-plugin-sandbox strict",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Sandbox levels\""
+    },
+    {
       "name": "--plugin-timeout",
       "default": "60",
       "effect": "narrows subprocess-time-and-output-bounds",
@@ -695,6 +711,14 @@
       "severity_tier": "correctness",
       "provenance": "documented",
       "source": "README \"Design invariants\" \"Temporary derived artifacts live inside one job workspace\""
+    },
+    {
+      "property": "opt-in-plugin-sandbox",
+      "conditions": "under --plugin-sandbox contain or strict every process a plugin starts is killed when its call ends (except a macOS descendant calling setsid/setpgid and a Windows child created before job assignment); under strict on Linux and macOS writes only to the workspace and /dev/null, no network connections, limited reads; exits 2 where strict cannot be enforced; applies to manifest calls; macOS strict allows socket creation and Mach IPC; providers and quotas are not covered",
+      "violation_symptom": "x-unsandboxed-host-access, hang",
+      "severity_tier": "security",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Sandbox levels\""
     }
   ],
   "properties_not_provided": [
@@ -707,21 +731,21 @@
     },
     {
       "property": "os-sandbox",
-      "reason": "what a plugin or provider process does on the host; not P4 or P5. Basis: stated limit.",
+      "reason": "what a plugin or provider process does on the host; not P4 or P5; runtime plugins under --plugin-sandbox strict on Linux and macOS are opt-in-plugin-sandbox (P21). Basis: stated limit.",
       "false_friend": true,
       "provenance": "documented",
       "source": "PLUGIN_PROTOCOL \"without filesystem/network isolation or hard CPU/memory quotas\""
     },
     {
       "property": "capability-filter-as-execution-control",
-      "reason": "manifest commands of every discovered plugin still run; only --no-plugins stops execution. Basis: stated limit.",
+      "reason": "manifest commands of every discovered plugin still run; only --no-plugins stops execution; under --plugin-sandbox strict they run sandboxed (P21). Basis: stated limit.",
       "false_friend": true,
       "provenance": "documented",
       "source": "PLUGIN_PROTOCOL \"manifest commands still run during discovery\""
     },
     {
       "property": "descendant-containment",
-      "reason": "only the direct child is killed. Basis: stated limit.",
+      "reason": "by default only the direct child is killed; under --plugin-sandbox contain or strict the tree is killed (P21) except a macOS setsid/setpgid descendant or a Windows child created before job assignment; provider descendants never. Basis: stated limit.",
       "false_friend": false,
       "provenance": "documented",
       "source": "PLUGIN_PROTOCOL \"independently spawned descendants are not guaranteed to stop\""
@@ -791,7 +815,7 @@
     },
     {
       "property": "untrusted-plugin-safety",
-      "reason": "installing a plugin grants it the user's permissions. Basis: stated limit.",
+      "reason": "installing a plugin grants it the user's permissions; --plugin-sandbox strict narrows this to P21's limits on Linux and macOS. Basis: stated limit.",
       "false_friend": true,
       "provenance": "documented",
       "source": "README \"Install only trusted plugins or use `--no-plugins`\""
@@ -805,7 +829,7 @@
     "path and metadata leaks in shared outputs"
   ],
   "downstream_responsibilities": [
-    "install only trusted plugins; keep plugin search directories trusted; use --no-plugins otherwise",
+    "install only trusted plugins; keep plugin search directories trusted; use --no-plugins otherwise, or --plugin-sandbox strict on Linux and macOS when they must run",
     "convert untrusted media in an OS sandbox with quotas; set non-zero frame caps",
     "use --profile share before sharing outputs; review content for sensitive data yourself",
     "do not treat manifest SHA-256 values as proof a PDF is unaltered; sign and verify externally",
@@ -827,7 +851,7 @@
     {
       "pattern": "using --deny-plugin-kind to block an untrusted plugin",
       "why_unsafe": "the plugin's manifest command still runs on every invocation",
-      "instead": "remove the plugin from the search path or use --no-plugins"
+      "instead": "remove the plugin from the search path or use --no-plugins; --plugin-sandbox strict confines but still runs the manifest command"
     },
     {
       "pattern": "treating the manifest as tamper evidence",
@@ -847,7 +871,7 @@
     {
       "pattern": "running untrusted conversions on a shared host with defaults",
       "why_unsafe": "no input size limits and no plugin sandbox",
-      "instead": "per-job containers with quotas, plus non-zero frame caps"
+      "instead": "per-job containers with quotas, plus non-zero frame caps, and --no-plugins or --plugin-sandbox strict"
     }
   ],
   "known_non_findings": [
@@ -855,7 +879,7 @@
       "reported_as": "a runtime plugin can read or write any file, open sockets, or use unlimited CPU and memory",
       "why_safe": "Against plugin-host, x-unsandboxed-host-access is the disclaimed os-sandbox property: plugins are trusted native processes with no filesystem, network or resource isolation.",
       "cites": "properties_not_provided[1]",
-      "suppression": "actor is an installed anytopdf-plugin-* executable acting through its own process, not its response JSON; no P4 or P5 check bypassed"
+      "suppression": "actor is an installed anytopdf-plugin-* executable acting through its own process, not its response JSON; no P4 or P5 check bypassed; the run did not use --plugin-sandbox strict, or the access is one opt-in-plugin-sandbox leaves open"
     },
     {
       "reported_as": "a plugin whose capability kind is denied still executes",
@@ -920,6 +944,11 @@
       "claim": "relative visual_path values that resolve inside the workspace are acceptable",
       "field": "properties_provided",
       "proposed": "yes; containment is the contract"
+    },
+    {
+      "claim": "--plugin-sandbox contain becomes the default after one release cycle",
+      "field": "build_variants",
+      "proposed": "open"
     }
   ]
 }

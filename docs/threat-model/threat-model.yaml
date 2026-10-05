@@ -1,7 +1,7 @@
 # threat-model.yaml — derived index; threat-model.md is canonical (prose > yaml > json).
 schema: threat-model-sidecar/v2
 project: anytopdf
-prose_version: threat-model.md@sha256:3c0e007b00277bab903605b8ae76fbcf0cd6cbf278b42a61d51bd91cb3687c87
+prose_version: threat-model.md@sha256:a2d90d81e0b9f743e293afef6c6c645da983656db1b0404cac28b07de8c22df4
 model_status: under-review
 triage_policy: strict
 confidence:
@@ -706,7 +706,8 @@ contract_dimensions:
 - component: plugin-host
   dimension: callback-execution
   status: disclaimed
-  conditions: plugins are trusted native processes with no isolation
+  conditions: plugins are trusted native processes with no isolation by default; --plugin-sandbox strict confines writes and
+    network (P21)
   property_id: os-sandbox
   provenance:
     kind: documented
@@ -735,7 +736,8 @@ contract_dimensions:
 - component: plugin-host
   dimension: resource-complexity
   status: claimed
-  conditions: 60 s default per invocation, 16 MiB caps; descendants not contained (D3)
+  conditions: 60 s default per invocation, 16 MiB caps; descendants not contained by default (D3), contained under --plugin-sandbox
+    contain or strict (P21)
   property_id: subprocess-time-and-output-bounds
   provenance:
     kind: documented
@@ -1190,6 +1192,26 @@ build_flags:
   provenance:
     kind: documented
     source: 'PLUGIN_PROTOCOL "`--no-plugins`: bypass runtime discovery entirely"'
+- name: --plugin-sandbox
+  default: 'off'
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: opt-in-plugin-sandbox
+    effect: voids
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Sandbox levels"
+- name: --plugin-sandbox-allow-read
+  default: none
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: opt-in-plugin-sandbox
+    effect: narrows
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Sandbox levels"
 - name: --plugin-timeout
   default: '60'
   security_relevant: true
@@ -1257,6 +1279,22 @@ build_flags:
     kind: documented
     source: PLUGIN_PROTOCOL "Capability filters control registration, not executable permissions"
 properties_claimed:
+- id: opt-in-plugin-sandbox
+  kind: integrity
+  components:
+  - plugin-host
+  tier: security-critical
+  conditions: 'under --plugin-sandbox contain or strict every process a plugin starts is killed when its call ends (except
+    a macOS descendant calling setsid/setpgid and a Windows child created before job assignment); under strict on Linux and
+    macOS writes only to the workspace and /dev/null, no network connections, limited reads; exits 2 where strict cannot
+    be enforced; applies to manifest calls; macOS strict allows socket creation and Mach IPC; containment is correctness-only;
+    providers and quotas are D1'
+  violation_symptoms:
+  - x-unsandboxed-host-access
+  - hang
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Sandbox levels"
 - id: extract-robust-on-hostile-pdf
   kind: correctness
   components:
@@ -1473,7 +1511,8 @@ properties_disclaimed:
   - plugin-host
   - provider-adapters
   - input-importers
-  conditions: 'what a plugin or provider process does on the host; not P4 or P5. Basis: stated limit.'
+  conditions: 'what a plugin or provider process does on the host; not P4 or P5; runtime plugins under --plugin-sandbox strict
+    on Linux and macOS are P21. Basis: stated limit.'
   tier: security-critical
   false_friend: true
   provenance:
@@ -1482,7 +1521,8 @@ properties_disclaimed:
 - id: capability-filter-as-execution-control
   components:
   - plugin-host
-  conditions: 'manifest commands of every discovered plugin still run; only --no-plugins stops execution. Basis: stated limit.'
+  conditions: 'manifest commands of every discovered plugin still run; only --no-plugins stops execution; under --plugin-sandbox
+    strict they run sandboxed (P21). Basis: stated limit.'
   tier: security-critical
   false_friend: true
   provenance:
@@ -1492,7 +1532,9 @@ properties_disclaimed:
   components:
   - plugin-host
   - provider-adapters
-  conditions: 'only the direct child is killed. Basis: stated limit.'
+  conditions: 'by default only the direct child is killed; under --plugin-sandbox contain or strict the tree is killed (P21)
+    except a macOS setsid/setpgid descendant or a Windows child created before job assignment; provider descendants never.
+    Basis: stated limit.'
   tier: correctness-only
   false_friend: false
   provenance:
@@ -1592,7 +1634,8 @@ properties_disclaimed:
 - id: untrusted-plugin-safety
   components:
   - plugin-host
-  conditions: 'installing a plugin grants it the user''s permissions. Basis: stated limit.'
+  conditions: 'installing a plugin grants it the user''s permissions; --plugin-sandbox strict narrows this to P21''s limits
+    on Linux and macOS. Basis: stated limit.'
   tier: security-critical
   false_friend: true
   provenance:
@@ -1601,7 +1644,8 @@ properties_disclaimed:
 downstream_responsibilities:
 - id: R1
   component: plugin-host
-  statement: install only trusted plugins; keep plugin search directories trusted; use --no-plugins otherwise
+  statement: install only trusted plugins; keep plugin search directories trusted; use --no-plugins otherwise, or --plugin-sandbox
+    strict on Linux and macOS when they must run
   enforces:
   - install-trusted-plugins
   - trusted-plugin-dirs
@@ -1711,7 +1755,8 @@ known_misuses:
   components:
   - plugin-host
   pattern: using --deny-plugin-kind to block an untrusted plugin
-  safer_alternative: remove the plugin from the search path or use --no-plugins
+  safer_alternative: remove the plugin from the search path or use --no-plugins; --plugin-sandbox strict confines but still
+    runs the manifest command
   provenance:
     kind: documented
     source: PLUGIN_PROTOCOL "manifest commands still run during discovery"
@@ -1746,7 +1791,7 @@ known_misuses:
   - input-importers
   - plugin-host
   pattern: running untrusted conversions on a shared host with defaults
-  safer_alternative: per-job containers with quotas, plus non-zero frame caps
+  safer_alternative: per-job containers with quotas, plus non-zero frame caps, and --no-plugins or --plugin-sandbox strict
   provenance:
     kind: documented
     source: README "These limits are safeguards, not an OS sandbox"
@@ -1757,7 +1802,7 @@ known_non_findings:
   symptom: x-unsandboxed-host-access
   tool_pattern: a runtime plugin can read or write any file, open sockets, or use unlimited CPU and memory
   conditions: actor is an installed anytopdf-plugin-* executable acting through its own process, not its response JSON; no
-    P4 or P5 check bypassed
+    P4 or P5 check bypassed; the run did not use --plugin-sandbox strict, or the access is one P21 leaves open
   discharged_by:
   - os-sandbox
   provenance:
