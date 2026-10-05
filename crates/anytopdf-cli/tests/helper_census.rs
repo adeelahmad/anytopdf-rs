@@ -137,3 +137,28 @@ fn command_and_stderr_helpers_are_defined_once_in_common() {
         offending.join("\n")
     );
 }
+
+#[test]
+fn event_pdf_and_string_helpers_are_defined_once_in_common() {
+    let mut offending = Vec::new();
+    for name in ["base(", "events_schema(", "collect("] {
+        let defined = definitions(name);
+        if defined.len() != 1 || !defined[0].starts_with("common/") {
+            offending.push(format!("{name} -> [{}]", defined.join(", ")));
+        }
+    }
+    let page_count = definitions("page_count(");
+    let files: Vec<&str> = page_count
+        .iter()
+        .map(|entry| entry.split(':').next().expect("file part"))
+        .collect();
+    if page_count.len() != 2 || !files.contains(&"common/pdf.rs") || !files.contains(&"profiles.rs")
+    {
+        offending.push(format!("page_count( -> [{}]", page_count.join(", ")));
+    }
+    assert!(
+        offending.is_empty(),
+        "event, PDF and string helpers must be defined once under common/ (profiles.rs keeps its page_count):\n{}",
+        offending.join("\n")
+    );
+}

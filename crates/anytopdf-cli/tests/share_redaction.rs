@@ -10,6 +10,10 @@ struct Fixture {
     needles: Vec<String>,
 }
 
+#[path = "common/strings.rs"]
+mod strings;
+use strings::collect;
+
 fn short_form(dir: &Path) -> Option<String> {
     if !cfg!(windows) {
         return None;
@@ -63,15 +67,6 @@ fn convert(inputs: &[&Path], pdf: &Path, extra: &[&str]) -> Output {
         .args(extra)
         .output()
         .unwrap()
-}
-
-fn collect(value: &serde_json::Value, out: &mut Vec<String>) {
-    match value {
-        serde_json::Value::String(s) => out.push(s.clone()),
-        serde_json::Value::Array(a) => a.iter().for_each(|v| collect(v, out)),
-        serde_json::Value::Object(o) => o.values().for_each(|v| collect(v, out)),
-        _ => {}
-    }
 }
 
 fn json_strings(out: &Output) -> (serde_json::Value, Vec<String>) {
