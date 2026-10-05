@@ -164,6 +164,9 @@ pub(crate) struct RemoteArgs {
     /// Admit only Tailscale peers (100.64.0.0/10 and fd7a:115c:a1e0::/48).
     #[arg(long)]
     pub(crate) allow_tailnet: bool,
+    /// Append one JSON line per submitted job (time, peer address, user, job name) to this file.
+    #[arg(long)]
+    pub(crate) receipts: Option<PathBuf>,
     /// Accept listening on every interface or admitting every peer.
     #[arg(long)]
     pub(crate) allow_public_bind: bool,
@@ -243,7 +246,7 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) fail_fast: bool,
 
-    /// Renderer plugin that writes the output: `pdf` or `pdfa` (PDF/A-3b).
+    /// Renderer plugin that writes the output: `pdf` or `pdfa` (tagged PDF/A-3a).
     #[arg(long, default_value = "pdf")]
     pub(crate) renderer: String,
 

@@ -7,6 +7,7 @@ mod attachments;
 mod fonts;
 mod layout;
 mod pdfa;
+mod pdfa_text;
 mod provenance;
 pub use attachments::{CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, embed_files, read_embedded_files};
 use fonts::{find_system_font, subset_document_font};

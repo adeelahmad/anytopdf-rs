@@ -92,14 +92,18 @@ pub(crate) const TEXT_LINE_PT: f32 = 13.0;
 
 /// Wrap `text` for a visible text page and split it into page-sized chunks.
 pub(crate) fn text_page_chunks(text: &str, measure: &impl Fn(char) -> f32) -> Vec<Vec<String>> {
-    let rows = (((TEXT_PAGE_H_MM - TEXT_MARGIN_MM * 2.0) / 4.5) as usize).max(1);
-    let wrapped = wrap_text(
-        text,
-        (TEXT_PAGE_W_MM - TEXT_MARGIN_MM * 2.0) / 25.4 * 72.0 / TEXT_FONT_PT,
-        measure,
-    );
-    wrapped.chunks(rows).map(<[String]>::to_vec).collect()
+    wrap_text(text, TEXT_WRAP_EMS, measure)
+        .chunks(TEXT_ROWS_PER_PAGE)
+        .map(<[String]>::to_vec)
+        .collect()
 }
+
+/// Line width of a visible text page, in ems of the body font.
+pub(crate) const TEXT_WRAP_EMS: f32 =
+    (TEXT_PAGE_W_MM - TEXT_MARGIN_MM * 2.0) / 25.4 * 72.0 / TEXT_FONT_PT;
+/// Rows that fit on one visible text page.
+pub(crate) const TEXT_ROWS_PER_PAGE: usize =
+    ((TEXT_PAGE_H_MM - TEXT_MARGIN_MM * 2.0) / 4.5) as usize;
 
 pub(crate) fn wrap_text(text: &str, width: f32, measure: &impl Fn(char) -> f32) -> Vec<String> {
     let mut lines = Vec::new();

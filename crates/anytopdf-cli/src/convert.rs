@@ -422,6 +422,10 @@ fn convert_inner(
             metadata.insert(format!("provider.{}.version", p.name), version);
         }
     }
+    let job = crate::print::job_metadata(|key| std::env::var(key).ok());
+    for source in &mut run.graph.sources {
+        source.metadata.extend(job.iter().cloned());
+    }
     let dump = args.dump_graph.as_ref().map(|_| {
         args.profile.filter(
             &strip_workspace_paths(&run.graph, &run.context.workspace),

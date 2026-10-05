@@ -53,10 +53,13 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `soffice`, `pdftoppm` and `pdftotext`.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
-- `--renderer pdfa` writes PDF/A-3b through krilla: embedded fonts, XMP metadata, an
-  sRGB output intent, and the manifest and chunks as associated files. The hidden
-  layer uses fill opacity 0 instead of text rendering mode 3. `extract` now reads
-  compressed attachments.
+- `--renderer pdfa` writes tagged PDF/A-3a through krilla: embedded fonts, XMP
+  metadata, an sRGB output intent, a structure tree, bookmarks per source, and the
+  manifest and chunks as associated files. Lines are reordered with the bidi
+  algorithm and shaped, and characters fall back to further fonts (`ANYTOPDF_FONT`
+  may list several). The hidden layer uses fill opacity 0 instead of text rendering
+  mode 3. `extract` now reads compressed attachments.
+- The Rust toolchain is 1.92.0.
 
 ## 0.1.0
 

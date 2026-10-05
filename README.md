@@ -102,7 +102,7 @@ Enrichment:
 
 Rendering:
 - searchable PDF via `printpdf` (default, `--renderer pdf`)
-- PDF/A-3b via `krilla` (`--renderer pdfa`)
+- tagged PDF/A-3a with bookmarks via `krilla` (`--renderer pdfa`)
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -190,16 +190,31 @@ a failed run adds an `error` message. A closed stderr pipe never panics.
 
 ### PDF/A-3 output
 
-`anytopdf convert --renderer pdfa` writes PDF/A-3b instead of plain PDF. Pages,
-page numbering and the embedded manifest and chunks are the same as with the
-default renderer. The differences: the font is always embedded (set `ANYTOPDF_FONT`
-when no system font is found; without one the conversion fails), the document
-carries XMP metadata and an sRGB output intent, and the manifest and chunks are
-PDF/A-3 associated files (`/AF`, relationship `Data`). The hidden layer is written
-as text with a fill opacity of 0 rather than text rendering mode 3, because krilla
-has no mode 3; it is still searchable and extractable. Characters the font lacks
-are left out of the PDF with a render warning, since PDF/A forbids `.notdef`
-glyphs. Output is reproducible under `SOURCE_DATE_EPOCH`.
+`anytopdf convert --renderer pdfa` writes tagged PDF/A-3a instead of plain PDF.
+Pages, page numbering and the embedded manifest and chunks are the same as with the
+default renderer. On top of that:
+
+- Fonts are always embedded. The first `ANYTOPDF_FONT` entry (or a system font) is the
+  primary font. `ANYTOPDF_FONT` may list more fonts, separated like `PATH`, and they
+  are tried next, followed by common system fonts for Arabic, Hebrew and CJK. A
+  fallback font is embedded only when it supplies characters the earlier fonts lack.
+  Fonts whose licence forbids embedding are skipped. Characters no font covers are
+  left out with a render warning, because PDF/A forbids `.notdef` glyphs.
+- Each line is reordered with the Unicode bidi algorithm and shaped, so Arabic and
+  Hebrew read correctly. Right-to-left lines carry `ActualText` with the logical
+  order for copying and extraction.
+- The structure tree has a section per unit, a figure with alternate text per image or
+  frame, a paragraph per source line, and an H1 heading on the provenance page.
+  Bookmarks point to the first page of each source and to the provenance page. The
+  document language is `und` (undetermined).
+- The document carries XMP metadata and an sRGB output intent. The manifest and
+  chunks are PDF/A-3 associated files (`/AF`, relationship `Data`).
+- The hidden layer is written as text with a fill opacity of 0 rather than text
+  rendering mode 3, because krilla has no mode 3. It is still searchable and
+  extractable.
+
+Output is reproducible under `SOURCE_DATE_EPOCH` on a given host. Fallback fonts come
+from the host, so different hosts can embed different fonts.
 
 ### Embedded manifest and chunks
 
@@ -274,7 +289,13 @@ anytopdf print remote --listen 100.101.102.103:8631 --allow-tailnet \
 ```
 
 It refuses a non-loopback listener without users and an allowlist, and
-`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. Discovery:
+`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. The signed-in
+user replaces the IPP `requesting-user-name`, so the helper records who really
+printed; `--receipts receipts.jsonl` also appends one `anytopdf.print-receipt/1`
+line per job with the time, peer address, user and job name. The PDF of a print
+job carries the job id, name, user and format as `print.*` source metadata in the
+manifest and as a receipt on the provenance page (`archive` profile only; `share`
+drops them). `anytopdf doctor` reports the print helper and Tailscale. Discovery:
 `anytopdf print advertise` announces the printer over multicast DNS on the local
 network (IPP Everywhere `_ipps._tcp` with the AirPrint `_universal` subtype);
 multicast does not cross a VPN, so `anytopdf print dns-sd --domain home.example
@@ -356,15 +377,15 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
-- [x] PDF/A-3b output (`--renderer pdfa`)
-- [ ] Tagged PDF and bookmarks
+- [x] PDF/A-3a output (`--renderer pdfa`)
+- [x] Tagged PDF and bookmarks (`--renderer pdfa`)
 
 ### Rendering
 - [x] Spike: layout and writer options
-- [x] krilla writer behind `--renderer pdfa` (krilla 0.5 on Rust 1.88, invisible text via fill opacity)
-- [ ] parley layout, krilla 0.8 with a Rust 1.92 toolchain bump, and `pdfa` as the default renderer
+- [x] krilla 0.8 writer behind `--renderer pdfa` (Rust 1.92, invisible text via fill opacity)
+- [ ] `pdfa` as the default renderer
 - [ ] Rendered Markdown
-- [ ] Arabic, Hebrew and CJK shaping
+- [x] Arabic, Hebrew and CJK shaping, bidi and font fallback (`--renderer pdfa`)
 
 ### Input formats
 - [ ] PDF input (keep the text layer, OCR only textless pages)
@@ -566,7 +587,8 @@ image. Every frame of a GIF or multi-page TIFF becomes a page carrying a `frame`
 
 Fonts are loaded from the system, subset to the required glyphs, and embedded in the PDF. Set `ANYTOPDF_FONT` to a
 TTF file for a particular script or on minimal Linux installations. Missing glyphs
-produce warnings. Complex text shaping and bidirectional layout are not guaranteed.
+produce warnings. Shaping, bidirectional layout and font fallback apply to `--renderer pdfa`
+only; the default printpdf renderer draws characters one font, left to right.
 Markdown is rendered as plain text. Audio requires sidecar/explicit transcripts or
 a plugin for speech recognition; docTR may download model weights on first use.
 

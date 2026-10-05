@@ -65,6 +65,35 @@
           }
         }
       }
+    },
+    "printing": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "available",
+          "path",
+          "detail"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }
