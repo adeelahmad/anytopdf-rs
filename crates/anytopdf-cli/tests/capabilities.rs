@@ -124,7 +124,7 @@ fn capabilities_lists_profiles_ocr_modes_importers_and_schema_ids() {
         .iter()
         .map(|entry| entry["name"].as_str().expect("importer name").to_string())
         .collect();
-    for name in ["text", "image", "subtitle", "audio", "ffmpeg-video"] {
+    for name in ["text", "html", "image", "subtitle", "audio", "ffmpeg-video"] {
         assert!(
             importers.contains(name),
             "missing importer {name}: {importers:?}"

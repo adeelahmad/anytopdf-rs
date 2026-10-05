@@ -83,6 +83,7 @@ Importers:
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
+- HTML pages (readable text, title and image alt text; no network fetches)
 - SRT / VTT captions
 
 Enrichment:
@@ -120,7 +121,7 @@ image conversion; provider-specific dependencies are listed below.
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF/Office/HTML importers are future work.
+a supplied transcript or a plugin. PDF and Office importers are future work.
 
 ## CLI
 
@@ -188,6 +189,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Provider version detection
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
+- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
