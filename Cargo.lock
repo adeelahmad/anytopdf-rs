@@ -185,12 +185,14 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "infer",
+ "libc",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
  "thiserror",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

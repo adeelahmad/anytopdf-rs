@@ -140,6 +140,11 @@ mod imap {
         for kind in &policy.deny_capabilities {
             flags.extend(["--deny-plugin-kind".into(), kind.into()]);
         }
+        flags.push("--plugin-sandbox".into());
+        flags.push(policy.sandbox.mode.as_str().into());
+        for path in &policy.sandbox.allow_read {
+            flags.extend(["--plugin-sandbox-allow-read".into(), path.into()]);
+        }
         flags
     }
 
@@ -304,6 +309,10 @@ mod imap {
                 timeout: Duration::from_secs(30),
                 allow_capabilities: Some(BTreeSet::from(["importer".to_string()])),
                 deny_capabilities: BTreeSet::from(["renderer".to_string()]),
+                sandbox: anytopdf_core::SandboxPolicy {
+                    mode: anytopdf_core::SandboxMode::Strict,
+                    allow_read: vec!["/opt/models".into()],
+                },
             };
             let flags: Vec<String> = plugin_flags(&policy)
                 .into_iter()
@@ -318,7 +327,11 @@ mod imap {
                     "--allow-plugin-kind",
                     "importer",
                     "--deny-plugin-kind",
-                    "renderer"
+                    "renderer",
+                    "--plugin-sandbox",
+                    "strict",
+                    "--plugin-sandbox-allow-read",
+                    "/opt/models"
                 ]
             );
         }

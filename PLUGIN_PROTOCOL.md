@@ -159,6 +159,33 @@ This validation does not prevent an executable from accessing other files itself
 - `--plugin-timeout SECONDS`: bound each manifest/request invocation (default 60).
 - `--allow-plugin-kind KIND`: register only specified capabilities; repeatable.
 - `--deny-plugin-kind KIND`: deny capabilities; overrides the allow list.
+- `--plugin-sandbox off|contain|strict`: confine plugin processes (default `off`).
+- `--plugin-sandbox-allow-read PATH`: extra readable path under `strict`; repeatable.
+
+### Sandbox levels
+
+The sandbox applies to every plugin execution, including `--anytopdf-manifest`
+during discovery.
+
+- `off`: plugins run as ordinary child processes with your permissions.
+- `contain`: every process a plugin starts is killed when its call ends or times
+  out (a process group on Unix, a job object on Windows). On macOS a descendant
+  that calls `setsid` escapes; on Windows a child created in the instant before
+  job assignment can escape.
+- `strict`: `contain`, plus writes only inside the job workspace and `/dev/null`,
+  no network access (including connecting to Unix-domain sockets), and `TMPDIR` pointing at the
+  workspace. Reads are limited to system locations, the plugin's own directory,
+  the source file, the workspace and `--plugin-sandbox-allow-read` paths. Linux
+  enforces this with Landlock and seccomp (x86-64 and AArch64), which also block
+  `setsid` and `setpgid`. macOS uses `sandbox-exec`, denies reading file contents
+  under `/Users`, `/Volumes` and the home directory outside the allowed paths, and
+  does not restrict Mach IPC. Windows has no `strict` level. Where `strict` cannot be
+  enforced the command exits 2 before any plugin runs. A renderer plugin writes
+  its PDF inside the workspace and the host moves it into place.
+
+Under `strict`, plugins that need an interpreter, virtual environment or model
+cache in the home directory must be given it with `--plugin-sandbox-allow-read`.
+Design notes: `docs/design/plugin-sandbox.md`.
 - `convert --renderer runtime:NAME`: select a registered runtime PDF renderer.
 
 Capability filters control registration, not executable permissions: manifest

@@ -1,5 +1,5 @@
 use anytopdf_builtin::OcrMode;
-use anytopdf_core::Profile;
+use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
 use std::path::PathBuf;
 
@@ -25,6 +25,19 @@ pub(crate) struct Cli {
     /// Deny these plugin capability kinds; deny takes precedence.
     #[arg(long, global = true, value_parser = ["importer", "source-enricher", "graph-enricher", "unit-enricher", "renderer"])]
     pub(crate) deny_plugin_kind: Vec<String>,
+    /// Confine runtime plugins: off, contain (end every process a plugin starts)
+    /// or strict (contain, write only to the job workspace, no network).
+    #[arg(
+        long,
+        global = true,
+        default_value = "off",
+        value_parser = clap::builder::PossibleValuesParser::new(["off", "contain", "strict"])
+            .map(|mode| mode.parse::<SandboxMode>().expect("listed sandbox mode"))
+    )]
+    pub(crate) plugin_sandbox: SandboxMode,
+    /// Extra file or directory a strict-sandboxed plugin may read (repeatable).
+    #[arg(long, global = true, value_name = "PATH")]
+    pub(crate) plugin_sandbox_allow_read: Vec<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]

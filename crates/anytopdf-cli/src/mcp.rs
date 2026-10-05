@@ -38,6 +38,10 @@ impl Forwarded {
         for kind in &cli.deny_plugin_kind {
             flags.push(format!("--deny-plugin-kind={kind}"));
         }
+        flags.push(format!("--plugin-sandbox={}", cli.plugin_sandbox));
+        for path in &cli.plugin_sandbox_allow_read {
+            flags.push(format!("--plugin-sandbox-allow-read={}", path.display()));
+        }
         Forwarded(flags)
     }
 }

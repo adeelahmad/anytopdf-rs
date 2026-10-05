@@ -540,7 +540,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Security and plugins
 - [ ] Untrusted-input handling shipped with the intake channels: sandboxed conversion without network, size and page caps, zip-bomb rejection, per-sender budgets
-- [ ] OS sandbox, descendant process containment and hard CPU, memory and disk quotas for runtime plugins
+- [x] Opt-in OS sandbox (`--plugin-sandbox strict`, Linux and macOS) and descendant process containment (`contain`, all platforms) for runtime plugins
+- [ ] Hard CPU, memory and disk quotas for runtime plugins; sandboxing for built-in providers; Windows `strict`
 
 ### Builds and distribution
 - [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
@@ -697,8 +698,11 @@ plugin response JSON each have a 16 MiB limit. Metadata providers have 30-second
 timeouts, OCR subprocesses 180 seconds, subtitle extraction 120 seconds and each
 video extraction pass 300 seconds. `--max-video-frames` also bounds extracted frames
 per pass; `0` means no frame-count limit. These limits are safeguards, not an OS
-sandbox: plugins run with your account's permissions. Install only trusted plugins
-or use `--no-plugins`; see `PLUGIN_PROTOCOL.md` for policy details.
+sandbox: by default plugins run with your account's permissions. Install only
+trusted plugins or use `--no-plugins`. `--plugin-sandbox contain` ends every process
+a plugin starts with its call; `--plugin-sandbox strict` (Linux and macOS) also
+limits plugin writes to the job workspace and blocks network access. See
+`PLUGIN_PROTOCOL.md` for policy details.
 
 Images are decoded by content, normalized to PNG in the temporary workspace, and
 rotated according to EXIF orientation. OCR coordinates refer to that normalized

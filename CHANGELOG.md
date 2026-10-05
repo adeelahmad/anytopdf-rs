@@ -6,6 +6,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `--plugin-sandbox off|contain|strict` (default `off`) confines runtime plugins.
+  `contain` kills every process a plugin starts when its call ends or times out;
+  `strict` also limits writes to the job workspace and blocks network access (Landlock and
+  seccomp on Linux, `sandbox-exec` on macOS) and exits 2 where it cannot be enforced.
+  `--plugin-sandbox-allow-read PATH` adds readable paths under `strict`.
 - `anytopdf queue` (`add`, `work`, `status`, `secret`) adds a folder-backed job queue
   with a watched inbox and Standard Webhooks (`job.received`, `job.completed`,
   `job.failed`) signed with HMAC-SHA256 and retried from a durable outbox; new
