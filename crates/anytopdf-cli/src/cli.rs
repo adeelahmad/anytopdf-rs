@@ -26,18 +26,30 @@ pub(crate) struct Cli {
     #[arg(long, global = true, value_parser = ["importer", "source-enricher", "graph-enricher", "unit-enricher", "renderer"])]
     pub(crate) deny_plugin_kind: Vec<String>,
     /// Confine runtime plugins: off, contain (end every process a plugin starts)
-    /// or strict (contain, write only to the job workspace, no network).
+    /// or strict (contain, write only to the job workspace, no network)
+    /// [default: off; contain for `queue`].
     #[arg(
         long,
         global = true,
-        default_value = "off",
         value_parser = clap::builder::PossibleValuesParser::new(["off", "contain", "strict"])
             .map(|mode| mode.parse::<SandboxMode>().expect("listed sandbox mode"))
     )]
-    pub(crate) plugin_sandbox: SandboxMode,
+    pub(crate) plugin_sandbox: Option<SandboxMode>,
     /// Extra file or directory a strict-sandboxed plugin may read (repeatable).
     #[arg(long, global = true, value_name = "PATH")]
     pub(crate) plugin_sandbox_allow_read: Vec<PathBuf>,
+}
+
+impl Cli {
+    /// The sandbox level runtime plugins run under. Queued jobs come from folders and
+    /// HTTP uploads rather than an operator at a terminal, so `queue` defaults to
+    /// `contain`; everything else defaults to `off`.
+    pub(crate) fn sandbox_mode(&self) -> SandboxMode {
+        self.plugin_sandbox.unwrap_or(match self.command {
+            Commands::Queue { .. } => SandboxMode::Contain,
+            _ => SandboxMode::Off,
+        })
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -507,4 +519,40 @@ pub(crate) struct ImapArgs {
     /// Options passed to each `anytopdf convert` run (after `--`).
     #[arg(last = true)]
     pub(crate) convert_args: Vec<std::ffi::OsString>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn mode(args: &[&str]) -> SandboxMode {
+        Cli::try_parse_from(std::iter::once("anytopdf").chain(args.iter().copied()))
+            .unwrap()
+            .sandbox_mode()
+    }
+
+    #[test]
+    fn queue_defaults_to_contain_and_other_commands_to_off() {
+        assert_eq!(mode(&["queue", "work", "q"]), SandboxMode::Contain);
+        assert_eq!(mode(&["queue", "status", "q"]), SandboxMode::Contain);
+        assert_eq!(mode(&["convert", "a.txt"]), SandboxMode::Off);
+        assert_eq!(mode(&["plugins"]), SandboxMode::Off);
+    }
+
+    #[test]
+    fn an_explicit_sandbox_level_overrides_the_queue_default() {
+        assert_eq!(
+            mode(&["--plugin-sandbox", "off", "queue", "work", "q"]),
+            SandboxMode::Off
+        );
+        assert_eq!(
+            mode(&["queue", "work", "q", "--plugin-sandbox", "strict"]),
+            SandboxMode::Strict
+        );
+        assert_eq!(
+            mode(&["--plugin-sandbox", "contain", "convert", "a.txt"]),
+            SandboxMode::Contain
+        );
+    }
 }

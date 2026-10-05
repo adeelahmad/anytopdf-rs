@@ -15,7 +15,7 @@ mod queue;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
-use cli::{Cli, Commands, WatchSource};
+use cli::{Cli, Commands, QueueCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
 use exit::{CliError, ExitClass};
@@ -49,6 +49,7 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<(), CliError> {
     let forwarded = mcp::Forwarded::from_cli(&cli);
+    let sandbox_mode = cli.sandbox_mode();
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
         timeout: Duration::from_secs(cli.plugin_timeout),
@@ -56,7 +57,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             .then(|| cli.allow_plugin_kind.into_iter().collect()),
         deny_capabilities: cli.deny_plugin_kind.into_iter().collect(),
         sandbox: SandboxPolicy {
-            mode: cli.plugin_sandbox,
+            mode: sandbox_mode,
             allow_read: cli.plugin_sandbox_allow_read,
         },
     };
@@ -94,7 +95,12 @@ fn run(cli: Cli) -> Result<(), CliError> {
             check_sandbox(&policy)?;
             watch::watch_imap(*args, &policy)
         }
-        Commands::Queue { command } => queue::run(command, forwarded.0),
+        Commands::Queue { command } => {
+            if matches!(command, QueueCommand::Work(_)) {
+                check_sandbox(&policy)?;
+            }
+            queue::run(command, forwarded.0)
+        }
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
         Commands::Print(command) => print::print(command),
     }
