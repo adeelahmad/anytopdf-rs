@@ -3,6 +3,7 @@ mod capabilities;
 mod cli;
 mod commands;
 mod convert;
+mod environment;
 mod events;
 mod exit;
 mod extract;
@@ -70,11 +71,16 @@ fn run(cli: Cli) -> Result<(), CliError> {
             println!("{}", serde_json::to_string_pretty(&doc)?);
             Ok(())
         }
-        Commands::Capabilities { .. } => {
+        Commands::Capabilities { json: true } => {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&capabilities::capabilities()?)?
             );
+            Ok(())
+        }
+        Commands::Capabilities { json: false } => {
+            let probe = environment::Probe::detect(&policy);
+            print!("{}", environment::render(&environment::build(&probe)));
             Ok(())
         }
         Commands::Probe { input, .. } => probe(&input, &policy),
