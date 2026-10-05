@@ -7,52 +7,11 @@ use std::{
     process::{Command, Output},
 };
 
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = !0u32;
-    for byte in bytes {
-        crc ^= *byte as u32;
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (!(crc & 1)).wrapping_add(1));
-        }
-    }
-    !crc
-}
-
-fn png_chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
-    out.extend((data.len() as u32).to_be_bytes());
-    let mut body = kind.to_vec();
-    body.extend(data);
-    out.extend(&body);
-    out.extend(crc32(&body).to_be_bytes());
-}
-
-/// A width x height 8-bit grayscale PNG using stored deflate blocks.
-fn write_png(path: &Path, width: u32, height: u32) {
-    let mut raw = Vec::new();
-    for _ in 0..height {
-        raw.push(0);
-        raw.extend(std::iter::repeat_n(128u8, width as usize));
-    }
-    let (mut a, mut b) = (1u32, 0u32);
-    for byte in &raw {
-        a = (a + *byte as u32) % 65521;
-        b = (b + a) % 65521;
-    }
-    let mut z = vec![0x78, 0x01, 0x01];
-    z.extend((raw.len() as u16).to_le_bytes());
-    z.extend((!(raw.len() as u16)).to_le_bytes());
-    z.extend(&raw);
-    z.extend(((b << 16) | a).to_be_bytes());
-    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
-    let mut ihdr = Vec::new();
-    ihdr.extend(width.to_be_bytes());
-    ihdr.extend(height.to_be_bytes());
-    ihdr.extend([8, 0, 0, 0, 0]);
-    png_chunk(&mut png, b"IHDR", &ihdr);
-    png_chunk(&mut png, b"IDAT", &z);
-    png_chunk(&mut png, b"IEND", &[]);
-    fs::write(path, png).unwrap();
-}
+#[path = "common/png.rs"]
+mod png;
+#[path = "common/png_gray.rs"]
+mod png_gray;
+use png_gray::write_png;
 
 fn page_count(pdf: &[u8]) -> u64 {
     let text = String::from_utf8_lossy(pdf);
