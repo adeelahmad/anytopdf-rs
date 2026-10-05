@@ -83,8 +83,10 @@ processed, the workspace, and every `--plugin-sandbox-allow-read` path. Use that
 flag for interpreters, virtual environments or model caches that live in the
 home directory.
 
-Network: no sockets at all, including Unix-domain sockets (they reach local
-daemons such as a container runtime). `socketpair` stays available.
+Network: no network access, including connecting to Unix-domain sockets (they
+reach local daemons such as a container runtime). Linux denies creating sockets
+at all; macOS lets a socket be created but denies binding and connecting it.
+`socketpair` stays available.
 
 Renderer plugins write their PDF inside the workspace; the host moves it to the
 requested output path afterwards.

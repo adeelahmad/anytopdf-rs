@@ -173,7 +173,7 @@ during discovery.
   that calls `setsid` escapes; on Windows a child created in the instant before
   job assignment can escape.
 - `strict`: `contain`, plus writes only inside the job workspace and `/dev/null`,
-  no sockets (including Unix-domain sockets), and `TMPDIR` pointing at the
+  no network access (including connecting to Unix-domain sockets), and `TMPDIR` pointing at the
   workspace. Reads are limited to system locations, the plugin's own directory,
   the source file, the workspace and `--plugin-sandbox-allow-read` paths. Linux
   enforces this with Landlock and seccomp (x86-64 and AArch64), which also block

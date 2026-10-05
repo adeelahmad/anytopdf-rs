@@ -475,7 +475,7 @@ mod platform {
 
     pub(super) fn profile(rules: &Rules, home: Option<PathBuf>) -> String {
         let mut profile = String::from(
-            "(version 1)\n(allow default)\n(deny network*)\n(deny system-socket)\n(deny file-write*)\n\
+            "(version 1)\n(allow default)\n(deny network*)\n(deny file-write*)\n\
              (allow file-write* (literal \"/dev/null\"))\n",
         );
         for path in &rules.write {
@@ -514,7 +514,6 @@ mod platform {
             assert!(text.contains("(allow file-write* (subpath \"/private/var/ws\"))"));
             assert!(text.contains("(subpath \"/opt/plug\\\"in\")"));
             assert!(text.contains("(deny network*)"));
-            assert!(text.contains("(deny system-socket)"));
         }
     }
 }
@@ -747,30 +746,33 @@ mod unix_tests {
         assert_eq!(out.stdout, b"shared");
     }
 
-    /// Run in a sandboxed child by `strict_plugin_cannot_open_sockets`.
+    /// Run in a sandboxed child by `strict_plugin_cannot_use_the_network`.
     #[test]
-    #[ignore = "helper for strict_plugin_cannot_open_sockets"]
-    fn socket_probe() {
-        if std::env::var_os("ANYTOPDF_SANDBOX_PROBE").is_none() {
+    #[ignore = "helper for strict_plugin_cannot_use_the_network"]
+    fn network_probe() {
+        let Some(listener) = std::env::var_os("ANYTOPDF_SANDBOX_PROBE") else {
             return;
-        }
+        };
         let tcp = std::net::TcpListener::bind("127.0.0.1:0").is_ok();
-        let unix = std::os::unix::net::UnixDatagram::unbound().is_ok();
-        // 20 when both are denied; +1 if TCP bind worked, +2 if a Unix socket opened.
+        let unix = std::os::unix::net::UnixStream::connect(listener).is_ok();
+        // 20 when both are denied; +1 if TCP bind worked, +2 if the Unix connect did.
         std::process::exit(20 + i32::from(tcp) + 2 * i32::from(unix));
     }
 
     #[test]
-    fn strict_plugin_cannot_open_sockets() {
+    fn strict_plugin_cannot_use_the_network() {
         let Some(policy) = strict(Vec::new()) else {
             return;
         };
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("s");
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         let exe = std::env::current_exe().unwrap();
         let mut command = policy.command(&exe, &SandboxAccess::default()).unwrap();
         command
-            .args(["--exact", "sandbox::unix_tests::socket_probe", "--ignored"])
+            .args(["--exact", "sandbox::unix_tests::network_probe", "--ignored"])
             .args(["--nocapture", "--test-threads=1"])
-            .env("ANYTOPDF_SANDBOX_PROBE", "1");
+            .env("ANYTOPDF_SANDBOX_PROBE", &socket);
         let out = policy
             .output(&mut command, Duration::from_secs(30))
             .unwrap();
