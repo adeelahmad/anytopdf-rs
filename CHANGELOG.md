@@ -191,6 +191,7 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - ship the Whisper plugin in release archives, packages and the container (#22) (e1f39da8)
 - record queue upload, archives and Whisper in roadmap and threat model (#24) (5b608685)
 - print: print over TLS through the remote front to the real helper (#25) (61f71d73)
+- record the krilla PDF/A-3a default renderer and tick shipped roadmap items (#26) (bf7665af)
 
 ## 0.1.0
 
