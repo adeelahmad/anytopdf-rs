@@ -62,6 +62,7 @@ pub(crate) enum Origin {
     Inbox,
     Cli,
     Http,
+    Imap,
 }
 
 /// One conversion job (`anytopdf.job/1`). Optional fields are omitted, never null.

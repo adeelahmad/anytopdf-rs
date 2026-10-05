@@ -10,7 +10,8 @@ use output::stderr;
 fn watch(args: &[&str], password: Option<&str>) -> Output {
     let mut cmd = command();
     cmd.args(["watch", "imap"]).args(args);
-    cmd.env_remove("ANYTOPDF_IMAP_PASSWORD");
+    cmd.env_remove("ANYTOPDF_IMAP_PASSWORD")
+        .env_remove("ANYTOPDF_IMAP_OAUTH_TOKEN");
     if let Some(password) = password {
         cmd.env("ANYTOPDF_IMAP_PASSWORD", password);
     }
@@ -44,7 +45,7 @@ mod fake_server;
 mod with_imap {
     use super::*;
 
-    use super::fake_server::{PASSWORD, Shared, USER, serve};
+    use super::fake_server::{PASSWORD, Shared, TOKEN, USER, serve};
 
     fn args<'a>(port: &'a str, out: &'a str) -> Vec<&'a str> {
         vec![
@@ -150,5 +151,139 @@ mod with_imap {
         let dir = tempfile::tempdir().unwrap();
         let out = watch(&args(&port, dir.path().to_str().unwrap()), Some("p"));
         assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
+    }
+
+    fn server_with(messages: &[(u32, &str)]) -> (Shared, String) {
+        let shared = Shared::default();
+        for (uid, from) in messages {
+            shared.lock().unwrap().messages.insert(
+                *uid,
+                format!("From: {from}\r\nSubject: Scan {uid}\r\n\r\nbody {uid}\r\n").into_bytes(),
+            );
+        }
+        let port = serve(shared.clone()).to_string();
+        (shared, port)
+    }
+
+    #[test]
+    fn allow_from_converts_only_listed_senders() {
+        let (_shared, port) = server_with(&[(1, "scanner@example.com"), (2, "x@evil.test")]);
+        let dir = tempfile::tempdir().unwrap();
+        let mut a = args(&port, dir.path().to_str().unwrap());
+        a.extend([
+            "--backfill",
+            "--allow-from",
+            "example.com",
+            "--",
+            "--ocr",
+            "off",
+        ]);
+        let out = watch(&a, Some(PASSWORD));
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(
+            stderr(&out).contains("1 converted") && stderr(&out).contains("1 refused"),
+            "{}",
+            stderr(&out)
+        );
+        assert!(dir.path().join("INBOX-42-1.pdf").is_file());
+        assert!(!dir.path().join("INBOX-42-2.pdf").exists());
+    }
+
+    #[test]
+    fn xoauth2_token_from_the_environment_logs_in() {
+        let (_shared, port) = server_with(&[(1, "a@example.com")]);
+        let dir = tempfile::tempdir().unwrap();
+        let mut a = args(&port, dir.path().to_str().unwrap());
+        a.extend(["--auth", "xoauth2", "--backfill", "--", "--ocr", "off"]);
+        let mut cmd = command();
+        cmd.args(["watch", "imap"])
+            .args(&a)
+            .env_remove("ANYTOPDF_IMAP_PASSWORD")
+            .env("ANYTOPDF_IMAP_OAUTH_TOKEN", TOKEN);
+        let out = cmd.output().unwrap();
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(dir.path().join("INBOX-42-1.pdf").is_file());
+
+        let out = watch(&a, Some(PASSWORD));
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+        assert!(
+            stderr(&out).contains("ANYTOPDF_IMAP_OAUTH_TOKEN"),
+            "{}",
+            stderr(&out)
+        );
+    }
+
+    #[test]
+    fn queue_mode_hands_messages_to_the_job_queue() {
+        let (_shared, port) = server_with(&[(5, "a@example.com")]);
+        let dir = tempfile::tempdir().unwrap();
+        let queue = dir.path().join("queue");
+        let queue_arg = queue.to_str().unwrap().to_string();
+        let a = vec![
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port,
+            "--tls",
+            "none",
+            "--user",
+            USER,
+            "--queue",
+            &queue_arg,
+            "--once",
+            "--backfill",
+            "--",
+            "--ocr",
+            "off",
+        ];
+        let out = watch(&a, Some(PASSWORD));
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert!(stderr(&out).contains("1 queued"), "{}", stderr(&out));
+        let jobs: Vec<_> = std::fs::read_dir(queue.join("jobs/pending"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(jobs.len(), 1);
+        let job: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&jobs[0]).unwrap()).unwrap();
+        assert_eq!(job["origin"], "imap");
+        assert_eq!(job["convert_args"], serde_json::json!(["--ocr", "off"]));
+        let input = std::path::PathBuf::from(job["inputs"][0].as_str().unwrap());
+        assert!(input.ends_with("INBOX-42-5.eml") && input.is_file());
+
+        let work = command()
+            .args(["queue", "work"])
+            .arg(&queue)
+            .arg("--once")
+            .output()
+            .unwrap();
+        assert!(work.status.success(), "{}", stderr(&work));
+        let pdfs: Vec<_> = std::fs::read_dir(queue.join("outbox"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(pdfs.len(), 1, "{}", stderr(&work));
+    }
+
+    #[test]
+    fn queue_mode_rejects_worker_owned_convert_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let queue = dir.path().join("queue");
+        let out = watch(
+            &[
+                "--host",
+                "127.0.0.1",
+                "--tls",
+                "none",
+                "--user",
+                "u",
+                "--queue",
+                queue.to_str().unwrap(),
+                "--",
+                "--json",
+            ],
+            Some("p"),
+        );
+        assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
     }
 }

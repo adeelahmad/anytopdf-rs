@@ -376,10 +376,10 @@ pub(crate) enum WatchSource {
     /// Fetch new messages from an IMAP mailbox and convert each one.
     ///
     /// Each message is saved as a raw `.eml` file and converted by `anytopdf convert`
-    /// into `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`; arguments after `--`
-    /// are passed to convert. Turning email into pages needs an importer that accepts
-    /// RFC 822 messages (built in or an `anytopdf-plugin-*`). The password is read from
-    /// ANYTOPDF_IMAP_PASSWORD or --password-file, never from the command line.
+    /// into `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`, or queued as a job with
+    /// --queue; arguments after `--` are passed to convert. Secrets come from
+    /// ANYTOPDF_IMAP_PASSWORD, ANYTOPDF_IMAP_OAUTH_TOKEN or a file, never from the
+    /// command line.
     Imap(Box<ImapArgs>),
 }
 
@@ -405,6 +405,26 @@ pub(crate) struct ImapArgs {
     #[arg(long, env = "ANYTOPDF_IMAP_PASSWORD_FILE")]
     pub(crate) password_file: Option<PathBuf>,
 
+    /// Login method: IMAP LOGIN with a password, or SASL XOAUTH2 (Gmail,
+    /// Microsoft 365) with an access token.
+    #[arg(long, env = "ANYTOPDF_IMAP_AUTH", default_value = "login", value_parser = ["login", "xoauth2"])]
+    pub(crate) auth: String,
+
+    /// With --auth xoauth2: read the access token from this file on every connection
+    /// instead of ANYTOPDF_IMAP_OAUTH_TOKEN, so a token refresher can update it.
+    #[arg(long, env = "ANYTOPDF_IMAP_OAUTH_TOKEN_FILE")]
+    pub(crate) oauth_token_file: Option<PathBuf>,
+
+    /// Only convert mail from this address or domain (repeatable), e.g.
+    /// scanner@example.com or example.com. Other mail is skipped and left in place.
+    #[arg(long)]
+    pub(crate) allow_from: Vec<String>,
+
+    /// Also require dmarc=pass in the Authentication-Results header added by this
+    /// receiving server, e.g. mx.google.com or outlook.com.
+    #[arg(long, value_name = "AUTHSERV_ID")]
+    pub(crate) require_dmarc: Option<String>,
+
     /// Mailbox to watch.
     #[arg(long, env = "ANYTOPDF_IMAP_MAILBOX", default_value = "INBOX")]
     pub(crate) mailbox: String,
@@ -418,11 +438,16 @@ pub(crate) struct ImapArgs {
     pub(crate) ca_file: Option<PathBuf>,
 
     /// Directory that receives one PDF per message.
-    #[arg(long)]
-    pub(crate) output_dir: PathBuf,
+    #[arg(long, required_unless_present = "queue")]
+    pub(crate) output_dir: Option<PathBuf>,
+
+    /// Hand each message to this `anytopdf queue` directory instead of converting it
+    /// here; run `anytopdf queue work` on it to convert.
+    #[arg(long, conflicts_with = "output_dir")]
+    pub(crate) queue: Option<PathBuf>,
 
     /// Directory for watcher progress, spooled and failed messages
-    /// (default: <output-dir>/.anytopdf-imap). Use one per mailbox.
+    /// (default: <output-dir or queue>/.anytopdf-imap). Use one per mailbox.
     #[arg(long)]
     pub(crate) state_dir: Option<PathBuf>,
 

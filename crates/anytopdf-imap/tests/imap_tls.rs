@@ -1,5 +1,5 @@
 //! TLS paths against the scripted server with a throwaway certificate authority.
-use anytopdf_imap::{ImapConfig, Mailbox, TlsMode, connect};
+use anytopdf_imap::{Credential, ImapConfig, Mailbox, TlsMode, connect};
 use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::{net::TcpStream, path::Path, sync::Arc, time::Duration};
@@ -45,7 +45,7 @@ fn config(port: u16, tls: TlsMode, ca_file: Option<&Path>) -> ImapConfig {
         port,
         tls,
         user: USER.into(),
-        password: PASSWORD.into(),
+        credential: Credential::Password(PASSWORD.into()),
         mailbox: "INBOX".into(),
         search: None,
         ca_file: ca_file.map(Path::to_path_buf),

@@ -94,6 +94,8 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           NO_DEFAULT_FEATURES: ${{ matrix.no_default_features }}
+          # Targets built without default features still ship the IMAP watcher.
+          FEATURES: imap
           SMOKE_FLAGS: ${{ runner.os == 'Linux' && '--require-poppler' || '' }}
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc

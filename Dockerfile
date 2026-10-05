@@ -24,7 +24,7 @@ ARG WHISPER=none
 FROM rust:1.92-bookworm AS source
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-whisper --no-default-features \
+RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
     && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-whisper /
 
 FROM scratch AS prebuilt
