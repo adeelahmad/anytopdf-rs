@@ -14,6 +14,26 @@ the container image on GHCR.
 | cargo install | Source build | Nothing |
 | Container | `Dockerfile` | Builds `linux/amd64` and `linux/arm64` from the musl release binaries; pushes `ghcr.io/<owner>/<repo>:<version>` (and `latest` for non-prereleases) on a `v*` tag, builds only on manual runs |
 
+## Bundled plugins
+
+Every archive carries the workspace's runtime plugins (`PLUGINS` in the
+Makefile, currently `anytopdf-plugin-whisper`) in a `plugins/` folder. They are
+opt-in: anytopdf runs them only once `ANYTOPDF_PLUGIN_PATH` names that folder,
+because an enabled Whisper plugin without an engine warns on every audio or
+video conversion and would fail `--strict` runs. `make package` checks that each
+plugin answers `--anytopdf-manifest` on the build runner before archiving.
+
+| Channel | Plugin location | Enable with |
+| --- | --- | --- |
+| Archive | `<archive>/plugins/` | `ANYTOPDF_PLUGIN_PATH=<archive>/plugins` |
+| Homebrew | `$(brew --prefix anytopdf)/libexec/plugins` | `ANYTOPDF_PLUGIN_PATH=$(brew --prefix anytopdf)/libexec/plugins` |
+| Scoop | `$(scoop prefix anytopdf)\plugins` | `ANYTOPDF_PLUGIN_PATH` to that folder |
+| Container | `/opt/anytopdf/plugins` | `-e ANYTOPDF_PLUGIN_PATH=/opt/anytopdf/plugins`, or the `WHISPER=cpp` build |
+| cargo-binstall | not installed | `cargo install --git … anytopdf-plugin-whisper` |
+
+Whisper also needs an engine and a model: `brew install whisper-cpp` plus a ggml
+model in `ANYTOPDF_WHISPER_MODEL`, or the container's `WHISPER=cpp` build.
+
 ## Homebrew tap
 
 One-time setup: create a `homebrew-tap` repository next to this one.
@@ -78,10 +98,16 @@ docker run --rm -v "$PWD:/work" ghcr.io/adeelahmad/anytopdf-rs notes.txt photo.j
 docker run --rm -i -v "$PWD:/work" ghcr.io/adeelahmad/anytopdf-rs mcp
 ```
 
-`docker build -t anytopdf .` builds from source with the pinned toolchain. The
-release workflow passes `--build-arg BINARY=prebuilt` with the musl binaries
-staged in `dist/docker/<arch>/anytopdf`, so the image ships the exact binary that
-was smoke-tested and checksummed. The image is published as a private GHCR
+`docker build -t anytopdf .` builds from source with the pinned toolchain.
+`docker build --build-arg WHISPER=cpp -t anytopdf:whisper .` also compiles
+whisper.cpp's `whisper-cli` (tag `WHISPER_CPP_REF`, default `v1.9.4`) and puts
+the Whisper plugin on `PATH`; mount a ggml model at `/models/ggml-base.en.bin` or
+set `ANYTOPDF_WHISPER_MODEL`. The release image does not include whisper.cpp:
+compiling it for arm64 under QEMU would dominate the release job, and the model
+has to be supplied separately either way. The release workflow passes
+`--build-arg BINARY=prebuilt` with the musl binaries staged in
+`dist/docker/<arch>/`, so the image ships the exact binaries that were
+smoke-tested and checksummed. The image is published as a private GHCR
 package by default; make it public in the package settings once.
 
 ## MCP server
