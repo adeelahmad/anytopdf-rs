@@ -55,8 +55,11 @@ These close by design (threat model §1.3, §1.10, §1.12):
   not execution; only `--no-plugins` stops plugins running. Processes a timed-out
   plugin spawns are not guaranteed to stop.
 - **Resource exhaustion from input size or shape.** There are no default size,
-  pixel, page, frame, depth or decompression-bomb limits for `convert` or
-  `extract` inputs (a subprocess outliving its timeout is still a bug).
+  pixel, page, frame or decompression-bomb limits for `convert` or `extract`
+  inputs (a subprocess outliving its timeout is still a bug). The exception is
+  container extraction: archive and email members are capped per member, per
+  archive, per input and by nesting depth and zip compression ratio, and an
+  extraction escaping the job workspace is in scope.
 - **Privacy under the default `archive` profile**, and personal data in text
   content under `share`. `share` redacts paths and metadata; it is not
   anonymization.
