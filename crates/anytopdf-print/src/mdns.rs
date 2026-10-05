@@ -64,7 +64,7 @@ mod tests {
             Some("_universal._sub._ipps._tcp.local.")
         );
         assert_eq!(info.get_port(), 8631);
-        assert_eq!(info.get_property_val_str("rp"), Some("ipp/print"));
+        assert_eq!(info.get_property_val_str("rp"), Some("ipp/print/anytopdf"));
         assert_eq!(info.get_property_val_str("air"), Some("username,password"));
     }
 }

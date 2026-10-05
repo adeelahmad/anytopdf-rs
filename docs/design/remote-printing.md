@@ -29,8 +29,8 @@ Item 3 gives a helper process that speaks IPP Everywhere, bound to localhost by 
    ```
    anytopdf print dns-sd --domain home.example --host printer.home.example --port 8631
    ```
-   emitting `b._dns-sd._udp`, `lb._dns-sd._udp`, `_ipps._tcp` PTR, the SRV record and the TXT record (`rp=ipp/print`, `pdl=...`, `TLS=1.2`, `air=username,password`, `UUID=...`), as a zone-file snippet and as JSON. The user serves them from any DNS server their tailnet uses (Tailscale split DNS to a resolver they run, or the WireGuard peer's resolver). anytopdf runs no DNS server.
-5. **Manual fallback.** `anytopdf print url` prints the exact `ipps://host:port/ipp/print` URL plus a QR code (text) for clients that cannot browse unicast DNS-SD (Windows "add printer by URL", Android Mopria "add printer").
+   emitting `b._dns-sd._udp`, `lb._dns-sd._udp`, `_ipps._tcp` PTR, the SRV record and the TXT record (`rp=ipp/print/anytopdf`, `pdl=...`, `TLS=1.2`, `air=username,password`, `UUID=...`), as a zone-file snippet and as JSON. The user serves them from any DNS server their tailnet uses (Tailscale split DNS to a resolver they run, or the WireGuard peer's resolver). anytopdf runs no DNS server.
+5. **Manual fallback.** `anytopdf print url` prints the exact `ipps://host:port/ipp/print/anytopdf` URL for clients that cannot browse unicast DNS-SD (Windows "add printer by URL", Android Mopria "add printer").
 6. **Receipts.** Each remote job's provenance records the peer address, authenticated user name, job id and time. It is written only into the visible provenance/manifest page under the `archive` profile; the `share` profile drops peer address and user name. Nothing goes into the invisible text layer (existing rule).
 7. **Untrusted input.** Remote jobs go through the same caps item 3 and the security backlog define (size and page caps, per-sender budgets keyed by authenticated user, sandboxed conversion with no network). Item 4 only adds the per-user budget key.
 8. **doctor.** `anytopdf doctor` reports the print helper, whether remote mode is configured, cert expiry, and whether `tailscale` is on PATH (for `tailscale cert` and to show the tailnet address). Informational only.
@@ -52,7 +52,7 @@ mDNS: mdns-sd answers one subtype per instance, so the LAN record is `_ipps._tcp
 
 ## Interface with item 3
 
-The helper listens on loopback in plaintext and does no TLS or authentication; the front points `--upstream` at it. Jobs reach the pipeline through the helper's spool and `anytopdf convert`, so remote printing adds no importer. The integration test uses a stand-in helper on loopback.
+The helper (`helpers/anytopdf-printer`, PR #14) listens on loopback in plaintext and does no TLS or authentication; its address comes from `ANYTOPDF_PRINTER_LISTEN`/`ANYTOPDF_PRINTER_PORT` (default `localhost:8631`) and its printer path is `/ipp/print/anytopdf`, which the DNS-SD `rp` key and `print url` advertise. The front points `--upstream` at it. PAPPL does not pass the peer address to jobs, so receipts will come from the front's log or a wrapper set as `ANYTOPDF_BIN`. Jobs reach the pipeline through the helper's spool and `anytopdf convert`, so remote printing adds no importer. The integration test uses a stand-in helper on loopback.
 
 ## Dependencies added
 

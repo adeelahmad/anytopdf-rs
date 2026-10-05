@@ -10,7 +10,8 @@ pub const SERVICE: &str = "_ipps._tcp";
 /// AirPrint clients browse `_universal`; IPP Everywhere clients may browse `_print`.
 pub const AIRPRINT_SUBTYPE: &str = "_universal";
 pub const SUBTYPES: [&str; 2] = [AIRPRINT_SUBTYPE, "_print"];
-pub const RESOURCE: &str = "ipp/print";
+/// The print helper's printer path (PAPPL names it after the printer).
+pub const RESOURCE: &str = "ipp/print/anytopdf";
 
 #[derive(Clone, Debug)]
 pub struct ServiceSpec {
@@ -184,7 +185,7 @@ mod tests {
                 .find(|(key, _)| key == k)
                 .map(|(_, v)| v.as_str())
         };
-        assert_eq!(get("rp"), Some("ipp/print"));
+        assert_eq!(get("rp"), Some("ipp/print/anytopdf"));
         assert_eq!(get("pdl"), Some("image/pwg-raster,image/urf"));
         assert_eq!(get("URF"), Some("W8,SRGB24,CP1,RS300"));
         assert_eq!(get("TLS"), Some("1.2"));
@@ -221,15 +222,18 @@ mod tests {
         ] {
             assert!(zone.contains(line), "missing {line:?} in\n{zone}");
         }
-        assert!(zone.contains("\"rp=ipp/print\""));
+        assert!(zone.contains("\"rp=ipp/print/anytopdf\""));
     }
 
     #[test]
     fn url_brackets_ipv6_hosts() {
-        assert_eq!(spec().url(), "ipps://printer.home.example:8631/ipp/print");
+        assert_eq!(
+            spec().url(),
+            "ipps://printer.home.example:8631/ipp/print/anytopdf"
+        );
         assert_eq!(
             ServiceSpec::new("p", "fd7a::1", 8631).url(),
-            "ipps://[fd7a::1]:8631/ipp/print"
+            "ipps://[fd7a::1]:8631/ipp/print/anytopdf"
         );
     }
 
@@ -237,7 +241,10 @@ mod tests {
     fn json_embeds_the_zone_and_url() {
         let value = spec().json("home.example", &[]);
         assert_eq!(value["schema_version"], "anytopdf.print-dns-sd/1");
-        assert_eq!(value["url"], "ipps://printer.home.example:8631/ipp/print");
+        assert_eq!(
+            value["url"],
+            "ipps://printer.home.example:8631/ipp/print/anytopdf"
+        );
         assert!(value["zone"].as_str().unwrap().contains("IN SRV"));
     }
 }
