@@ -28,6 +28,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
   written into the job workspace under sanitized names and imported by whichever importer
   matches; ones that cannot be imported warn `input.members-not-imported`.
+- Zip, tar and gzipped tar archives import as an index page plus each member through its
+  own importer. Extraction is bounded (512 MiB per member, 1 GiB per archive, 10,000
+  entries, 200:1 zip ratio, 2 GiB and 10,000 members per input across nesting); names
+  are reduced to one safe component and links are skipped. Zip-based documents (OOXML,
+  ODF, EPUB, JAR/APK) are not treated as archives.
 - Importers can expand containers through `Importer::import_with_members`; nesting stops
   at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).

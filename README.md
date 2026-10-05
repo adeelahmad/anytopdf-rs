@@ -85,6 +85,7 @@ Importers:
 - text / Markdown
 - HTML pages (readable text, title and image alt text; no network fetches)
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
+- archives (`.zip`, `.tar`, `.tar.gz`/`.tgz`): an index page plus every member through its own importer, with zip-bomb and path-traversal limits
 - SRT / VTT captions
 - Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
   LibreOffice and Poppler
@@ -369,6 +370,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
+- [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation

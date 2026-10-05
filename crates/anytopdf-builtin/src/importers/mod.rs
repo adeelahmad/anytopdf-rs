@@ -1,3 +1,4 @@
+mod archive;
 mod audio;
 mod email;
 mod html;
@@ -7,6 +8,7 @@ mod subtitle;
 mod text;
 mod video;
 
+pub use archive::ArchiveImporter;
 pub use audio::AudioImporter;
 pub use email::EmailImporter;
 pub use html::HtmlImporter;
