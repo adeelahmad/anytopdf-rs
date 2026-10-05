@@ -8,9 +8,10 @@ mod exit;
 mod extract;
 mod naming;
 mod publish;
+mod watch;
 use anytopdf_core::RuntimePluginPolicy;
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
 use exit::{CliError, ExitClass};
@@ -67,6 +68,9 @@ fn run(cli: Cli) -> Result<(), CliError> {
             Ok(())
         }
         Commands::Probe { input, .. } => probe(&input, &policy),
+        Commands::Watch {
+            source: WatchSource::Imap(args),
+        } => watch::watch_imap(*args, &policy),
     }
 }
 

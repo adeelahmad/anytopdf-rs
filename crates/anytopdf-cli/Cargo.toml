@@ -12,12 +12,15 @@ path = "src/main.rs"
 [features]
 default = ["apple-vision"]
 apple-vision = ["anytopdf-builtin/apple-vision"]
+# `anytopdf watch imap`: fetch mail over IMAP and convert each message.
+imap = ["dep:anytopdf-imap"]
 
 [dependencies]
 anyhow.workspace = true
 anytopdf-core = { path = "../anytopdf-core" }
 anytopdf-builtin = { path = "../anytopdf-builtin", default-features = false }
 anytopdf-pdf = { path = "../anytopdf-pdf" }
+anytopdf-imap = { path = "../anytopdf-imap", optional = true }
 clap.workspace = true
 regex.workspace = true
 serde_json.workspace = true

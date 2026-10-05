@@ -173,6 +173,44 @@ does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
+### Watching a mailbox (IMAP)
+
+Builds with the `imap` cargo feature (`cargo build --release --features imap`)
+add `anytopdf watch imap`, which turns each new message in one mailbox into its
+own PDF:
+
+```bash
+export ANYTOPDF_IMAP_PASSWORD=...   # or --password-file; never a command-line flag
+anytopdf watch imap --host imap.example.com --user scans@example.com \
+  --mailbox INBOX --output-dir ~/mail-pdfs -- --ocr auto --profile share
+```
+
+- Each message is fetched with `BODY.PEEK[]` (the mailbox is not modified unless
+  `--mark-seen` or `--move-to <mailbox>` is given), saved as a raw `.eml`, and
+  converted by a child `anytopdf convert` into
+  `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`. Arguments after `--` go to
+  convert. The child does not inherit `ANYTOPDF_IMAP_PASSWORD`.
+- Until an email importer exists, a message converts as plain text (headers and
+  raw body). An `anytopdf-plugin-*` importer for RFC 822 input takes over without
+  changes to the watcher.
+- Progress lives in `<state-dir>/state.json` (default
+  `<output-dir>/.anytopdf-imap`), keyed by the mailbox's UIDVALIDITY. The first
+  run only converts mail that arrives afterwards; `--backfill` converts existing
+  mail too. Failed conversions are retried on later checks up to
+  `--max-attempts`, then the message is kept in `<state-dir>/failed`. Messages
+  over `--max-message-bytes` are skipped. Delivery is at least once: a crash
+  mid-conversion converts that message again.
+- `--tls implicit` (default, port 993) or `--tls starttls` (port 143) use the
+  operating system's trusted roots plus an optional `--ca-file`; `--tls none` is
+  refused unless the host is loopback. Login uses IMAP `LOGIN` (use an app
+  password where the provider requires one).
+- The watcher waits with IMAP IDLE when the server supports it and otherwise polls
+  every `--poll-interval` seconds; it reconnects with backoff after network errors.
+  `--once` checks a single time and exits (for cron). Connection settings may also
+  come from `ANYTOPDF_IMAP_HOST`, `_PORT`, `_TLS`, `_USER`, `_MAILBOX` and
+  `_PASSWORD_FILE`. Use one `--state-dir` per mailbox and one watcher per state
+  directory.
+
 ## Roadmap
 
 anytopdf is meant to produce an evidence file: one PDF that is both the human
