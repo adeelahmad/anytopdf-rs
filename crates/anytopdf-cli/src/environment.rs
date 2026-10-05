@@ -101,6 +101,8 @@ fn install_hint(tool: &str) -> String {
         "exiftool" => ("exiftool", "libimage-exiftool-perl", "OliverBetz.ExifTool"),
         "tesseract" => ("tesseract", "tesseract-ocr", "UB-Mannheim.TesseractOCR"),
         "python3" => ("python", "python3", "Python.Python.3.12"),
+        "heif-convert" => ("libheif", "libheif-examples", "ImageMagick.ImageMagick"),
+        "pdftoppm" => ("poppler", "poppler-utils", "oschwartz10612.Poppler"),
         other => return format!("install {other} and put it on PATH"),
     };
     let command = if cfg!(target_os = "macos") {
@@ -164,6 +166,39 @@ fn builtin_entry(probe: &Probe, d: &PluginDescriptor, hints: &mut Vec<String>) -
             [] => (State::Available, exts),
             _ => (State::Missing, format!("needs ffmpeg; {exts}")),
         },
+        "heif" => {
+            let converters: &[&str] = if cfg!(target_os = "macos") {
+                &["sips", "heif-convert", "magick", "convert"]
+            } else if cfg!(windows) {
+                &["heif-convert", "magick"]
+            } else {
+                &["heif-convert", "magick", "convert"]
+            };
+            match converters.iter().find(|c| which::which(c).is_ok()) {
+                Some(found) => (State::Available, format!("{exts}  (via {found})")),
+                None => {
+                    hints.push(install_hint("heif-convert"));
+                    (
+                        State::Missing,
+                        format!("needs heif-convert (libheif) or ImageMagick; {exts}"),
+                    )
+                }
+            }
+        }
+        "pdf-input" => {
+            if which::which("pdftoppm").is_ok() {
+                (
+                    State::Available,
+                    format!("{exts}  (page images via pdftoppm)"),
+                )
+            } else {
+                hints.push(install_hint("pdftoppm"));
+                (
+                    State::Partial,
+                    format!("{exts}  (text only; page images need Poppler pdftoppm)"),
+                )
+            }
+        }
         "audio" => (
             State::Available,
             format!("{exts}  (placeholder pages; text via --transcript or a plugin)"),
