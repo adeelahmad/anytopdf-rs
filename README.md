@@ -148,9 +148,20 @@ image conversion; provider-specific dependencies are listed below.
 ./anytopdf doctor
 ```
 
-Homebrew, Scoop, cargo-binstall, `cargo install` and a container image with
-FFmpeg, ExifTool and Tesseract are described in
-[docs/distribution.md](docs/distribution.md).
+Or install with a package manager:
+
+```bash
+brew tap adeelahmad/anytopdf https://github.com/adeelahmad/anytopdf-rs
+brew install adeelahmad/anytopdf/anytopdf
+```
+
+```powershell
+scoop bucket add anytopdf https://github.com/adeelahmad/anytopdf-rs
+scoop install anytopdf/anytopdf
+```
+
+cargo-binstall, `cargo install` and a container image with FFmpeg, ExifTool and
+Tesseract are described in [docs/distribution.md](docs/distribution.md).
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
@@ -551,7 +562,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Spike: slim and full build shapes
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
-- [ ] Published Homebrew tap and Scoop bucket, winget, `curl | sh`, and npx/uvx wrappers
+- [x] Published Homebrew tap and Scoop bucket (`Formula/` and `bucket/` in this repository)
+- [ ] winget, `curl | sh`, and npx/uvx wrappers
 - [ ] Signing and notarization
 - [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`

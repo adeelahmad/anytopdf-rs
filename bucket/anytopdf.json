@@ -1,0 +1,36 @@
+{
+  "version": "0.2.0",
+  "description": "Convert media and documents into searchable, RAG-friendly PDFs",
+  "homepage": "https://github.com/adeelahmad/anytopdf-rs",
+  "license": "MIT|Apache-2.0",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.2.0/anytopdf-0.2.0-x86_64-pc-windows-msvc.zip",
+      "hash": "a0a69fb32d15ab069f8b23117c76d5fddacb899511b04d2c82577429640c7395",
+      "extract_dir": "anytopdf-0.2.0-x86_64-pc-windows-msvc"
+    }
+  },
+  "bin": "anytopdf.exe",
+  "notes": [
+    "Bundled runtime plugins are opt-in. To transcribe audio and video, set",
+    "ANYTOPDF_PLUGIN_PATH to $dir\\plugins and ANYTOPDF_WHISPER_MODEL to a",
+    "whisper.cpp ggml model file."
+  ],
+  "suggest": {
+    "FFmpeg": "ffmpeg",
+    "ExifTool": "exiftool",
+    "Tesseract": "tesseract"
+  },
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/adeelahmad/anytopdf-rs/releases/download/v$version/anytopdf-$version-x86_64-pc-windows-msvc.zip",
+        "hash": {
+          "url": "$url.sha256"
+        },
+        "extract_dir": "anytopdf-$version-x86_64-pc-windows-msvc"
+      }
+    }
+  }
+}

@@ -36,22 +36,13 @@ model in `ANYTOPDF_WHISPER_MODEL`, or the container's `WHISPER=cpp` build.
 
 ## Homebrew tap
 
-One-time setup: create a `homebrew-tap` repository next to this one.
-
-After each release, download the `package-manifests` artifact from the release
-workflow run (or regenerate it from the published checksums) and commit the
-formula to the tap:
+This repository is its own tap: `Formula/anytopdf.rb` is the formula for the
+latest release. Because the repository is not named `homebrew-*`, users tap it
+by URL once:
 
 ```bash
-gh release download v0.2.0 --pattern SHA256SUMS
-python scripts/distribution.py --version 0.2.0 --checksums SHA256SUMS --output packaging
-cp packaging/anytopdf.rb ../homebrew-tap/Formula/anytopdf.rb
-```
-
-Users then install with:
-
-```bash
-brew install adeelahmad/tap/anytopdf
+brew tap adeelahmad/anytopdf https://github.com/adeelahmad/anytopdf-rs
+brew install adeelahmad/anytopdf/anytopdf
 brew install ffmpeg exiftool tesseract   # optional providers
 ```
 
@@ -60,15 +51,32 @@ the static musl binary.
 
 ## Scoop bucket
 
-One-time setup: create a `scoop-bucket` repository. Copy `packaging/anytopdf.json`
-to `bucket/anytopdf.json` there after each release. The manifest carries
-`checkver` and `autoupdate`, so Scoop's `checkver -u` can also bump it from the
-release's `.sha256` sidecar.
+This repository is also the Scoop bucket: `bucket/anytopdf.json` is the manifest
+for the latest release.
 
 ```powershell
-scoop bucket add anytopdf https://github.com/adeelahmad/scoop-bucket
-scoop install anytopdf
+scoop bucket add anytopdf https://github.com/adeelahmad/anytopdf-rs
+scoop install anytopdf/anytopdf
 ```
+
+The manifest carries `checkver` and `autoupdate`, so Scoop's `checkver -u` can
+also bump it from the release's `.sha256` sidecar.
+
+## Updating the formula and manifest after a release
+
+The release workflow renders both files from the published `SHA256SUMS` and
+uploads them as the `package-manifests` artifact. Commit them in a PR after each
+release (or regenerate them from the published checksums):
+
+```bash
+gh release download v0.2.0 --pattern SHA256SUMS
+python scripts/distribution.py --version 0.2.0 --checksums SHA256SUMS --output packaging
+cp packaging/anytopdf.rb Formula/anytopdf.rb
+cp packaging/anytopdf.json bucket/anytopdf.json
+```
+
+`tests/test_distribution.py` fails if either file is edited by hand or the two
+disagree on the version.
 
 ## cargo-binstall and cargo install
 
