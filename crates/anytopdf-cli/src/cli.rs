@@ -278,8 +278,8 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) fail_fast: bool,
 
-    /// Renderer plugin that writes the output: `pdf` or `pdfa` (tagged PDF/A-3a).
-    #[arg(long, default_value = "pdf")]
+    /// Renderer plugin that writes the output: `pdfa` (tagged PDF/A-3a) or `pdf` (printpdf).
+    #[arg(long, default_value = "pdfa")]
     pub(crate) renderer: String,
 
     /// Output PDF path.

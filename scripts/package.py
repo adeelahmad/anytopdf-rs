@@ -46,6 +46,8 @@ def main():
                 shutil.copy2(plugin, folder / "plugins" / plugin.name)
         for filename in ["README.md", "ARCHITECTURE.md", "PLUGIN_PROTOCOL.md", "RELEASING.md", "ROADMAP.md", "SECURITY.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE"]:
             shutil.copy2(ROOT / filename, folder / filename)
+        # The binary embeds DejaVu Sans, whose licence must ship with it.
+        shutil.copy2(ROOT / "crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt", folder / "LICENSE-DejaVu.txt")
         if windows:
             with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
                 for item in sorted(folder.rglob("*")):

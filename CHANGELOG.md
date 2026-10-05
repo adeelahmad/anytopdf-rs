@@ -69,6 +69,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   algorithm and shaped, and characters fall back to further fonts (`ANYTOPDF_FONT`
   may list several). The hidden layer uses fill opacity 0 instead of text rendering
   mode 3. `extract` now reads compressed attachments.
+- `--renderer pdfa` is the default; `--renderer pdf` keeps the printpdf output. When
+  `ANYTOPDF_FONT` is unset, `pdfa` embeds a bundled DejaVu Sans (Bitstream Vera
+  licence, `crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt`).
 - The Rust toolchain is 1.92.0.
 
 ## 0.1.0

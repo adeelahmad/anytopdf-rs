@@ -30,6 +30,7 @@ class PackageTests(unittest.TestCase):
                         names = package.getnames()
                 self.assertTrue(any(name.endswith("/LICENSE-MIT") for name in names))
                 self.assertTrue(any(name.endswith("/LICENSE-APACHE") for name in names))
+                self.assertTrue(any(name.endswith("/LICENSE-DejaVu.txt") for name in names))
                 self.assertTrue(any(name.endswith("/README.md") for name in names))
 
     def test_plugins_ship_in_an_opt_in_folder(self):

@@ -104,22 +104,23 @@ The renderer sees only the normalized graph.
 For visual pages:
 1. paint the original/derived image;
 2. map OCR regions to PDF coordinates;
-3. write OCR with text rendering mode 3;
+3. write OCR as invisible text;
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
 
 Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 `provenance.rs`) and therefore produce the same pages and `unit_pages`:
 
-- `pdf` (default): printpdf. The CLI adds the manifest and chunks afterwards with
-  lopdf.
-- `pdfa`: krilla 0.8, tagged PDF/A-3a validated by krilla at write time, with a
-  structure tree, bookmarks, bidi reordering, rustybuzz shaping and per-character
-  font fallback (`pdfa_text.rs`). It builds the
-  manifest and chunks itself from the graph and its own render report and stores them
-  as PDF/A-3 associated files. The CLI detects attachments that already match and
+- `pdfa` (default): krilla 0.8, tagged PDF/A-3a validated by krilla at write time,
+  with a structure tree, bookmarks, bidi reordering, rustybuzz shaping and
+  per-character font fallback (`pdfa_text.rs`). Its primary font is the bundled
+  DejaVu Sans (`fonts/`) unless `ANYTOPDF_FONT` names one. It builds the manifest
+  and chunks itself from the graph and its own render report and stores them as
+  PDF/A-3 associated files. The CLI detects attachments that already match and
   does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
   uses a fill opacity of 0.
+- `pdf`: printpdf, with text rendering mode 3. The CLI adds the manifest and chunks
+  afterwards with lopdf.
 
 ## Print jobs
 
