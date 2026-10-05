@@ -182,7 +182,7 @@ fn ipp(operation: u16, claimed: &str, document: &[u8]) -> Vec<u8> {
 
 fn post(body: &[u8], extra_headers: &str) -> Vec<u8> {
     let mut out = format!(
-        "POST /ipp/print/anytopdf HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/ipp\r\nContent-Length: {}\r\n{extra_headers}\r\n",
+        "POST /ipp/print/anytopdf HTTP/1.1\r\nHost: printer.home.example:8631\r\nContent-Type: application/ipp\r\nContent-Length: {}\r\n{extra_headers}\r\n",
         body.len()
     )
     .into_bytes();
@@ -256,6 +256,12 @@ fn print_job_reaches_the_helper_as_the_signed_in_user_with_a_receipt() {
     assert!(head.starts_with("POST /ipp/print/anytopdf HTTP/1.1"));
     assert!(header(head, "authorization").is_none(), "{head}");
     assert_eq!(
+        header(head, "host"),
+        Some(helper.to_string().as_str()),
+        "{head}"
+    );
+    assert_eq!(head.matches("Host:").count(), 1, "{head}");
+    assert_eq!(
         header(head, "content-length"),
         Some(body.len().to_string().as_str())
     );
@@ -282,7 +288,7 @@ fn chunked_job_with_expect_continue_is_restamped_and_rechunked() {
     let front = start_front(helper, &[], None);
     let body = ipp(2, "mallory", b"chunked-document-data");
     let mut request = format!(
-        "POST /ipp/print/anytopdf HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/ipp\r\nTransfer-Encoding: chunked\r\nExpect: 100-continue\r\n{}\r\n",
+        "POST /ipp/print/anytopdf HTTP/1.1\r\nHost: printer.home.example:8631\r\nContent-Type: application/ipp\r\nTransfer-Encoding: chunked\r\nExpect: 100-continue\r\n{}\r\n",
         auth("adeel", "correct horse")
     )
     .into_bytes();

@@ -400,12 +400,18 @@ impl Session<'_> {
             }
         }
 
-        let mut head = vec![request_line.clone()];
+        // PAPPL rejects a Host it does not know (such as the tailnet name the
+        // client used), so the helper sees its own loopback address instead.
+        let mut head = vec![
+            request_line.clone(),
+            format!("Host: {}", self.config.upstream),
+        ];
         head.extend(
             headers
                 .iter()
                 .filter(|(k, _)| {
                     ![
+                        "host",
                         "authorization",
                         "expect",
                         "content-length",
