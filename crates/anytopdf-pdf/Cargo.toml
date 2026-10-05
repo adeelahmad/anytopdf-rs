@@ -14,6 +14,8 @@ ttf-parser.workspace = true
 allsorts.workspace = true
 lopdf = { version = "0.44", default-features = false }
 sha2.workspace = true
+serde_json.workspace = true
+krilla.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

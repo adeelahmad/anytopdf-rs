@@ -42,3 +42,6 @@ which.workspace = true
 infer.workspace = true
 tempfile.workspace = true
 
+
+[dev-dependencies]
+printpdf.workspace = true

@@ -98,7 +98,8 @@ Enrichment:
 - video timestamps and scene-selection provenance
 
 Rendering:
-- searchable PDF via `printpdf`
+- searchable PDF via `printpdf` (default, `--renderer pdf`)
+- PDF/A-3b via `krilla` (`--renderer pdfa`)
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -160,6 +161,19 @@ anytopdf convert meeting.mp4 \
 `error:` lines. Every run ends with exactly one `run.finished` event whose
 `status` (`ok`, `partial`, `failed`) and `exit_code` match the process exit code;
 a failed run adds an `error` message. A closed stderr pipe never panics.
+
+### PDF/A-3 output
+
+`anytopdf convert --renderer pdfa` writes PDF/A-3b instead of plain PDF. Pages,
+page numbering and the embedded manifest and chunks are the same as with the
+default renderer. The differences: the font is always embedded (set `ANYTOPDF_FONT`
+when no system font is found; without one the conversion fails), the document
+carries XMP metadata and an sRGB output intent, and the manifest and chunks are
+PDF/A-3 associated files (`/AF`, relationship `Data`). The hidden layer is written
+as text with a fill opacity of 0 rather than text rendering mode 3, because krilla
+has no mode 3; it is still searchable and extractable. Characters the font lacks
+are left out of the PDF with a render warning, since PDF/A forbids `.notdef`
+glyphs. Output is reproducible under `SOURCE_DATE_EPOCH`.
 
 ### Embedded manifest and chunks
 
@@ -254,11 +268,13 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
-- [ ] PDF/A-3, tagged PDF and bookmarks
+- [x] PDF/A-3b output (`--renderer pdfa`)
+- [ ] Tagged PDF and bookmarks
 
 ### Rendering
 - [x] Spike: layout and writer options
-- [ ] New renderer (parley layout, krilla writer, Rust 1.92 toolchain bump, invisible text via fill opacity)
+- [x] krilla writer behind `--renderer pdfa` (krilla 0.5 on Rust 1.88, invisible text via fill opacity)
+- [ ] parley layout, krilla 0.8 with a Rust 1.92 toolchain bump, and `pdfa` as the default renderer
 - [ ] Rendered Markdown
 - [ ] Arabic, Hebrew and CJK shaping
 

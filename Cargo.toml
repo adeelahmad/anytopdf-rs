@@ -38,6 +38,8 @@ uuid = { version = "1.18", features = ["v4", "v8", "serde"] }
 walkdir = "2.5"
 which = "8.0"
 ttf-parser = "0.25"
+# krilla 0.6+ needs Rust 1.89; stay on 0.5 while the toolchain is pinned to 1.88.
+krilla = { version = "=0.5.0", default-features = false, features = ["raster-images", "simple-text"] }
 allsorts = { package = "allsorts-azul", version = "0.17.2", default-features = false, features = ["flate2_rust"] }
 
 [profile.release]
