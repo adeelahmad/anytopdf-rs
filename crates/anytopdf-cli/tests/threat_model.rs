@@ -1,7 +1,6 @@
 //! Tests that pin the answers to the threat model's open questions (Q4, Q9, Q17).
 use std::{
     fs,
-    path::Path,
     process::{Command, Output, Stdio},
     time::{Duration, Instant},
 };
@@ -162,7 +161,7 @@ fn overwrite_through_a_hard_link_leaves_the_input_intact() {
 }
 
 #[cfg(unix)]
-fn write_failing_plugin(dir: &Path) {
+fn write_failing_plugin(dir: &std::path::Path) {
     use std::os::unix::fs::PermissionsExt;
     let plugin = dir.join("anytopdf-plugin-broken");
     let manifest = r#"{"protocol":1,"name":"broken","version":"1","capabilities":[{"kind":"importer","extensions":["broken"],"mime_types":[],"priority":90}]}"#;
