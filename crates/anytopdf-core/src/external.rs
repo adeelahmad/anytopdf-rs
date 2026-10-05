@@ -6,7 +6,6 @@ use std::{
     env, fs,
     io::Read,
     path::{Path, PathBuf},
-    process::Command,
     sync::Arc,
     time::Duration,
 };
@@ -68,6 +67,7 @@ pub struct RuntimeResponse {
 #[derive(Debug, Clone)]
 pub struct RuntimePlugin {
     pub timeout: Duration,
+    pub sandbox: SandboxPolicy,
     pub executable: PathBuf,
     pub manifest: RuntimePluginManifest,
 }
@@ -79,6 +79,7 @@ pub struct RuntimePluginPolicy {
     pub timeout: Duration,
     pub allow_capabilities: Option<BTreeSet<String>>,
     pub deny_capabilities: BTreeSet<String>,
+    pub sandbox: SandboxPolicy,
 }
 
 impl Default for RuntimePluginPolicy {
@@ -88,6 +89,7 @@ impl Default for RuntimePluginPolicy {
             timeout: Duration::from_secs(60),
             allow_capabilities: None,
             deny_capabilities: BTreeSet::new(),
+            sandbox: SandboxPolicy::default(),
         }
     }
 }
@@ -111,16 +113,22 @@ fn plugin_warnings(warnings: Vec<String>) -> Vec<String> {
 }
 
 pub fn read_manifest(executable: &Path) -> Result<RuntimePluginManifest> {
-    read_manifest_with_timeout(executable, Duration::from_secs(60))
+    read_manifest_with_timeout(
+        executable,
+        Duration::from_secs(60),
+        &SandboxPolicy::default(),
+    )
 }
 
 fn read_manifest_with_timeout(
     executable: &Path,
     timeout: Duration,
+    sandbox: &SandboxPolicy,
 ) -> Result<RuntimePluginManifest> {
-    let out = Command::new(executable)
-        .arg("--anytopdf-manifest")
-        .bounded_output(timeout)
+    let mut command = sandbox.command(executable, &SandboxAccess::default())?;
+    command.arg("--anytopdf-manifest");
+    let out = sandbox
+        .output(&mut command, timeout)
         .with_context(|| format!("run plugin manifest {}", executable.display()))?;
     if !out.status.success() {
         bail!(
@@ -177,11 +185,12 @@ fn discover_with_policy(policy: &RuntimePluginPolicy) -> (Vec<RuntimePlugin>, Ve
     let mut warnings = Vec::new();
     let mut plugins = Vec::new();
     for executable in runtime_plugin_candidates(policy) {
-        match read_manifest_with_timeout(&executable, policy.timeout) {
+        match read_manifest_with_timeout(&executable, policy.timeout, &policy.sandbox) {
             Ok(manifest) => plugins.push(RuntimePlugin {
                 executable,
                 manifest,
                 timeout: policy.timeout,
+                sandbox: policy.sandbox.clone(),
             }),
             Err(e) => warnings.push(format!(
                 "runtime plugin {} ignored: {e:#}",
@@ -322,12 +331,19 @@ fn invoke(plugin: &RuntimePlugin, request: &RuntimeRequest) -> Result<RuntimeRes
         .join(format!("plugin-response-{token}.json"));
     fs::write(&request_path, serde_json::to_vec_pretty(request)?)?;
 
-    let out = Command::new(&plugin.executable)
+    let access = SandboxAccess {
+        workspace: Some(&request.workspace),
+        read: request.source.iter().map(|s| s.path.as_path()).collect(),
+    };
+    let mut command = plugin.sandbox.command(&plugin.executable, &access)?;
+    command
         .arg("--anytopdf-request")
         .arg(&request_path)
         .arg("--anytopdf-response")
-        .arg(&response_path)
-        .bounded_output(plugin.timeout)
+        .arg(&response_path);
+    let out = plugin
+        .sandbox
+        .output(&mut command, plugin.timeout)
         .with_context(|| format!("invoke plugin {}", plugin.executable.display()))?;
 
     if !out.status.success() {
@@ -559,6 +575,14 @@ impl Renderer for RuntimeRenderer {
         graph: &DocumentGraph,
         output: &Path,
     ) -> Result<RenderReport> {
+        // A strict sandbox only lets the renderer write inside the workspace.
+        let strict = self.plugin.sandbox.mode == SandboxMode::Strict;
+        let target = if strict {
+            ctx.workspace
+                .join(format!("plugin-render-{}.pdf", uuid::Uuid::new_v4()))
+        } else {
+            output.to_path_buf()
+        };
         let response = invoke(
             &self.plugin,
             &RuntimeRequest {
@@ -568,16 +592,32 @@ impl Renderer for RuntimeRenderer {
                 source: None,
                 unit: None,
                 graph: Some(graph.clone()),
-                output: Some(output.to_path_buf()),
+                output: Some(target.clone()),
             },
         )?;
-        response.render_report.ok_or_else(|| {
+        let report = response.render_report.ok_or_else(|| {
             anyhow::anyhow!(
                 "runtime renderer {} returned no render_report",
                 self.plugin.manifest.name
             )
-        })
+        })?;
+        if strict {
+            move_file(&target, output).context("move sandboxed renderer output")?;
+        }
+        Ok(report)
     }
+}
+
+fn move_file(from: &Path, to: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(from).context("inspect renderer output")?;
+    if !metadata.file_type().is_file() {
+        bail!("renderer output must be a regular file");
+    }
+    if fs::rename(from, to).is_err() {
+        fs::copy(from, to)?;
+        fs::remove_file(from)?;
+    }
+    Ok(())
 }
 
 fn validate_source_identity(original: &SourceRecord, updated: &SourceRecord) -> Result<()> {
@@ -663,7 +703,7 @@ mod tests {
 #[cfg(all(test, unix))]
 mod process_tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use std::{os::unix::fs::PermissionsExt, process::Command};
 
     fn script(directory: &Path, body: &str) -> PathBuf {
         let path = directory.join("anytopdf-plugin-test");
@@ -696,6 +736,56 @@ mod process_tests {
         let plugin = RuntimePlugin {
             executable,
             timeout: Duration::from_secs(2),
+            sandbox: SandboxPolicy::default(),
+            manifest: RuntimePluginManifest {
+                protocol: 1,
+                name: "test".into(),
+                version: "1".into(),
+                capabilities: vec![capability.clone()],
+            },
+        };
+        let source = SourceRecord::new(source_path);
+        let id = source.id;
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        let outcome = RuntimeImporter { plugin, capability }
+            .import(&ctx, source)
+            .unwrap();
+        assert_eq!(outcome.units[0].source_id, id);
+        assert!(!outcome.units[0].id.is_nil());
+        assert_eq!(
+            outcome.units[0].visible_text.as_deref(),
+            Some("plugin content")
+        );
+    }
+
+    #[test]
+    fn strict_sandboxed_runtime_importer_still_returns_units() {
+        if SandboxMode::Strict.check_supported().is_err() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("input.example");
+        fs::write(&source_path, "input").unwrap();
+        let executable = script(
+            dir.path(),
+            r#"printf '%s' '{"protocol":1,"ok":true,"units":[{"kind":"text","visible_text":"plugin content"}]}' > "$4""#,
+        );
+        let capability = RuntimeCapability {
+            kind: "importer".into(),
+            extensions: vec!["example".into()],
+            mime_types: vec![],
+            priority: 1,
+        };
+        let plugin = RuntimePlugin {
+            executable,
+            timeout: Duration::from_secs(2),
+            sandbox: SandboxPolicy {
+                mode: SandboxMode::Strict,
+                allow_read: Vec::new(),
+            },
             manifest: RuntimePluginManifest {
                 protocol: 1,
                 name: "test".into(),
@@ -724,7 +814,10 @@ mod process_tests {
     fn manifest_timeout_is_enforced() {
         let dir = tempfile::tempdir().unwrap();
         let path = script(dir.path(), "exec sleep 10");
-        assert!(read_manifest_with_timeout(&path, Duration::from_millis(50)).is_err());
+        assert!(
+            read_manifest_with_timeout(&path, Duration::from_millis(50), &SandboxPolicy::default())
+                .is_err()
+        );
     }
 
     #[test]

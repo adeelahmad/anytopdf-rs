@@ -209,6 +209,12 @@ fn convert_inner(
     redactor: &mut Redactor,
     sink: &mut Sink,
 ) -> Result<(), CliError> {
+    if policy.enabled {
+        tag(
+            ExitClass::Usage,
+            anytopdf_core::validate_sandbox_policy(&policy.sandbox),
+        )?;
+    }
     if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
         return Err(fail(
             ExitClass::Usage,

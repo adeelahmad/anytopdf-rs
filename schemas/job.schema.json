@@ -33,7 +33,8 @@
       "enum": [
         "inbox",
         "cli",
-        "http"
+        "http",
+        "imap"
       ]
     },
     "inputs": {

@@ -1,4 +1,4 @@
-use crate::config::{ImapConfig, TlsMode};
+use crate::config::{Credential, ImapConfig, TlsMode};
 use crate::watcher::{Mailbox, MailboxStatus};
 use anyhow::{Context, Result, anyhow, bail};
 use imap::extensions::idle::{SetReadTimeout, stop_on_any};
@@ -104,8 +104,18 @@ pub fn connect(config: &ImapConfig) -> Result<ImapMailbox> {
             imap::Client::new(stream(Inner::Tls(handshake(tcp, &config.host, tls()?)?)))
         }
     };
-    let mut session = client
-        .login(&config.user, &config.password)
+    let secret = config.credential.secret()?;
+    let login = match config.credential {
+        Credential::Password(_) => client.login(&config.user, &secret),
+        Credential::OAuth2Token(_) | Credential::OAuth2TokenFile(_) => client.authenticate(
+            "XOAUTH2",
+            &XOAuth2 {
+                user: &config.user,
+                token: &secret,
+            },
+        ),
+    };
+    let mut session = login
         .map_err(|(e, _)| anyhow!(e))
         .with_context(|| format!("IMAP login as {} on {}", config.user, config.host))?;
     let caps = session.capabilities().context("IMAP CAPABILITY")?;
@@ -117,6 +127,26 @@ pub fn connect(config: &ImapConfig) -> Result<ImapMailbox> {
         mailbox: config.mailbox.clone(),
         search: config.search.clone(),
     })
+}
+
+/// SASL XOAUTH2 as used by Gmail and Microsoft 365.
+struct XOAuth2<'a> {
+    user: &'a str,
+    token: &'a str,
+}
+
+impl imap::Authenticator for XOAuth2<'_> {
+    type Response = String;
+
+    fn process(&self, challenge: &[u8]) -> String {
+        if challenge.is_empty() {
+            format!("user={}\x01auth=Bearer {}\x01\x01", self.user, self.token)
+        } else {
+            // A non-empty challenge carries the server's JSON error; an empty reply
+            // ends the exchange so the server can send its tagged NO.
+            String::new()
+        }
+    }
 }
 
 fn open_tcp(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {

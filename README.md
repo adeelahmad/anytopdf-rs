@@ -281,41 +281,53 @@ first failing JSON path. A PDF with no embedded or sidecar manifest exits
 
 ### Watching a mailbox (IMAP)
 
-Builds with the `imap` cargo feature (`cargo build --release --features imap`)
-add `anytopdf watch imap`, which turns each new message in one mailbox into its
-own PDF:
+`anytopdf watch imap` turns each new message in one mailbox into its own PDF
+(release builds include it; source builds need the default `imap` feature):
 
 ```bash
 export ANYTOPDF_IMAP_PASSWORD=...   # or --password-file; never a command-line flag
 anytopdf watch imap --host imap.example.com --user scans@example.com \
-  --mailbox INBOX --output-dir ~/mail-pdfs -- --ocr auto --profile share
+  --allow-from example.com --output-dir ~/mail-pdfs -- --ocr auto --profile share
 ```
 
 - Each message is fetched with `BODY.PEEK[]` (the mailbox is not modified unless
   `--mark-seen` or `--move-to <mailbox>` is given), saved as a raw `.eml`, and
   converted by a child `anytopdf convert` into
   `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`. Arguments after `--` go to
-  convert. The child does not inherit `ANYTOPDF_IMAP_PASSWORD`.
-- The built-in email importer renders each message (headers, body and its
-  attachments through the normal importers); an `anytopdf-plugin-*` importer for
-  RFC 822 input can replace it without changes to the watcher.
-- Progress lives in `<state-dir>/state.json` (default
-  `<output-dir>/.anytopdf-imap`), keyed by the mailbox's UIDVALIDITY. The first
-  run only converts mail that arrives afterwards; `--backfill` converts existing
-  mail too. Failed conversions are retried on later checks up to
-  `--max-attempts`, then the message is kept in `<state-dir>/failed`. Messages
-  over `--max-message-bytes` are skipped. Delivery is at least once: a crash
-  mid-conversion converts that message again.
+  convert. The child does not inherit `ANYTOPDF_IMAP_PASSWORD` or
+  `ANYTOPDF_IMAP_OAUTH_TOKEN`. The built-in email importer renders each message
+  (headers, body and attachments through the normal importers).
+- `--queue <QUEUE>` instead of `--output-dir` hands each message to an
+  `anytopdf queue` directory as a job (origin `imap`) carrying the options after
+  `--`; run `anytopdf queue work <QUEUE>` to convert, with webhooks if wanted.
+- `--allow-from` (repeatable) accepts an address (`scanner@example.com`) or a whole
+  domain (`example.com`, no subdomains); mail from anyone else is skipped, left in
+  the mailbox and not retried. The From header is easy to forge, so add
+  `--require-dmarc <authserv-id>` (for example `mx.google.com` or `outlook.com`) to
+  also require `dmarc=pass` in the `Authentication-Results` header your own mail
+  server added; copies of that header further down the message are ignored.
+- `--auth login` (default) sends IMAP `LOGIN` with a password or app password.
+  `--auth xoauth2` signs in to Gmail or Microsoft 365 with an OAuth2 access token
+  from `ANYTOPDF_IMAP_OAUTH_TOKEN` or `--oauth-token-file`. The file is read again
+  on every connection, so a separate token refresher (for example a cron job using
+  your OAuth client's refresh token) can replace it; anytopdf does not run a
+  browser sign-in.
+- Progress lives in `<state-dir>/state.json` (default `.anytopdf-imap` inside the
+  output or queue directory), keyed by the mailbox's UIDVALIDITY. The first run
+  only picks up mail that arrives afterwards; `--backfill` takes existing mail
+  too. Failed conversions are retried on later checks up to `--max-attempts`, then
+  the message is kept in `<state-dir>/failed`. Messages over `--max-message-bytes`
+  are skipped. Delivery is at least once: a crash mid-conversion converts that
+  message again.
 - `--tls implicit` (default, port 993) or `--tls starttls` (port 143) use the
   operating system's trusted roots plus an optional `--ca-file`; `--tls none` is
-  refused unless the host is loopback. Login uses IMAP `LOGIN` (use an app
-  password where the provider requires one).
+  refused unless the host is loopback.
 - The watcher waits with IMAP IDLE when the server supports it and otherwise polls
   every `--poll-interval` seconds; it reconnects with backoff after network errors.
   `--once` checks a single time and exits (for cron). Connection settings may also
-  come from `ANYTOPDF_IMAP_HOST`, `_PORT`, `_TLS`, `_USER`, `_MAILBOX` and
-  `_PASSWORD_FILE`. Use one `--state-dir` per mailbox and one watcher per state
-  directory.
+  come from `ANYTOPDF_IMAP_HOST`, `_PORT`, `_TLS`, `_USER`, `_MAILBOX`, `_AUTH`,
+  `_PASSWORD_FILE` and `_OAUTH_TOKEN_FILE`. Use one `--state-dir` per mailbox and
+  one watcher per state directory.
 
 ### Job queue and webhooks
 
@@ -513,7 +525,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
 - [x] Shared job queue with watched folder input
 - [x] HTTP upload input for the job queue
-- [ ] IMAP watcher (IDLE and polling, Paperless-ngx style rules, OAuth, DKIM/SPF sender allowlist, quarantine)
+- [x] IMAP watcher: IDLE and polling, sender allowlist with DMARC check, OAuth2 (XOAUTH2) tokens, job-queue hand-off
+- [ ] IMAP rules beyond sender and search criteria (Paperless-ngx style), quarantine folder
 - [ ] Email-to-print
 
 ### Printing
@@ -527,7 +540,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Security and plugins
 - [ ] Untrusted-input handling shipped with the intake channels: sandboxed conversion without network, size and page caps, zip-bomb rejection, per-sender budgets
-- [ ] OS sandbox, descendant process containment and hard CPU, memory and disk quotas for runtime plugins
+- [x] Opt-in OS sandbox (`--plugin-sandbox strict`, Linux and macOS) and descendant process containment (`contain`, all platforms) for runtime plugins
+- [ ] Hard CPU, memory and disk quotas for runtime plugins; sandboxing for built-in providers; Windows `strict`
 
 ### Builds and distribution
 - [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
@@ -684,8 +698,11 @@ plugin response JSON each have a 16 MiB limit. Metadata providers have 30-second
 timeouts, OCR subprocesses 180 seconds, subtitle extraction 120 seconds and each
 video extraction pass 300 seconds. `--max-video-frames` also bounds extracted frames
 per pass; `0` means no frame-count limit. These limits are safeguards, not an OS
-sandbox: plugins run with your account's permissions. Install only trusted plugins
-or use `--no-plugins`; see `PLUGIN_PROTOCOL.md` for policy details.
+sandbox: by default plugins run with your account's permissions. Install only
+trusted plugins or use `--no-plugins`. `--plugin-sandbox contain` ends every process
+a plugin starts with its call; `--plugin-sandbox strict` (Linux and macOS) also
+limits plugin writes to the job workspace and blocks network access. See
+`PLUGIN_PROTOCOL.md` for policy details.
 
 Images are decoded by content, normalized to PNG in the temporary workspace, and
 rotated according to EXIF orientation. OCR coordinates refer to that normalized

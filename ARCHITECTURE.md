@@ -194,7 +194,9 @@ The CLI renders into job-local staging, evaluates warnings in strict mode, and
 publishes output through a temporary file beside the destination. Source paths
 remain protected. JSON graph dumps retain diagnostic workspace paths rather than
 copying derived assets. Runtime plugin policy and timeouts are documented in
-`PLUGIN_PROTOCOL.md`; the host does not claim OS-level sandboxing.
+`PLUGIN_PROTOCOL.md`. OS-level sandboxing is opt-in through `--plugin-sandbox`
+(`src/sandbox.rs` in core, `docs/design/plugin-sandbox.md`); by default plugins run
+unconfined.
 
 ## Intake: mail watcher
 

@@ -567,6 +567,7 @@ mod tests {
         probe.policy.deny_capabilities = ["unit-enricher".to_string()].into();
         probe.plugins.push(RuntimePlugin {
             timeout: Duration::from_secs(1),
+            sandbox: Default::default(),
             executable: PathBuf::from("/opt/anytopdf-plugin-igl"),
             manifest: RuntimePluginManifest {
                 protocol: 1,

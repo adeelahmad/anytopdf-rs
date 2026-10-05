@@ -10,6 +10,7 @@ mod plugin;
 mod process;
 mod profile;
 mod registry;
+mod sandbox;
 pub mod schema;
 
 pub use diagnostics::*;
@@ -24,3 +25,4 @@ pub use plugin::*;
 pub use process::*;
 pub use profile::*;
 pub use registry::*;
+pub use sandbox::*;
