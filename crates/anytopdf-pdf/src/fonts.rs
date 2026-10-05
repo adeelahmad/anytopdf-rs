@@ -51,8 +51,17 @@ pub(crate) fn subset_document_font(bytes: &[u8], graph: &DocumentGraph) -> Resul
     .map_err(|e| anyhow::anyhow!("subset document font: {e:?}"))
 }
 
+/// DejaVu Sans, the PDF/A renderer's font when `ANYTOPDF_FONT` is unset, so its output
+/// does not depend on the host's fonts. Licence: `fonts/LICENSE-DejaVu.txt`.
+pub(crate) const BUNDLED_FONT: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
+
+/// The first `ANYTOPDF_FONT` entry, if any.
+pub(crate) fn configured_font() -> Option<PathBuf> {
+    env_fonts().into_iter().next()
+}
+
 pub(crate) fn find_system_font() -> Option<PathBuf> {
-    if let Some(path) = env_fonts().into_iter().next() {
+    if let Some(path) = configured_font() {
         return Some(path);
     }
     [

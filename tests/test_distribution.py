@@ -70,6 +70,11 @@ class DistributionTests(unittest.TestCase):
             else:
                 self.assertRegex(formula, rf'url "{re.escape(url)}"\n\s+sha256 "{digest}"')
         self.assertIn('version "1.2.3"', formula)
+        for plugin in distribution.PLUGINS:
+            self.assertIn(f"#{{libexec}}/plugins/{plugin} --anytopdf-manifest", formula)
+        self.assertIn('libexec.install "plugins"', formula)
+        self.assertIn('bin.install "anytopdf"\n', formula, "plugins stay off PATH until opted in")
+        self.assertTrue(any("ANYTOPDF_PLUGIN_PATH" in line for line in manifest["notes"]))
         self.assertEqual(manifest["version"], "1.2.3")
         self.assertEqual(manifest["bin"], "anytopdf.exe")
         self.assertIn("$version", manifest["autoupdate"]["architecture"]["64bit"]["url"])
@@ -103,6 +108,15 @@ class DistributionTests(unittest.TestCase):
             with self.subTest(argument=extra[0]):
                 self.assertNotEqual(self.render(checksums("1.2.3"), *extra).returncode, 0)
 
+    def test_makefile_packages_every_bundled_plugin(self):
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        listed = re.search(r"^PLUGINS \?= (.*)$", makefile, re.MULTILINE)
+        self.assertIsNotNone(listed)
+        self.assertEqual(listed[1].split(), distribution.PLUGINS)
+        workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+        for plugin in distribution.PLUGINS:
+            self.assertIn(f"crates/{plugin}", workspace["members"])
+
     def test_default_repository_comes_from_cargo_metadata(self):
         self.assertEqual(distribution.default_repository(), "adeelahmad/anytopdf-rs")
 
@@ -132,6 +146,10 @@ class DistributionTests(unittest.TestCase):
         self.assertIn("--locked", dockerfile)
         self.assertIn("--no-default-features", dockerfile)
         self.assertIn("COPY dist/docker/${TARGETARCH}/anytopdf", dockerfile)
+        for plugin in distribution.PLUGINS:
+            self.assertIn(f"dist/docker/${{TARGETARCH}}/{plugin}", dockerfile)
+            self.assertIn(f"/opt/anytopdf/plugins/{plugin}", dockerfile)
+        self.assertIn("ARG WHISPER=none", dockerfile, "whisper.cpp stays an opt-in build")
         self.assertRegex(dockerfile, r"(?m)^USER (?!root)\w+")
         ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
         for needed in ("!Cargo.lock", "!crates/", "!schemas/", "!README.md", "!dist/docker/"):

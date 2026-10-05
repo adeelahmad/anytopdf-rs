@@ -39,7 +39,8 @@ Every fact becomes an `Annotation` with provenance:
 - arbitrary future annotations
 
 The PDF renderer paints the visual page normally and emits searchable annotations
-using PDF text rendering mode 3 (invisible). The hidden layer carries content only
+as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
+mode 3 in `pdf`). The hidden layer carries content only
 (OCR, captions, transcripts, objects, barcodes, time ranges); source paths and file
 metadata are never written into it. Text/transcript units become normal
 visible text pages.
@@ -80,11 +81,15 @@ and register itself as an importer without modifying the core binary.
 
 Importers:
 - raster images
+- existing PDFs: pages rendered by Poppler `pdftoppm` with their own text layer kept (OCR only for textless pages); text only without Poppler
+- HEIC/HEIF/AVIF photos, converted by `sips` (macOS), `heif-convert` (libheif) or ImageMagick
+- PWG Raster and Apple Raster (URF) print jobs
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
 - HTML pages (readable text, title and image alt text; no network fetches)
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
+- archives (`.zip`, `.tar`, `.tar.gz`/`.tgz`): an index page plus every member through its own importer, with zip-bomb and path-traversal limits
 - SRT / VTT captions
 - Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
   LibreOffice and Poppler
@@ -100,8 +105,12 @@ Enrichment:
 - video timestamps and scene-selection provenance
 
 Rendering:
-- searchable PDF via `printpdf` (default, `--renderer pdf`)
-- tagged PDF/A-3a with bookmarks via `krilla` (`--renderer pdfa`)
+- tagged PDF/A-3a with bookmarks via `krilla` (default, `--renderer pdfa`)
+- plain searchable PDF via `printpdf` (`--renderer pdf`)
+
+Bundled runtime plugins (separate executables in this workspace):
+- `anytopdf-plugin-whisper`: speech-to-text for audio and video through
+  whisper.cpp or an OpenAI-compatible Whisper CLI
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -109,6 +118,22 @@ External plugins are the intended route for model-heavy enrichers such as:
 - speech-to-text engines
 - format-specific decoders
 - proprietary document systems
+
+## Printing to anytopdf
+
+`helpers/anytopdf-printer` is an optional IPP Everywhere printer built on
+[PAPPL](https://www.msweet.org/pappl/) for Linux and macOS. Anything that can print
+(macOS, iOS, Windows, Android, CUPS) can print to it, and every job becomes a
+searchable PDF in an output folder. It listens on localhost unless told otherwise:
+
+```bash
+make printer
+ANYTOPDF_BIN=target/release/anytopdf \
+  helpers/anytopdf-printer/anytopdf-printer server -o output-directory=$HOME/Printed
+```
+
+The helper only spools pages; `anytopdf convert` does the work, so a saved
+`job.pwg` or `job.urf` print job converts the same way on any platform.
 
 ## Quick start
 
@@ -129,7 +154,7 @@ FFmpeg, ExifTool and Tesseract are described in
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF importers are future work.
+a supplied transcript or a plugin.
 
 Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
 their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
@@ -137,6 +162,40 @@ Each page is rendered as an image; with Poppler's `pdftotext` the document's own
 text is placed invisibly over it and OCR is skipped for those pages. Without
 `pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
 a private LibreOffice profile, so the original file is never opened in place.
+
+### Whisper transcription
+
+`anytopdf-plugin-whisper` transcribes audio and video sources that have no
+sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
+one of these engines, adding a visible, timed transcript page whose segments are
+searchable `transcript` annotations:
+
+- whisper.cpp (`whisper-cli`) with `ANYTOPDF_WHISPER_MODEL` set to a ggml model
+  file, for example `ggml-base.en.bin`;
+- `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
+  `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
+
+Release archives ship the plugin in a `plugins/` folder beside `anytopdf`, and
+Homebrew installs it under `$(brew --prefix anytopdf)/libexec/plugins`. It stays
+off until `ANYTOPDF_PLUGIN_PATH` names that folder, so media conversions without
+a Whisper engine do not warn. The container image has a `WHISPER=cpp` build that
+includes whisper.cpp and enables it (see [docs/distribution.md](docs/distribution.md)).
+From source:
+
+```bash
+cargo build --release -p anytopdf-plugin-whisper
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
+anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
+```
+
+`ANYTOPDF_WHISPER_ENGINE` (`auto`, `whisper.cpp`, `openai-whisper`),
+`ANYTOPDF_WHISPER_BIN` (an engine executable not on `PATH`) and
+`ANYTOPDF_WHISPER_LANGUAGE` (default: detect) override the defaults. One plugin
+invocation transcribes every media source in the job, so raise
+`--plugin-timeout` (default 60 seconds) for long recordings. A missing engine,
+missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
+the PDF is still written.
 
 ## CLI
 
@@ -173,12 +232,13 @@ a failed run adds an `error` message. A closed stderr pipe never panics.
 
 ### PDF/A-3 output
 
-`anytopdf convert --renderer pdfa` writes tagged PDF/A-3a instead of plain PDF.
-Pages, page numbering and the embedded manifest and chunks are the same as with the
-default renderer. On top of that:
+`anytopdf convert` writes tagged PDF/A-3a by default (`--renderer pdfa`);
+`--renderer pdf` writes plain PDF through printpdf instead. Pages, page numbering and
+the embedded manifest and chunks are the same with both. On top of that, `pdfa`:
 
-- Fonts are always embedded. The first `ANYTOPDF_FONT` entry (or a system font) is the
-  primary font. `ANYTOPDF_FONT` may list more fonts, separated like `PATH`, and they
+- Fonts are always embedded. The first `ANYTOPDF_FONT` entry is the primary font;
+  without it the bundled DejaVu Sans (Latin, Greek, Cyrillic, Hebrew, basic Arabic) is
+  used, so no system font is needed. `ANYTOPDF_FONT` may list more fonts, separated like `PATH`, and they
   are tried next, followed by common system fonts for Arabic, Hebrew and CJK. A
   fallback font is embedded only when it supplies characters the earlier fonts lack.
   Fonts whose licence forbids embedding are skipped. Characters no font covers are
@@ -196,8 +256,9 @@ default renderer. On top of that:
   rendering mode 3, because krilla has no mode 3. It is still searchable and
   extractable.
 
-Output is reproducible under `SOURCE_DATE_EPOCH` on a given host. Fallback fonts come
-from the host, so different hosts can embed different fonts.
+Output is reproducible under `SOURCE_DATE_EPOCH`. Text the bundled font covers renders
+the same on every host; fallback fonts for other scripts come from the host, so such
+text can embed different fonts on different hosts.
 
 ### Embedded manifest and chunks
 
@@ -218,10 +279,48 @@ does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
+### Watching a mailbox (IMAP)
+
+Builds with the `imap` cargo feature (`cargo build --release --features imap`)
+add `anytopdf watch imap`, which turns each new message in one mailbox into its
+own PDF:
+
+```bash
+export ANYTOPDF_IMAP_PASSWORD=...   # or --password-file; never a command-line flag
+anytopdf watch imap --host imap.example.com --user scans@example.com \
+  --mailbox INBOX --output-dir ~/mail-pdfs -- --ocr auto --profile share
+```
+
+- Each message is fetched with `BODY.PEEK[]` (the mailbox is not modified unless
+  `--mark-seen` or `--move-to <mailbox>` is given), saved as a raw `.eml`, and
+  converted by a child `anytopdf convert` into
+  `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`. Arguments after `--` go to
+  convert. The child does not inherit `ANYTOPDF_IMAP_PASSWORD`.
+- The built-in email importer renders each message (headers, body and its
+  attachments through the normal importers); an `anytopdf-plugin-*` importer for
+  RFC 822 input can replace it without changes to the watcher.
+- Progress lives in `<state-dir>/state.json` (default
+  `<output-dir>/.anytopdf-imap`), keyed by the mailbox's UIDVALIDITY. The first
+  run only converts mail that arrives afterwards; `--backfill` converts existing
+  mail too. Failed conversions are retried on later checks up to
+  `--max-attempts`, then the message is kept in `<state-dir>/failed`. Messages
+  over `--max-message-bytes` are skipped. Delivery is at least once: a crash
+  mid-conversion converts that message again.
+- `--tls implicit` (default, port 993) or `--tls starttls` (port 143) use the
+  operating system's trusted roots plus an optional `--ca-file`; `--tls none` is
+  refused unless the host is loopback. Login uses IMAP `LOGIN` (use an app
+  password where the provider requires one).
+- The watcher waits with IMAP IDLE when the server supports it and otherwise polls
+  every `--poll-interval` seconds; it reconnects with backoff after network errors.
+  `--once` checks a single time and exits (for cron). Connection settings may also
+  come from `ANYTOPDF_IMAP_HOST`, `_PORT`, `_TLS`, `_USER`, `_MAILBOX` and
+  `_PASSWORD_FILE`. Use one `--state-dir` per mailbox and one watcher per state
+  directory.
+
 ### Job queue and webhooks
 
 `anytopdf queue` runs conversions from a plain queue directory, so it needs no
-database or daemon. Nothing listens on a port; the worker only makes outbound
+database or daemon. Only `queue serve` listens on a port; the worker only makes outbound
 requests when `--webhook` is given.
 
 ```bash
@@ -255,6 +354,30 @@ text. Deliveries are stored in `QUEUE/webhooks/pending/` before they are sent an
 are retried after 5 s, 5 min, 30 min, 2 h, 5 h, 10 h and 10 h; a 410 response or
 the last failure moves them to `QUEUE/webhooks/failed/`. Delivery is
 at-least-once, so receivers should deduplicate on `webhook-id`.
+
+`anytopdf queue serve QUEUE` is the opt-in HTTP upload intake. It listens on
+`127.0.0.1:8640` by default; any other address needs `--tls-cert` and `--tls-key`,
+and `0.0.0.0` or `::` also needs `--allow-public-bind`. Every request needs
+`Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN` (at least 16 characters; `anytopdf
+queue secret` makes a good one). Uploads are capped by `--max-upload-mb` (default
+100) and must send `Content-Length`. Run `queue work` alongside it to convert them.
+
+```bash
+export ANYTOPDF_QUEUE_TOKEN=$(anytopdf queue secret)
+anytopdf queue serve ~/scans-queue -- --profile share   # options for uploaded files
+curl -H "Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN" \
+  --data-binary @scan.jpg 'http://127.0.0.1:8640/v1/jobs?filename=scan.jpg'
+```
+
+| Request | Answer |
+| --- | --- |
+| `POST /v1/jobs?filename=NAME` with the file as the body | `202` and the job (`job_id`, `state`, `origin`, `inputs`) |
+| `GET /v1/jobs/<job_id>` | `200` and the job, with `output`, `status`, `exit_code` and `pages` once finished |
+| `GET /v1/jobs/<job_id>/output` | `200` and the PDF, or `409` until the job has succeeded |
+
+Uploaded names are reduced to a plain file name inside the job's work directory.
+Clients cannot pass convert options; the server's options after `--` apply.
+Errors are JSON `{"error": "..."}` with `401`, `411`, `413`, `404` or `405`.
 
 ### Remote printing
 
@@ -336,8 +459,6 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Provider version detection
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
-- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
-- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
@@ -366,21 +487,22 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Rendering
 - [x] Spike: layout and writer options
 - [x] krilla 0.8 writer behind `--renderer pdfa` (Rust 1.92, invisible text via fill opacity)
-- [ ] `pdfa` as the default renderer
+- [x] `pdfa` as the default renderer
 - [ ] Rendered Markdown
 - [x] Arabic, Hebrew and CJK shaping, bidi and font fallback (`--renderer pdfa`)
 
 ### Input formats
-- [ ] PDF input (keep the text layer, OCR only textless pages)
-- [ ] HTML and URL snapshot
-- [ ] EML and mbox
-- [ ] Archives (zip, tar)
-- [ ] HEIC
-- [ ] Office documents (structure first, LibreOffice when present)
+- [x] PDF input: Poppler renders each page and `pdftotext -bbox-layout` lines become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
+- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
+- [ ] URL snapshot
+- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
+- [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
+- [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
+- [x] Office documents through LibreOffice and Poppler
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 
 ### Media enrichment
-- [ ] Whisper transcription (pluggable whisper.cpp)
+- [x] Whisper transcription as a runtime plugin
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
 - [ ] Barcode and QR extraction
@@ -390,15 +512,17 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Intake channels
 - [x] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
 - [x] Shared job queue with watched folder input
-- [ ] HTTP upload input for the job queue
+- [x] HTTP upload input for the job queue
 - [ ] IMAP watcher (IDLE and polling, Paperless-ngx style rules, OAuth, DKIM/SPF sender allowlist, quarantine)
 - [ ] Email-to-print
 
 ### Printing
 - [x] Spike: PAPPL printer feasibility
-- [ ] Network printer via IPP Everywhere, AirPrint and Mopria, built on PAPPL as an optional helper process
-- [ ] IPP over TLS with a password, localhost by default, print receipts on the provenance page
-- [ ] Remote printing over Tailscale or WireGuard with DNS-based discovery
+- [x] Network printer via IPP Everywhere, built on PAPPL as an optional helper process ([`helpers/anytopdf-printer`](helpers/anytopdf-printer/README.md)); PWG Raster and Apple Raster print jobs keep their paper size
+- [ ] AirPrint and Mopria certification
+- [x] IPP over TLS with a password, localhost by default
+- [ ] Print receipts on the provenance page
+- [x] Remote printing over Tailscale or WireGuard with DNS-based discovery
 - [ ] Microsoft Universal Print investigation
 
 ### Security and plugins
@@ -567,10 +691,12 @@ Images are decoded by content, normalized to PNG in the temporary workspace, and
 rotated according to EXIF orientation. OCR coordinates refer to that normalized
 image. Every frame of a GIF or multi-page TIFF becomes a page carrying a `frame` anchor; `--max-image-frames N` caps the count (0 = unlimited). Frames are not deduplicated and each is OCRed.
 
-Fonts are loaded from the system, subset to the required glyphs, and embedded in the PDF. Set `ANYTOPDF_FONT` to a
-TTF file for a particular script or on minimal Linux installations. Missing glyphs
-produce warnings. Shaping, bidirectional layout and font fallback apply to `--renderer pdfa`
-only; the default printpdf renderer draws characters one font, left to right.
+Fonts are subset to the required glyphs and embedded in the PDF. The default `pdfa`
+renderer uses its bundled DejaVu Sans and falls back to system fonts for other scripts;
+`--renderer pdf` loads a system font. Set `ANYTOPDF_FONT` to a TTF file (or several,
+separated like `PATH`) for a particular script. Missing glyphs produce warnings.
+Shaping, bidirectional layout and font fallback apply to `pdfa` only; the printpdf
+renderer draws characters in one font, left to right.
 Markdown is rendered as plain text. Audio requires sidecar/explicit transcripts or
 a plugin for speech recognition; docTR may download model weights on first use.
 

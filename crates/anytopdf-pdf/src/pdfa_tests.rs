@@ -226,19 +226,42 @@ fn glyphs_missing_from_the_font_are_dropped_with_a_warning() {
 }
 
 #[test]
-fn missing_font_fails_without_touching_destination() {
+fn unreadable_font_fails_without_touching_destination() {
     let dir = tempfile::tempdir().unwrap();
     let output = dir.path().join("existing.pdf");
     fs::write(&output, b"keep").unwrap();
     let err = PdfARenderer {
         dpi: 144.0,
-        unicode_font: None,
+        unicode_font: Some(dir.path().join("missing.ttf")),
         fallback_fonts: Vec::new(),
     }
     .render(&ctx(dir.path()), &graph(dir.path()), &output)
     .unwrap_err();
-    assert!(err.to_string().contains("ANYTOPDF_FONT"), "{err:#}");
+    assert!(err.to_string().contains("missing.ttf"), "{err:#}");
     assert_eq!(fs::read(output).unwrap(), b"keep");
+}
+
+#[test]
+fn bundled_font_is_embedded_when_none_is_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("out.pdf");
+    PdfARenderer {
+        dpi: 144.0,
+        unicode_font: None,
+        fallback_fonts: Vec::new(),
+    }
+    .render(&ctx(dir.path()), &graph(dir.path()), &output)
+    .unwrap();
+    let doc = lopdf::Document::load(&output).unwrap();
+    let names: Vec<String> = doc
+        .objects
+        .values()
+        .filter_map(|o| o.as_dict().ok())
+        .filter_map(|d| d.get(b"BaseFont").ok())
+        .filter_map(|n| n.as_name().ok())
+        .map(|n| String::from_utf8_lossy(n).into_owned())
+        .collect();
+    assert!(names.iter().any(|n| n.ends_with("DejaVuSans")), "{names:?}");
 }
 
 #[test]
@@ -368,4 +391,34 @@ fn fallback_fonts_cover_characters_the_primary_font_lacks() {
         .matches("/FontFile2")
         .count();
     assert_eq!(fonts, 2, "expected the primary and one fallback font");
+}
+
+#[test]
+fn visual_dpi_metadata_sets_the_physical_page_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let visual = dir.path().join("page.png");
+    ::image::GrayImage::new(600, 300).save(&visual).unwrap();
+    let source = SourceRecord::new(visual.clone());
+    let mut unit = Unit::visual(source.id, visual);
+    unit.metadata.insert("visual.dpi".into(), "300".into());
+    let graph = DocumentGraph {
+        units: vec![unit],
+        sources: vec![source],
+        ..Default::default()
+    };
+    let (bytes, _) = render(dir.path(), &graph, "dpi.pdf");
+    let doc = lopdf::Document::load_mem(&bytes).unwrap();
+    let first = *doc.get_pages().values().next().unwrap();
+    let media = doc
+        .get_object(first)
+        .and_then(lopdf::Object::as_dict)
+        .and_then(|page| page.get(b"MediaBox"))
+        .and_then(lopdf::Object::as_array)
+        .unwrap();
+    let size: Vec<f32> = media[2..]
+        .iter()
+        .map(|v| v.as_float().unwrap().round())
+        .collect();
+    // 600 x 300 pixels at 300 dpi is 2 x 1 inches.
+    assert_eq!(size, [144.0, 72.0]);
 }

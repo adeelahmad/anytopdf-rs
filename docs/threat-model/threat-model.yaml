@@ -1,7 +1,7 @@
 # threat-model.yaml — derived index; threat-model.md is canonical (prose > yaml > json).
 schema: threat-model-sidecar/v2
 project: anytopdf
-prose_version: threat-model.md@sha256:6064bb8b1c3b66b682aaa968493842e63aec877b098e3d2762343eaebd6bc8c3
+prose_version: threat-model.md@sha256:3c0e007b00277bab903605b8ae76fbcf0cd6cbf278b42a61d51bd91cb3687c87
 model_status: under-review
 triage_policy: strict
 confidence:

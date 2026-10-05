@@ -57,6 +57,20 @@ pub trait MemberImporter {
     /// returned units belong to a throwaway source; callers re-parent them onto
     /// the container source.
     fn import_member(&self, ctx: &JobContext, path: &Path) -> Result<ImportOutcome>;
+
+    /// Bytes that members extracted for the current top-level input may still
+    /// occupy, across every nesting level. Extractors stop reading a member
+    /// at this bound.
+    fn remaining_bytes(&self) -> u64 {
+        u64::MAX
+    }
+
+    /// Records one extracted member of `bytes`; fails once the top-level
+    /// input's member count or byte budget is exhausted.
+    fn charge(&self, bytes: u64) -> Result<()> {
+        let _ = bytes;
+        Ok(())
+    }
 }
 
 /// A [`MemberImporter`] that refuses every member, for importing a container

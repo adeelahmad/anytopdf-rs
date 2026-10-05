@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use anytopdf_core::*;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Longest file name (in characters) a member keeps; longer names are cut
@@ -53,12 +54,60 @@ pub(crate) fn safe_file_name(name: &str) -> String {
     }
 }
 
-/// Writes one member as `<dir>/<index>-<safe name>`; the index keeps members
-/// with the same name apart.
+/// `<dir>/<index>-<safe name>`; the index keeps members with the same name apart.
+pub(crate) fn member_path(dir: &Path, index: usize, name: &str) -> PathBuf {
+    dir.join(format!("{index:04}-{}", safe_file_name(name)))
+}
+
+/// Writes one member at [`member_path`].
 pub(crate) fn write_member(dir: &Path, index: usize, name: &str, bytes: &[u8]) -> Result<PathBuf> {
-    let path = dir.join(format!("{index:04}-{}", safe_file_name(name)));
+    let path = member_path(dir, index, name);
     fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
     Ok(path)
+}
+
+/// Why [`copy_capped`] stopped before the end of its input.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CopyLimit {
+    /// More than `cap` bytes were available.
+    TooLarge,
+    /// The output outgrew `max_ratio` times the compressed size.
+    Ratio,
+}
+
+/// Copies at most `cap` bytes, failing as soon as the input proves longer, or
+/// as soon as the output exceeds `max_ratio` times `compressed` bytes (once
+/// past `ratio_floor`). Nothing is trusted from archive headers: the limits
+/// are checked against bytes actually produced.
+pub(crate) fn copy_capped(
+    mut reader: impl Read,
+    mut writer: impl Write,
+    cap: u64,
+    compressed: Option<u64>,
+    max_ratio: u64,
+    ratio_floor: u64,
+) -> Result<std::result::Result<u64, CopyLimit>> {
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut written: u64 = 0;
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => return Ok(Ok(written)),
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e).context("read member"),
+        };
+        written += n as u64;
+        if written > cap {
+            return Ok(Err(CopyLimit::TooLarge));
+        }
+        if let Some(c) = compressed
+            && written > ratio_floor
+            && written > c.max(1).saturating_mul(max_ratio)
+        {
+            return Ok(Err(CopyLimit::Ratio));
+        }
+        writer.write_all(&buf[..n]).context("write member")?;
+    }
 }
 
 /// A member file written into the workspace, with the name shown to readers.
@@ -123,8 +172,39 @@ mod tests {
             assert_eq!(safe_file_name(raw), want, "{raw:?}");
         }
         let long = format!("{}.pdf", "x".repeat(500));
+        assert_eq!(
+            member_path(Path::new("d"), 7, "../x.txt"),
+            Path::new("d").join("0007-x.txt")
+        );
         let short = safe_file_name(&long);
         assert_eq!(short.chars().count(), MAX_NAME_CHARS);
         assert!(short.ends_with(".pdf"), "{short}");
+    }
+
+    #[test]
+    fn copy_capped_stops_on_size_and_ratio_using_real_bytes() {
+        let data = vec![0u8; 300 * 1024];
+        let mut out = Vec::new();
+        let r = copy_capped(&data[..], &mut out, 1 << 20, None, 100, 0).unwrap();
+        assert_eq!(r, Ok(data.len() as u64));
+        assert_eq!(out.len(), data.len());
+        let r = copy_capped(&data[..], std::io::sink(), 100 * 1024, None, 100, 0).unwrap();
+        assert_eq!(r, Err(CopyLimit::TooLarge));
+        let r = copy_capped(&data[..], std::io::sink(), 1 << 20, Some(1024), 100, 0).unwrap();
+        assert_eq!(r, Err(CopyLimit::Ratio));
+        let r = copy_capped(
+            &data[..],
+            std::io::sink(),
+            1 << 20,
+            Some(1024),
+            100,
+            1 << 20,
+        )
+        .unwrap();
+        assert_eq!(
+            r,
+            Ok(data.len() as u64),
+            "below the floor the ratio is not checked"
+        );
     }
 }

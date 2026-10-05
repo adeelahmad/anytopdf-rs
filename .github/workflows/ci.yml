@@ -50,11 +50,31 @@ jobs:
           }
       - name: Install PDF inspection tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core libreoffice-writer-nogui
       - name: Check Conventional Commit event policy
         if: github.event_name == 'push' || github.event_name == 'pull_request'
         run: python scripts/release.py check-event
       - name: Verify, build and smoke-test
         env:
           SMOKE_FLAGS: ${{ runner.os == 'Linux' && '--require-poppler' || '' }}
+          ANYTOPDF_REQUIRE_OFFICE: ${{ runner.os == 'Linux' && '1' || '' }}
         run: make ci PYTHON=python
+
+  printer:
+    name: Print server (Linux)
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: printer
+      - name: Install PAPPL and PDF inspection tools
+        run: sudo apt-get update && sudo apt-get install -y libpappl-dev pkg-config poppler-utils
+      - name: Build and print a test page
+        run: make printer-smoke PYTHON=python3 WARNINGS="-Wall -Wextra -Wno-unused-parameter -Werror"
+      - name: Print over TLS through the remote front
+        run: make printer-remote-smoke PYTHON=python3 WARNINGS="-Wall -Wextra -Wno-unused-parameter -Werror"

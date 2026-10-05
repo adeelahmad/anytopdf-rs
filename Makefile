@@ -18,9 +18,14 @@ HOST_TARGET = $(shell rustc -vV | sed -n 's/^host: //p')
 PACKAGE_TARGET = $(if $(strip $(TARGET)),$(TARGET),$(HOST_TARGET))
 TARGET_FLAGS = $(if $(strip $(TARGET)),--target "$(TARGET)",)
 FEATURE_FLAGS = $(if $(filter 1,$(NO_DEFAULT_FEATURES)),--no-default-features,) $(if $(strip $(FEATURES)),--features "$(FEATURES)",)
-BINARY ?= $(CARGO_TARGET_DIR)/$(if $(strip $(TARGET)),$(TARGET)/,)release/anytopdf$(if $(findstring windows,$(PACKAGE_TARGET)),.exe,)
+RELEASE_DIR = $(CARGO_TARGET_DIR)/$(if $(strip $(TARGET)),$(TARGET)/,)release
+EXE_SUFFIX = $(if $(findstring windows,$(PACKAGE_TARGET)),.exe,)
+BINARY ?= $(RELEASE_DIR)/anytopdf$(EXE_SUFFIX)
+# Runtime plugins built from this workspace and shipped beside the CLI.
+PLUGINS ?= anytopdf-plugin-whisper
+PLUGIN_BINARIES = $(foreach plugin,$(PLUGINS),$(RELEASE_DIR)/$(plugin)$(EXE_SUFFIX))
 
-.PHONY: all deps providers release-deps release-plan release-resume commit-check help build build-release release fmt fmt-check check lint test test-no-default test-python verify smoke ci package doctor clean
+.PHONY: all deps providers release-deps release-plan release-resume commit-check help build build-release release fmt fmt-check check lint test test-no-default test-python verify smoke ci package doctor clean printer printer-smoke printer-remote-smoke
 
 all: build-release
 
@@ -39,7 +44,7 @@ help:
 	  'make deps            Install missing build tools and pinned Rust components' \
 	  'make providers       Install FFmpeg, ExifTool, Tesseract and Poppler' \
 	  'make build           Build the workspace for development' \
-	  'make build-release   Build the optimized CLI locally' \
+	  'make build-release   Build the optimized CLI and bundled plugins locally' \
 	  'make release-plan    Preview SemVer and changelog changes' \
 	  'make release         Version, verify, tag, push and wait for GitHub publication' \
 	  'make release-resume  Retry publication of the current release tag' \
@@ -56,10 +61,13 @@ help:
 	  'make ci              Verify, then build and smoke-test the release' \
 	  'make package         Build, smoke-test, and archive with SHA-256' \
 	  'make doctor          Inspect optional runtime providers' \
+	  'make printer         Build the optional PAPPL print-server helper' \
+	  'make printer-smoke   Print a test page through the helper' \
+	  'make printer-remote-smoke Print over TLS through anytopdf print remote' \
 	  'make clean           Remove Cargo build outputs (keeps dist/)' \
 	  '' \
 	  'Build/package options: TARGET=<triple> NO_DEFAULT_FEATURES=1 FEATURES=<list>' \
-	  'Other options: PYTHON=python CARGO_TARGET_DIR=target DIST_DIR=dist' \
+	  'Other options: PYTHON=python CARGO_TARGET_DIR=target DIST_DIR=dist PLUGINS=<crates>' \
 	  'PDF checks: SMOKE_FLAGS="--require-poppler --strict"'
 
 build: | deps
@@ -67,6 +75,7 @@ build: | deps
 
 build-release: | deps
 	$(CARGO) build --release --locked -p anytopdf $(TARGET_FLAGS) $(FEATURE_FLAGS)
+	$(if $(strip $(PLUGINS)),$(CARGO) build --release --locked $(foreach plugin,$(PLUGINS),-p $(plugin)) $(TARGET_FLAGS),)
 
 fmt: | deps
 	$(CARGO) fmt --all
@@ -100,10 +109,21 @@ ci: verify
 	$(MAKE) smoke
 
 package: smoke
-	"$(PYTHON)" scripts/package.py --target "$(PACKAGE_TARGET)" --binary "$(BINARY)" --output "$(DIST_DIR)"
+	$(foreach plugin,$(PLUGIN_BINARIES),"$(plugin)" --anytopdf-manifest >/dev/null &&) true
+	"$(PYTHON)" scripts/package.py --target "$(PACKAGE_TARGET)" --binary "$(BINARY)" $(foreach plugin,$(PLUGIN_BINARIES),--plugin "$(plugin)") --output "$(DIST_DIR)"
 
 doctor: | deps
 	$(CARGO) run --locked -p anytopdf -- doctor
+
+# The print-server helper is C on PAPPL and stays out of the Cargo workspace.
+printer:
+	$(MAKE) -C helpers/anytopdf-printer
+
+printer-smoke: build-release printer
+	PYTHON="$(PYTHON)" bash helpers/anytopdf-printer/smoke.sh helpers/anytopdf-printer/anytopdf-printer "$(BINARY)"
+
+printer-remote-smoke: build-release printer
+	PYTHON="$(PYTHON)" bash helpers/anytopdf-printer/remote-smoke.sh helpers/anytopdf-printer/anytopdf-printer "$(BINARY)"
 
 clean:
 	$(CARGO) clean

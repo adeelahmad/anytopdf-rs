@@ -43,6 +43,7 @@ const SHARE_SUFFIXES: &[&str] = &[
     "FrameCount",
     "PageCount",
     "Orientation",
+    "dpi",
 ];
 
 fn key_suffix(key: &str) -> &str {

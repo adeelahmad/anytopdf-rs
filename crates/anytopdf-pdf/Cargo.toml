@@ -12,7 +12,7 @@ image.workspace = true
 printpdf.workspace = true
 ttf-parser.workspace = true
 allsorts.workspace = true
-lopdf = { version = "0.44", default-features = false }
+lopdf.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 krilla.workspace = true
