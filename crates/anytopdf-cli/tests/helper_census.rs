@@ -121,3 +121,19 @@ fn schema_json_and_repo_helpers_are_defined_once_in_common() {
         offending.join("\n")
     );
 }
+
+#[test]
+fn command_and_stderr_helpers_are_defined_once_in_common() {
+    let mut offending = Vec::new();
+    for name in ["command(", "stderr("] {
+        let defined = definitions(name);
+        if defined.len() != 1 || !defined[0].starts_with("common/") {
+            offending.push(format!("{name} -> [{}]", defined.join(", ")));
+        }
+    }
+    assert!(
+        offending.is_empty(),
+        "process helpers must be defined once under common/:\n{}",
+        offending.join("\n")
+    );
+}

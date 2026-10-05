@@ -4,6 +4,10 @@ use std::{
     process::{Command, Output},
 };
 
+#[path = "common/output.rs"]
+mod output;
+use output::stderr;
+
 struct Env {
     cwd: tempfile::TempDir,
     inputs: tempfile::TempDir,
@@ -38,10 +42,6 @@ impl Env {
             .output()
             .unwrap()
     }
-}
-
-fn stderr(out: &Output) -> String {
-    String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
 #[test]

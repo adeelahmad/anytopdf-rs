@@ -1,10 +1,8 @@
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
-fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
-    command.arg("--no-plugins").env("PATH", "");
-    command
-}
+#[path = "common/process.rs"]
+mod process;
+use process::command;
 
 fn font_available() -> bool {
     if let Some(path) = std::env::var_os("ANYTOPDF_FONT") {

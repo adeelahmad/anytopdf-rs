@@ -1,4 +1,8 @@
-use std::{fs, process::Command};
+use std::fs;
+
+#[path = "common/process.rs"]
+mod process;
+use process::command;
 
 use serde_json::{Value, json};
 
@@ -11,12 +15,6 @@ mod stdout_json;
 use schema_assert::assert_valid;
 use schema_files::validation_errors;
 use stdout_json::single_document;
-
-fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
-    command.arg("--no-plugins").env("PATH", "");
-    command
-}
 
 fn assert_invalid(name: &str, label: &str, instance: &Value) {
     let errors = validation_errors(name, instance);

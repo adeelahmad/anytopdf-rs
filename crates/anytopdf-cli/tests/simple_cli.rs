@@ -1,19 +1,16 @@
 use std::{fs, path::Path, process::Command};
 
-fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
-    command.arg("--no-plugins").env("PATH", "");
-    command
-}
+#[path = "common/process.rs"]
+mod process;
+use process::command;
+#[path = "common/output.rs"]
+mod output;
+use output::stderr;
 
 fn write(dir: &Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     fs::write(&path, format!("Marker text in {name}\nSecond line.")).unwrap();
     path
-}
-
-fn stderr(out: &std::process::Output) -> String {
-    String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
 #[test]
