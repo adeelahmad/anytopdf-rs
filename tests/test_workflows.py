@@ -207,7 +207,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_all_five_targets_and_verification_dependencies(self):
         verify = job_source(self.ci, "verify")
-        self.assertIn("dtolnay/rust-toolchain@1.88.0", verify)
+        self.assertIn("dtolnay/rust-toolchain@1.92.0", verify)
         self.assertIn("components: rustfmt, clippy", verify)
         self.assertIn("make ci", verify)
         for runner in ("ubuntu-24.04", "macos-14", "windows-2025"):

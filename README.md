@@ -327,7 +327,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 Building from source:
 - GNU Make and Bash to start the bootstrap (Git Bash on Windows).
 - Python 3.11+ for build verification and release tooling.
-- Rust 1.88.0 (pinned in `rust-toolchain.toml`); packaged binaries do not require Rust.
+- Rust 1.92.0 (pinned in `rust-toolchain.toml`); packaged binaries do not require Rust.
 - `Cargo.lock` pins dependencies compatible with this toolchain.
 
 Optional runtime providers:
