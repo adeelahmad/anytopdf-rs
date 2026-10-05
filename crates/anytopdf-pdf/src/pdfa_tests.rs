@@ -422,3 +422,36 @@ fn visual_dpi_metadata_sets_the_physical_page_size() {
     // 600 x 300 pixels at 300 dpi is 2 x 1 inches.
     assert_eq!(size, [144.0, 72.0]);
 }
+
+#[test]
+fn ocr_words_are_stretched_to_their_boxes() {
+    assert_eq!(ocr_stretch(20.0, 10.0), 2.0);
+    assert_eq!(ocr_stretch(100.0, 1.0), 4.0);
+    assert_eq!(ocr_stretch(1.0, 100.0), 0.25);
+    assert_eq!(ocr_stretch(0.0, 10.0), 1.0);
+    assert_eq!(ocr_stretch(10.0, 0.0), 1.0);
+
+    let dir = tempfile::tempdir().unwrap();
+    let graph = graph(dir.path());
+    let (bytes, _) = render(dir.path(), &graph, "a.pdf");
+    let doc = lopdf::Document::load_mem(&bytes).unwrap();
+    let page = *doc.get_pages().get(&2).unwrap();
+    let content = lopdf::content::Content::decode(&doc.get_page_content(page)).unwrap();
+    let ops = &content.operations;
+    let text_at = ops
+        .iter()
+        .position(|op| op.operator == "Tj" || op.operator == "TJ");
+    let numbers = |op: &lopdf::content::Operation| -> Vec<f32> {
+        op.operands.iter().map(|o| o.as_float().unwrap()).collect()
+    };
+    // The OCR word's horizontal scale is set by a `cm` just before its text.
+    let cm = ops[..text_at.expect("no text drawn on the image page")]
+        .iter()
+        .rev()
+        .find(|op| op.operator == "cm")
+        .map(numbers)
+        .expect("OCR word has no stretch transform");
+    // krilla folds its y-down page flip into the same matrix.
+    assert_eq!((cm[1], cm[2], cm[3].abs()), (0.0, 0.0, 1.0), "{cm:?}");
+    assert!(cm[0] > 0.0 && (cm[0] - 1.0).abs() > 0.01, "{cm:?}");
+}

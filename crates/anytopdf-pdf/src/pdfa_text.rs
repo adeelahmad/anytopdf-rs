@@ -117,6 +117,14 @@ impl FontSet {
             .unwrap_or(0.5)
     }
 
+    /// Advance width of `text` in ems, as [`FontSet::draw`] lays it out.
+    pub(crate) fn width(&self, text: &str) -> f32 {
+        text.chars()
+            .filter(|c| !c.is_control())
+            .map(|c| self.measure(c))
+            .sum()
+    }
+
     /// Draw `text` with its baseline at `origin` (points, y down).
     ///
     /// The line is split into bidi runs, laid out in visual order; each run is split
