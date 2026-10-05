@@ -203,6 +203,44 @@ does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
+### Job queue and webhooks
+
+`anytopdf queue` runs conversions from a plain queue directory, so it needs no
+database or daemon. Nothing listens on a port; the worker only makes outbound
+requests when `--webhook` is given.
+
+```bash
+anytopdf queue add ~/scans-queue invoice.jpg -- --profile share
+anytopdf queue work ~/scans-queue -- --ocr auto     # options for inbox files
+anytopdf queue work ~/scans-queue --once            # drain, then exit
+anytopdf queue status ~/scans-queue
+```
+
+- Files dropped into `QUEUE/inbox/` are claimed once two scans
+  (`--poll-interval`, default 2 seconds) see the same size and mtime. Dotfiles and
+  `*.part`, `*.tmp`, `*.crdownload`, `*.download` and `*.partial` names are ignored.
+- Job records (`anytopdf.job/1`, `schemas/job.schema.json`) move between
+  `QUEUE/jobs/pending`, `running`, `done` and `failed` by atomic rename, so several
+  workers can share a queue. PDFs land in `QUEUE/outbox/`.
+- Each job runs `anytopdf convert --events --json` as a child process;
+  `QUEUE/work/<id>/events.ndjson` keeps its NDJSON events and `convert.json` its
+  result. Convert options after `--` are checked by the convert parser; `-o`,
+  `--output-dir`, `--events`, `--json` and `--dump-graph` belong to the worker.
+- `--job-timeout` (default 3600 seconds) stops an overrunning conversion. A
+  running job whose worker died is requeued once its lease (timeout plus 60
+  seconds) expires.
+
+`--webhook URL` (repeatable) sends [Standard Webhooks](https://www.standardwebhooks.com)
+`job.received`, `job.completed` and `job.failed` events (`anytopdf.webhook/1`,
+`schemas/webhook.schema.json`). Requests carry `webhook-id`, `webhook-timestamp`
+and a `webhook-signature` HMAC-SHA256 over `id.timestamp.body`, keyed by
+`ANYTOPDF_WEBHOOK_SECRET` (create one with `anytopdf queue secret`). Payloads
+carry file names and queue-relative output paths, never absolute paths or error
+text. Deliveries are stored in `QUEUE/webhooks/pending/` before they are sent and
+are retried after 5 s, 5 min, 30 min, 2 h, 5 h, 10 h and 10 h; a 410 response or
+the last failure moves them to `QUEUE/webhooks/failed/`. Delivery is
+at-least-once, so receivers should deduplicate on `webhook-id`.
+
 ### Remote printing
 
 The print helper listens on localhost only. `anytopdf print remote` lets phones and
@@ -329,8 +367,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] OCR-text-aware video frame retention
 
 ### Intake channels
-- [ ] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
-- [ ] Shared job queue with watched folder and HTTP upload inputs
+- [x] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
+- [x] Shared job queue with watched folder input
+- [ ] HTTP upload input for the job queue
 - [ ] IMAP watcher (IDLE and polling, Paperless-ngx style rules, OAuth, DKIM/SPF sender allowlist, quarantine)
 - [ ] Email-to-print
 
