@@ -64,6 +64,14 @@ def latest_tag(root=ROOT):
     return max(candidates)[1] if candidates else None
 
 
+def commit_exists(sha, root=ROOT):
+    try:
+        git("cat-file", "-e", f"{sha}^{{commit}}", root=root)
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
+
 def commits_since(base=None, head="HEAD", root=ROOT):
     revision = f"{base}..{head}" if base else head
     shas = git("rev-list", "--reverse", "--no-merges", revision, root=root).splitlines()
@@ -307,6 +315,10 @@ def check_event(root=ROOT):
     else:
         before = event.get('before', '')
         base = before if before and set(before) != {'0'} else None
+        if base and event.get('forced') and not commit_exists(base, root):
+            # A force-push discards `before`, so check what the branch adds to the default branch.
+            default = event.get('repository', {}).get('default_branch')
+            base = f"origin/{default}" if default else base
         commits = commits_since(base, event.get('after') or "HEAD", root)
         print(f"Checked {len(commits)} Conventional Commits")
 
