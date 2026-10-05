@@ -16,15 +16,10 @@ mod schema_assert;
 #[path = "common/schema.rs"]
 mod schema_files;
 use png_gray::write_png;
+#[path = "common/pdf.rs"]
+mod pdf;
+use pdf::page_count;
 use schema_assert::assert_valid;
-
-fn page_count(pdf: &[u8]) -> u64 {
-    let text = String::from_utf8_lossy(pdf);
-    regex::Regex::new(r"/Type\s*/Page\b")
-        .unwrap()
-        .find_iter(&text)
-        .count() as u64
-}
 
 fn convert(inputs: &[&Path], pdf: &Path, extra: &[&str], dump: Option<&Path>) -> Output {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_anytopdf"));

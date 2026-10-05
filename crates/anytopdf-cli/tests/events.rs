@@ -2,7 +2,7 @@ use anytopdf_core::schema;
 use serde_json::Value;
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Output},
 };
 
@@ -11,40 +11,20 @@ mod png;
 #[path = "common/png_gray.rs"]
 mod png_gray;
 use png_gray::write_png;
-
-fn page_count(pdf: &[u8]) -> u64 {
-    let text = String::from_utf8_lossy(pdf);
-    regex::Regex::new(r"/Type\s*/Page\b")
-        .unwrap()
-        .find_iter(&text)
-        .count() as u64
-}
-
-fn events_schema() -> Value {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root
-        .ancestors()
-        .map(|dir| dir.join("schemas").join("events.schema.json"))
-        .find(|candidate| candidate.is_file());
-    let path = path.expect("schemas/events.schema.json must exist");
-    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
-}
+#[path = "common/events_cli.rs"]
+mod events_cli;
+use events_cli::{base, events_schema};
+#[path = "common/pdf.rs"]
+mod pdf;
+use pdf::page_count;
+#[path = "common/strings.rs"]
+mod strings;
+use strings::collect;
 
 fn mixed(dir: &Path) {
     fs::write(dir.join("a.txt"), "alpha notes\n").unwrap();
     write_png(&dir.join("b.png"), 8, 8);
     fs::write(dir.join("blob.xyz"), [0u8; 16]).unwrap();
-}
-
-fn base(dir: &Path, inputs: &[&str], extra: &[&str]) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
-    cmd.current_dir(dir)
-        .arg("--no-plugins")
-        .env_remove("SOURCE_DATE_EPOCH")
-        .arg("convert")
-        .args(inputs)
-        .args(extra);
-    cmd
 }
 
 fn stream(out: &Output) -> Vec<Value> {
@@ -69,15 +49,6 @@ fn names(events: &[Value]) -> Vec<String> {
         .iter()
         .map(|e| e["event"].as_str().unwrap_or("").to_string())
         .collect()
-}
-
-fn collect(value: &Value, out: &mut Vec<String>) {
-    match value {
-        Value::String(s) => out.push(s.clone()),
-        Value::Array(a) => a.iter().for_each(|v| collect(v, out)),
-        Value::Object(o) => o.values().for_each(|v| collect(v, out)),
-        _ => {}
-    }
 }
 
 #[test]
