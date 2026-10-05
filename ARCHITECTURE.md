@@ -110,7 +110,9 @@ Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 
 - `pdf` (default): printpdf. The CLI adds the manifest and chunks afterwards with
   lopdf.
-- `pdfa`: krilla 0.5, PDF/A-3b validated by krilla at write time. It builds the
+- `pdfa`: krilla 0.8, tagged PDF/A-3a validated by krilla at write time, with a
+  structure tree, bookmarks, bidi reordering, rustybuzz shaping and per-character
+  font fallback (`pdfa_text.rs`). It builds the
   manifest and chunks itself from the graph and its own render report and stores them
   as PDF/A-3 associated files. The CLI detects attachments that already match and
   does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer

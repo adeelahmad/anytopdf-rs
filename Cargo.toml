@@ -44,8 +44,8 @@ base64ct = { version = "1.6", features = ["alloc"] }
 mdns-sd = { version = "0.21", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pki-types = { version = "1.9", features = ["std"] }
-# krilla 0.6+ needs Rust 1.89; stay on 0.5 while the toolchain is pinned to 1.88.
-krilla = { version = "=0.5.0", default-features = false, features = ["raster-images", "simple-text"] }
+unicode-bidi = "0.3.18"
+krilla = { version = "0.8.2", default-features = false, features = ["raster-images", "simple-text"] }
 allsorts = { package = "allsorts-azul", version = "0.17.2", default-features = false, features = ["flate2_rust"] }
 
 [profile.release]

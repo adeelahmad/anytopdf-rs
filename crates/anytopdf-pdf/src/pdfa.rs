@@ -1,40 +1,49 @@
-//! PDF/A-3b renderer built on krilla.
+//! Tagged PDF/A-3a renderer built on krilla.
 //!
-//! Page layout mirrors [`crate::SearchablePdfRenderer`]; the differences are that every
-//! font is embedded, the document carries XMP metadata and an sRGB output intent, and the
-//! manifest and chunks are written as PDF/A-3 associated files instead of being added
-//! after rendering.
+//! Page layout mirrors [`crate::SearchablePdfRenderer`]. On top of that every font is
+//! embedded, the document carries XMP metadata, an sRGB output intent, a structure tree
+//! (one section per unit, figures with alternate text, paragraphs per source line) and
+//! bookmarks per source, and the manifest and chunks are PDF/A-3 associated files.
 use crate::attachments::{CHUNKS_FILE, MANIFEST_FILE};
-use crate::fonts::{find_system_font, subset_document_font};
+use crate::fonts::{find_fallback_fonts, find_system_font};
 use crate::layout::{
     SEARCH_X_MM, TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM,
-    annotation_line, is_searchable_content, search_rows, text_page_chunks, time_line,
+    TEXT_ROWS_PER_PAGE, TEXT_WRAP_EMS, annotation_line, is_searchable_content, search_rows,
+    time_line, wrap_text,
 };
+use crate::pdfa_text::{FontSet, has_rtl};
 use crate::provenance::provenance_lines;
 use anyhow::{Context, Result, anyhow, bail};
 use anytopdf_core::*;
 use krilla::color::rgb;
-use krilla::configure::{Configuration, Validator};
+use krilla::configure::{Archival, ConfigurationBuilder};
+use krilla::destination::XyzDestination;
 use krilla::embed::{AssociationKind, EmbeddedFile, MimeType};
 use krilla::geom::{Point, Size};
 use krilla::image::Image;
 use krilla::metadata::{DateTime, Metadata};
 use krilla::num::NormalizedF32;
+use krilla::outline::{Outline, OutlineNode};
 use krilla::page::PageSettings;
 use krilla::paint::Fill;
 use krilla::surface::Surface;
-use krilla::text::{Font, TextDirection};
+use krilla::tagging::{ContentTag, Identifier, Node, SpanTag, Tag, TagGroup, TagTree};
 use krilla::{Document, SerializeSettings};
 use std::collections::BTreeMap;
 use std::fs;
+use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 
 const PT_PER_MM: f32 = 72.0 / 25.4;
+/// The graph does not record a document language, so declare it undetermined.
+const LANGUAGE: &str = "und";
 
-/// Renders the graph as a PDF/A-3b document (registered as `pdfa`).
+/// Renders the graph as a tagged PDF/A-3a document (registered as `pdfa`).
 pub struct PdfARenderer {
     pub dpi: f32,
     pub unicode_font: Option<PathBuf>,
+    /// Fonts used, in order, for characters `unicode_font` lacks.
+    pub fallback_fonts: Vec<PathBuf>,
 }
 
 impl Default for PdfARenderer {
@@ -42,6 +51,7 @@ impl Default for PdfARenderer {
         Self {
             dpi: 144.0,
             unicode_font: find_system_font(),
+            fallback_fonts: find_fallback_fonts(),
         }
     }
 }
@@ -55,72 +65,6 @@ impl Plugin for PdfARenderer {
             extensions: vec!["pdf".into()],
             mime_types: vec!["application/pdf".into()],
             priority: 90,
-        }
-    }
-}
-
-/// The embedded font plus the per-character facts layout needs.
-struct TextFont {
-    font: Font,
-    advances: BTreeMap<char, f32>,
-}
-
-impl TextFont {
-    fn load(bytes: Vec<u8>, graph: &DocumentGraph) -> Result<Self> {
-        let subset = subset_document_font(&bytes, graph)?;
-        let face = ttf_parser::Face::parse(&subset, 0).context("parse subset font")?;
-        let em = f32::from(face.units_per_em());
-        let mut advances = BTreeMap::new();
-        for table in face.tables().cmap.iter().flat_map(|c| c.subtables) {
-            if !table.is_unicode() {
-                continue;
-            }
-            table.codepoints(|cp| {
-                if let Some(ch) = char::from_u32(cp)
-                    && let Some(glyph) = face.glyph_index(ch).filter(|g| g.0 != 0)
-                {
-                    let advance = face.glyph_hor_advance(glyph).unwrap_or(0);
-                    advances.insert(ch, f32::from(advance) / em);
-                }
-            });
-        }
-        let font = Font::new(subset.into(), 0).ok_or_else(|| anyhow!("could not load font"))?;
-        Ok(Self { font, advances })
-    }
-
-    fn has(&self, ch: char) -> bool {
-        self.advances.contains_key(&ch)
-    }
-
-    fn measure(&self, ch: char) -> f32 {
-        self.advances.get(&ch).copied().unwrap_or(0.5)
-    }
-
-    /// Draw `text` with its baseline at `origin` (points, y down). Characters the font
-    /// cannot show are skipped (PDF/A forbids `.notdef`) but still advance the pen so
-    /// the surrounding runs keep their positions.
-    fn draw(&self, surface: &mut Surface, origin: Point, size: f32, text: &str) {
-        let mut x = origin.x;
-        let mut run = String::new();
-        let mut run_x = x;
-        for ch in text.chars().filter(|c| !c.is_control()) {
-            if self.has(ch) {
-                if run.is_empty() {
-                    run_x = x;
-                }
-                run.push(ch);
-            } else {
-                self.flush(surface, &mut run, Point::from_xy(run_x, origin.y), size);
-            }
-            x += self.measure(ch) * size;
-        }
-        self.flush(surface, &mut run, Point::from_xy(run_x, origin.y), size);
-    }
-
-    fn flush(&self, surface: &mut Surface, run: &mut String, at: Point, size: f32) {
-        if !run.is_empty() {
-            surface.draw_text(at, self.font.clone(), size, run, false, TextDirection::Auto);
-            run.clear();
         }
     }
 }
@@ -177,9 +121,9 @@ fn load_image(path: &Path) -> Result<Image> {
     // PNG and baseline RGB/grey JPEG pass straight through; everything else (TIFF, BMP,
     // CMYK JPEG, ...) is decoded to RGBA so no device-dependent colour space remains.
     let direct = match format {
-        Some(::image::ImageFormat::Png) => Image::from_png(bytes.clone().into(), false),
+        Some(::image::ImageFormat::Png) => Image::from_png(bytes.clone().into(), false).ok(),
         Some(::image::ImageFormat::Jpeg) if !is_cmyk_jpeg(&bytes) => {
-            Image::from_jpeg(bytes.clone().into(), false)
+            Image::from_jpeg(bytes.clone().into(), false).ok()
         }
         _ => None,
     };
@@ -211,10 +155,8 @@ impl Renderer for PdfARenderer {
         let font_path = self.unicode_font.as_ref().ok_or_else(|| {
             anyhow!("PDF/A output must embed its font; set ANYTOPDF_FONT to a TTF font")
         })?;
-        let font_bytes =
-            fs::read(font_path).with_context(|| format!("read font {}", font_path.display()))?;
-        let font = TextFont::load(font_bytes, graph)?;
         let mut warnings = Vec::new();
+        let font = FontSet::load(font_path, &self.fallback_fonts, graph, &mut warnings)?;
         let missing: std::collections::BTreeSet<char> = graph
             .units
             .iter()
@@ -229,69 +171,87 @@ impl Renderer for PdfARenderer {
             .collect();
         if !missing.is_empty() {
             warnings.push(format!(
-                "Font lacks {} character(s): {:?}; PDF/A output omits them. Set ANYTOPDF_FONT to a font covering this script.",
+                "Font lacks {} character(s): {:?}; PDF/A output omits them. Add a font covering this script to ANYTOPDF_FONT.",
                 missing.len(),
                 missing.iter().take(20).collect::<String>()
             ));
         }
 
-        let created = created(graph)?;
+        let configuration = ConfigurationBuilder::new()
+            .with_archival_validator(Archival::A3_A)
+            .finish()
+            .map_err(|e| anyhow!("PDF/A-3a configuration: {e:?}"))?;
         let settings = SerializeSettings {
-            configuration: Configuration::new_with_validator(Validator::A3_B),
-            enable_tagging: false,
+            configuration,
+            enable_tagging: true,
+            pretty: false,
             ..Default::default()
         };
-        let mut doc = Document::new_with(settings);
-        let date = pdf_date(created)?;
-        doc.set_metadata(
+        let date = pdf_date(created(graph)?)?;
+        let mut builder = Builder {
+            doc: Document::new_with(settings),
+            font: &font,
+            pages: 0,
+            tree: TagTree::new().with_lang(Some(LANGUAGE.into())),
+        };
+        builder.doc.set_metadata(
             Metadata::new()
                 .title("anytopdf".into())
+                .language(LANGUAGE.into())
                 .creator("anytopdf".into())
                 .producer(format!("anytopdf {}", env!("CARGO_PKG_VERSION")))
                 .creation_date(date),
         );
 
-        let mut pages = 0usize;
         let mut unit_pages = BTreeMap::new();
         for unit in &graph.units {
-            let start = pages;
+            let start = builder.pages;
+            let mut section = TagGroup::new(Tag::Section);
             if let Some(visual) = &unit.visual_path {
                 match load_image(visual) {
-                    Ok(image) => {
-                        self.visual_page(&mut doc, &font, unit, image);
-                        pages += 1;
-                    }
+                    Ok(image) => builder.visual_page(&mut section, unit, image, self.dpi),
                     Err(e) => {
                         warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }
                 }
             } else if let Some(text) = &unit.visible_text {
-                pages += text_pages(&mut doc, &font, unit, text);
+                builder.text_unit(&mut section, unit, text);
             }
-            if pages > start {
+            if builder.pages > start {
+                builder.tree.push(section);
                 unit_pages.insert(
                     unit.id,
                     PageRange {
                         first: start + 1,
-                        last: pages,
+                        last: builder.pages,
                     },
                 );
             }
         }
-        if pages == 0 {
+        if builder.pages == 0 {
             bail!("no PDF pages generated");
         }
+        let mut outline = source_outline(graph, &unit_pages);
         if graph
             .metadata
             .get("anytopdf.provenance-page")
             .is_none_or(|v| v != "off")
         {
-            let text = provenance_lines(graph, &unit_pages).join("\n");
-            for chunk in text_page_chunks(&text, &|c| font.measure(c)) {
-                visible_text_page(&mut doc, &font, &chunk, &[]);
-                pages += 1;
-            }
+            let first = builder.pages;
+            builder.provenance(&provenance_lines(graph, &unit_pages));
+            outline.push_child(OutlineNode::new(
+                "Provenance".into(),
+                XyzDestination::new(first, Point::from_xy(0.0, 0.0)),
+            ));
         }
+        let Builder {
+            mut doc,
+            pages,
+            tree,
+            ..
+        } = builder;
+        doc.set_outline(outline);
+        doc.set_tag_tree(tree);
 
         let report = RenderReport {
             pages,
@@ -323,26 +283,88 @@ impl Renderer for PdfARenderer {
 
         let bytes = doc
             .finish()
-            .map_err(|e| anyhow!("PDF/A-3b export failed: {e:?}"))?;
+            .map_err(|e| anyhow!("PDF/A-3a export failed: {e:?}"))?;
         atomic_write(output, &bytes)?;
         Ok(report)
     }
 }
 
-impl PdfARenderer {
-    fn visual_page(&self, doc: &mut Document, font: &TextFont, unit: &Unit, image: Image) {
+/// One bookmark per source, pointing at the first page rendered from it.
+fn source_outline(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>) -> Outline {
+    let mut outline = Outline::new();
+    for source in &graph.sources {
+        let first = graph
+            .units
+            .iter()
+            .filter(|u| u.source_id == source.id)
+            .filter_map(|u| unit_pages.get(&u.id))
+            .map(|r| r.first)
+            .min();
+        if let Some(first) = first {
+            outline.push_child(OutlineNode::new(
+                basename(&source.path),
+                XyzDestination::new(first - 1, Point::from_xy(0.0, 0.0)),
+            ));
+        }
+    }
+    outline
+}
+
+/// Draw `text` as one tagged span and return its identifier, or `None` for blank text.
+fn span(
+    surface: &mut Surface,
+    font: &FontSet,
+    at: Point,
+    size: f32,
+    text: &str,
+) -> Option<Identifier> {
+    if text.trim().is_empty() {
+        return None;
+    }
+    // Right-to-left text is drawn in visual order; ActualText keeps the logical order
+    // for copy and extraction.
+    let actual = has_rtl(text).then_some(text);
+    let id = surface.start_tagged(ContentTag::Span(SpanTag::empty().with_actual_text(actual)));
+    font.draw(surface, at, size, text);
+    surface.end_tagged();
+    Some(id)
+}
+
+fn paragraph(ids: impl IntoIterator<Item = Identifier>) -> TagGroup {
+    TagGroup::with_children(Tag::P, ids.into_iter().map(Node::from).collect())
+}
+
+fn new_page(doc: &mut Document, w: f32, h: f32) -> krilla::page::Page<'_> {
+    let size = Size::from_wh(w, h).expect("page size is finite and positive");
+    doc.start_page_with(PageSettings::new(size))
+}
+
+/// Accumulates pages, the structure tree and the page count while rendering.
+struct Builder<'a> {
+    doc: Document,
+    font: &'a FontSet,
+    pages: usize,
+    tree: TagTree,
+}
+
+impl Builder<'_> {
+    fn visual_page(&mut self, section: &mut TagGroup, unit: &Unit, image: Image, dpi: f32) {
+        let font = self.font;
         let (w_px, h_px) = image.size();
-        let page_w_mm = w_px as f32 / self.dpi * 25.4;
-        let page_h_mm = h_px as f32 / self.dpi * 25.4;
+        let page_w_mm = w_px as f32 / dpi * 25.4;
+        let page_h_mm = h_px as f32 / dpi * 25.4;
         let (w, h) = (page_w_mm * PT_PER_MM, page_h_mm * PT_PER_MM);
-        let mut page = doc.start_page_with(PageSettings::new(w, h));
+        let mut page = new_page(&mut self.doc, w, h);
         let mut surface = page.surface();
+        let figure_id = surface.start_tagged(ContentTag::Other);
         if let Some(size) = Size::from_wh(w, h) {
             surface.draw_image(image, size);
         }
+        surface.end_tagged();
 
         surface.set_fill(Some(hidden_fill()));
         // Positioned OCR layer, placed exactly as the printpdf renderer places it.
+        let mut ocr = Vec::new();
         for annotation in unit
             .annotations
             .iter()
@@ -355,12 +377,8 @@ impl PdfARenderer {
                 let box_h = (page_h_mm * r.height).max(1.0);
                 let baseline_y = (page_h_mm - y_top - box_h * 0.85).max(0.5);
                 let font_pt = ((box_h / 25.4) * 72.0 * 0.78).clamp(3.0, 72.0);
-                font.draw(
-                    &mut surface,
-                    Point::from_xy(x * PT_PER_MM, (page_h_mm - baseline_y) * PT_PER_MM),
-                    font_pt,
-                    &annotation.text,
-                );
+                let at = Point::from_xy(x * PT_PER_MM, (page_h_mm - baseline_y) * PT_PER_MM);
+                ocr.extend(span(&mut surface, font, at, font_pt, &annotation.text));
             }
         }
 
@@ -377,313 +395,150 @@ impl PdfARenderer {
                 })
                 .map(annotation_line),
         );
-        draw_search_layer(&mut surface, font, &lines, page_w_mm, page_h_mm);
+        let hidden = search_layer(&mut surface, font, &lines, page_w_mm, page_h_mm);
         surface.finish();
         page.finish();
+        self.pages += 1;
+
+        let alt = match unit.time_range {
+            Some(t) => format!(
+                "Video frame at {:.3} to {:.3} seconds",
+                t.start_seconds, t.end_seconds
+            ),
+            None => "Image".into(),
+        };
+        section.push(TagGroup::with_children(
+            Tag::Figure(Some(alt)),
+            vec![figure_id.into()],
+        ));
+        if !ocr.is_empty() {
+            section.push(paragraph(ocr));
+        }
+        for id in hidden {
+            section.push(paragraph([id]));
+        }
+    }
+
+    fn text_unit(&mut self, section: &mut TagGroup, unit: &Unit, text: &str) {
+        // Wrap per source line so each line becomes one paragraph; the rows are the
+        // same ones `text_page_chunks` produces for the printpdf renderer.
+        let font = self.font;
+        let mut rows: Vec<(usize, String)> = text
+            .lines()
+            .enumerate()
+            .flat_map(|(i, line)| {
+                wrap_text(line, TEXT_WRAP_EMS, &|c| font.measure(c))
+                    .into_iter()
+                    .map(move |row| (i, row))
+            })
+            .collect();
+        if rows.is_empty() {
+            rows.push((0, String::new()));
+        }
+        let mut paragraphs: BTreeMap<usize, Vec<Identifier>> = BTreeMap::new();
+        let mut hidden_ids = Vec::new();
+        for (index, chunk) in rows.chunks(TEXT_ROWS_PER_PAGE).enumerate() {
+            let mut hidden = Vec::new();
+            if index == 0 {
+                hidden.extend(
+                    unit.annotations
+                        .iter()
+                        .filter(|a| is_searchable_content(&a.kind))
+                        .map(annotation_line),
+                );
+                if let Some(time) = unit.time_range {
+                    hidden.push(time_line(time));
+                }
+            }
+            let lines: Vec<&str> = chunk.iter().map(|(_, row)| row.as_str()).collect();
+            let (ids, more) = self.text_page(&lines, &hidden);
+            for ((para, _), id) in chunk.iter().zip(ids) {
+                paragraphs.entry(*para).or_default().extend(id);
+            }
+            hidden_ids.extend(more);
+        }
+        for ids in paragraphs.into_values() {
+            section.push(paragraph(ids));
+        }
+        for id in hidden_ids {
+            section.push(paragraph([id]));
+        }
+    }
+
+    fn provenance(&mut self, lines: &[String]) {
+        let font = self.font;
+        let text = lines.join("\n");
+        let rows = wrap_text(&text, TEXT_WRAP_EMS, &|c| font.measure(c));
+        let mut section = TagGroup::new(Tag::Section);
+        let mut heading = true;
+        for chunk in rows.chunks(TEXT_ROWS_PER_PAGE) {
+            let lines: Vec<&str> = chunk.iter().map(String::as_str).collect();
+            let (ids, _) = self.text_page(&lines, &[]);
+            for id in ids.into_iter().flatten() {
+                if std::mem::take(&mut heading) {
+                    let level = NonZeroU16::MIN;
+                    section.push(TagGroup::with_children(
+                        Tag::Hn(level, Some("Provenance".into())),
+                        vec![id.into()],
+                    ));
+                } else {
+                    section.push(paragraph([id]));
+                }
+            }
+        }
+        self.tree.push(section);
+    }
+
+    /// Draw one visible text page; returns one identifier slot per row and the
+    /// identifiers of the hidden search rows.
+    fn text_page(
+        &mut self,
+        lines: &[&str],
+        hidden: &[String],
+    ) -> (Vec<Option<Identifier>>, Vec<Identifier>) {
+        let font = self.font;
+        let mut page = new_page(
+            &mut self.doc,
+            TEXT_PAGE_W_MM * PT_PER_MM,
+            TEXT_PAGE_H_MM * PT_PER_MM,
+        );
+        let mut surface = page.surface();
+        surface.set_fill(Some(visible_fill()));
+        let left = TEXT_MARGIN_MM * PT_PER_MM;
+        let top = TEXT_MARGIN_MM * PT_PER_MM;
+        let ids = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                let at = Point::from_xy(left, top + TEXT_LINE_PT * i as f32);
+                span(&mut surface, font, at, TEXT_FONT_PT, line)
+            })
+            .collect();
+        let hidden = search_layer(&mut surface, font, hidden, TEXT_PAGE_W_MM, TEXT_PAGE_H_MM);
+        surface.finish();
+        page.finish();
+        self.pages += 1;
+        (ids, hidden)
     }
 }
 
-fn draw_search_layer(
+fn search_layer(
     surface: &mut Surface,
-    font: &TextFont,
+    font: &FontSet,
     lines: &[String],
     width_mm: f32,
     height_mm: f32,
-) {
+) -> Vec<Identifier> {
     surface.set_fill(Some(hidden_fill()));
-    for (y_mm, size, row) in search_rows(lines, width_mm, height_mm) {
-        font.draw(
-            surface,
-            Point::from_xy(SEARCH_X_MM * PT_PER_MM, (height_mm - y_mm) * PT_PER_MM),
-            size,
-            &row,
-        );
-    }
-}
-
-fn text_pages(doc: &mut Document, font: &TextFont, unit: &Unit, text: &str) -> usize {
-    let chunks = text_page_chunks(text, &|c| font.measure(c));
-    for (index, chunk) in chunks.iter().enumerate() {
-        let mut hidden = Vec::new();
-        if index == 0 {
-            hidden.extend(
-                unit.annotations
-                    .iter()
-                    .filter(|a| is_searchable_content(&a.kind))
-                    .map(annotation_line),
-            );
-            if let Some(time) = unit.time_range {
-                hidden.push(time_line(time));
-            }
-        }
-        visible_text_page(doc, font, chunk, &hidden);
-    }
-    chunks.len()
-}
-
-fn visible_text_page(doc: &mut Document, font: &TextFont, lines: &[String], hidden: &[String]) {
-    let mut page = doc.start_page_with(PageSettings::new(
-        TEXT_PAGE_W_MM * PT_PER_MM,
-        TEXT_PAGE_H_MM * PT_PER_MM,
-    ));
-    let mut surface = page.surface();
-    surface.set_fill(Some(visible_fill()));
-    let left = TEXT_MARGIN_MM * PT_PER_MM;
-    let top = TEXT_MARGIN_MM * PT_PER_MM;
-    for (i, line) in lines.iter().enumerate() {
-        let y = top + TEXT_LINE_PT * i as f32;
-        font.draw(&mut surface, Point::from_xy(left, y), TEXT_FONT_PT, line);
-    }
-    draw_search_layer(&mut surface, font, hidden, TEXT_PAGE_W_MM, TEXT_PAGE_H_MM);
-    surface.finish();
-    page.finish();
+    search_rows(lines, width_mm, height_mm)
+        .into_iter()
+        .filter_map(|(y_mm, size, row)| {
+            let at = Point::from_xy(SEARCH_X_MM * PT_PER_MM, (height_mm - y_mm) * PT_PER_MM);
+            span(surface, font, at, size, &row)
+        })
+        .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{SearchablePdfRenderer, read_embedded_files};
-
-    // printpdf's bundled Helvetica subset: a real TrueType font present on every CI host.
-    fn fixture_font(dir: &Path) -> PathBuf {
-        let path = dir.join("fixture.ttf");
-        fs::write(
-            &path,
-            printpdf::BuiltinFont::Helvetica.get_subset_font().bytes,
-        )
-        .unwrap();
-        path
-    }
-
-    fn renderer(dir: &Path) -> PdfARenderer {
-        PdfARenderer {
-            dpi: 144.0,
-            unicode_font: Some(fixture_font(dir)),
-        }
-    }
-
-    fn ctx(dir: &Path) -> JobContext {
-        JobContext {
-            workspace: dir.into(),
-            quiet: true,
-        }
-    }
-
-    fn graph(dir: &Path) -> DocumentGraph {
-        let visual = dir.join("image.png");
-        ::image::RgbImage::new(40, 30).save(&visual).unwrap();
-        let text_source = SourceRecord::new(dir.join("notes.txt"));
-        let mut image_source = SourceRecord::new(visual.clone());
-        image_source
-            .metadata
-            .insert("exiftool.GPS:GPSLatitude".into(), "51.5".into());
-        let mut image = Unit::visual(image_source.id, visual);
-        image.time_range = Some(TimeRange {
-            start_seconds: 1.0,
-            end_seconds: 2.0,
-        });
-        image.annotations.push(Annotation::text(
-            AnnotationKind::Caption,
-            "test",
-            "captionmarker",
-        ));
-        let mut ocr = Annotation::text(AnnotationKind::Ocr, "test", "ocrmarker");
-        ocr.region = Some(Region {
-            x: 0.1,
-            y: 0.2,
-            width: 0.5,
-            height: 0.1,
-        });
-        image.annotations.push(ocr);
-        let mut graph = DocumentGraph {
-            units: vec![
-                Unit::text(text_source.id, "visiblemarker\nsecond".into()),
-                image,
-            ],
-            sources: vec![text_source, image_source],
-            ..Default::default()
-        };
-        graph
-            .metadata
-            .insert("anytopdf.created".into(), "1700000000".into());
-        graph
-    }
-
-    fn render(dir: &Path, graph: &DocumentGraph, name: &str) -> (Vec<u8>, RenderReport) {
-        let out = dir.join(name);
-        let report = renderer(dir).render(&ctx(dir), graph, &out).unwrap();
-        (fs::read(out).unwrap(), report)
-    }
-
-    fn page_texts(bytes: &[u8]) -> Vec<String> {
-        let doc = lopdf::Document::load_mem(bytes).unwrap();
-        doc.get_pages()
-            .keys()
-            .map(|n| doc.extract_text(&[*n]).unwrap_or_default())
-            .collect()
-    }
-
-    #[test]
-    fn declares_pdfa3b_with_output_intent_and_xmp() {
-        let dir = tempfile::tempdir().unwrap();
-        let (bytes, _) = render(dir.path(), &graph(dir.path()), "a.pdf");
-        let doc = lopdf::Document::load_mem(&bytes).unwrap();
-        let catalog = doc.catalog().unwrap();
-        assert!(catalog.get(b"OutputIntents").is_ok(), "no output intent");
-        // PDF/A keeps the XMP packet uncompressed so it stays readable.
-        let xmp = &doc
-            .get_object(catalog.get(b"Metadata").unwrap().as_reference().unwrap())
-            .unwrap()
-            .as_stream()
-            .unwrap()
-            .content;
-        let xmp = String::from_utf8_lossy(xmp);
-        assert!(xmp.contains("<pdfaid:part>3</pdfaid:part>"), "{xmp}");
-        assert!(
-            xmp.contains("<pdfaid:conformance>B</pdfaid:conformance>"),
-            "{xmp}"
-        );
-        assert!(xmp.contains("2023-11-14T22:13:20"), "{xmp}");
-    }
-
-    #[test]
-    fn manifest_and_chunks_are_associated_files_matching_the_report() {
-        let dir = tempfile::tempdir().unwrap();
-        let graph = graph(dir.path());
-        let (bytes, report) = render(dir.path(), &graph, "a.pdf");
-        let doc = lopdf::Document::load_mem(&bytes).unwrap();
-        let af = doc
-            .catalog()
-            .unwrap()
-            .get(b"AF")
-            .unwrap()
-            .as_array()
-            .unwrap();
-        assert_eq!(af.len(), 2);
-        for spec in af {
-            let spec = doc.dereference(spec).unwrap().1.as_dict().unwrap();
-            assert_eq!(
-                spec.get(b"AFRelationship").unwrap().as_name().unwrap(),
-                b"Data"
-            );
-            assert!(spec.get(b"Desc").is_ok() && spec.get(b"UF").is_ok());
-        }
-        let files = read_embedded_files(&bytes).unwrap();
-        let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
-        assert_eq!(names, [CHUNKS_FILE, MANIFEST_FILE]);
-        let manifest = serde_json::to_vec_pretty(&Manifest::build(&graph, &report)).unwrap();
-        let chunks = serde_json::to_vec_pretty(&ChunkSet::build(&graph, &report)).unwrap();
-        assert!(files[0].bytes == chunks, "chunks differ from the report");
-        assert!(
-            files[1].bytes == manifest,
-            "manifest differs from the report"
-        );
-        assert!(files.iter().all(|f| f.mime_type == "application/json"));
-    }
-
-    #[test]
-    fn same_graph_renders_byte_identical() {
-        let dir = tempfile::tempdir().unwrap();
-        let graph = graph(dir.path());
-        let (a, _) = render(dir.path(), &graph, "a.pdf");
-        let (b, _) = render(dir.path(), &graph, "b.pdf");
-        assert!(a == b, "same graph rendered to different bytes");
-    }
-
-    #[test]
-    fn page_mapping_matches_the_printpdf_renderer() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut graph = graph(dir.path());
-        let long: String = (0..150).map(|i| format!("row{i:03}\n")).collect();
-        graph.units[0].visible_text = Some(long);
-        let (_, ours) = render(dir.path(), &graph, "a.pdf");
-        let theirs = SearchablePdfRenderer {
-            dpi: 144.0,
-            unicode_font: Some(fixture_font(dir.path())),
-        }
-        .render(&ctx(dir.path()), &graph, &dir.path().join("b.pdf"))
-        .unwrap();
-        assert_eq!(ours.pages, theirs.pages);
-        assert_eq!(ours.unit_pages, theirs.unit_pages);
-    }
-
-    #[test]
-    fn hidden_layer_is_transparent_content_without_metadata() {
-        let dir = tempfile::tempdir().unwrap();
-        let graph = graph(dir.path());
-        let (bytes, _) = render(dir.path(), &graph, "a.pdf");
-        let texts = page_texts(&bytes);
-        assert!(texts[0].contains("visiblemarker"), "{:?}", texts[0]);
-        let visual = &texts[1];
-        for marker in ["captionmarker", "ocrmarker", "[TIME]"] {
-            assert!(visual.contains(marker), "{marker} missing: {visual:?}");
-        }
-        for noise in ["GPSLatitude", "[META]", "[SOURCE]", "image.png"] {
-            assert!(!visual.contains(noise), "{noise} leaked: {visual:?}");
-        }
-        // Every glyph on the image page is drawn under a zero fill alpha.
-        let doc = lopdf::Document::load_mem(&bytes).unwrap();
-        let page = *doc.get_pages().get(&2).unwrap();
-        let (resources, _) = doc.get_page_resources(page).unwrap();
-        let states = resources.unwrap().get(b"ExtGState").unwrap();
-        let states = doc.dereference(states).unwrap().1.as_dict().unwrap();
-        assert!(
-            states
-                .iter()
-                .any(|(_, gs)| doc.dereference(gs).ok().and_then(|(_, gs)| gs
-                    .as_dict()
-                    .ok()?
-                    .get(b"ca")
-                    .ok()?
-                    .as_float()
-                    .ok())
-                    == Some(0.0)),
-            "no transparent fill state on the image page"
-        );
-    }
-
-    #[test]
-    fn glyphs_missing_from_the_font_are_dropped_with_a_warning() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut graph = graph(dir.path());
-        graph.units[0].visible_text = Some("abc 漢字 xyz".into());
-        let (bytes, report) = render(dir.path(), &graph, "a.pdf");
-        assert!(
-            report
-                .warnings
-                .iter()
-                .any(|w| w.contains("lacks 2 character")),
-            "{:?}",
-            report.warnings
-        );
-        let text = &page_texts(&bytes)[0];
-        assert!(text.contains("abc") && text.contains("xyz"), "{text:?}");
-    }
-
-    #[test]
-    fn missing_font_fails_without_touching_destination() {
-        let dir = tempfile::tempdir().unwrap();
-        let output = dir.path().join("existing.pdf");
-        fs::write(&output, b"keep").unwrap();
-        let err = PdfARenderer {
-            dpi: 144.0,
-            unicode_font: None,
-        }
-        .render(&ctx(dir.path()), &graph(dir.path()), &output)
-        .unwrap_err();
-        assert!(err.to_string().contains("ANYTOPDF_FONT"), "{err:#}");
-        assert_eq!(fs::read(output).unwrap(), b"keep");
-    }
-
-    #[test]
-    fn empty_graph_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("x.pdf");
-        assert!(
-            renderer(dir.path())
-                .render(&ctx(dir.path()), &DocumentGraph::default(), &out)
-                .is_err()
-        );
-        assert!(!out.exists());
-    }
-}
+#[path = "pdfa_tests.rs"]
+mod tests;
