@@ -159,7 +159,8 @@ This validation does not prevent an executable from accessing other files itself
 - `--plugin-timeout SECONDS`: bound each manifest/request invocation (default 60).
 - `--allow-plugin-kind KIND`: register only specified capabilities; repeatable.
 - `--deny-plugin-kind KIND`: deny capabilities; overrides the allow list.
-- `--plugin-sandbox off|contain|strict`: confine plugin processes (default `off`).
+- `--plugin-sandbox off|contain|strict`: confine plugin processes (default `off`;
+  `contain` under `anytopdf queue`).
 - `--plugin-sandbox-allow-read PATH`: extra readable path under `strict`; repeatable.
 
 ### Sandbox levels

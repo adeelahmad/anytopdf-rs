@@ -355,6 +355,9 @@ anytopdf queue status ~/scans-queue
 - `--job-timeout` (default 3600 seconds) stops an overrunning conversion. A
   running job whose worker died is requeued once its lease (timeout plus 60
   seconds) expires.
+- Runtime plugins in queued jobs run under `--plugin-sandbox contain` unless you
+  pass another level (`anytopdf --plugin-sandbox strict queue work QUEUE`, or `off`
+  to opt out), so no process a plugin starts outlives its call.
 
 `--webhook URL` (repeatable) sends [Standard Webhooks](https://www.standardwebhooks.com)
 `job.received`, `job.completed` and `job.failed` events (`anytopdf.webhook/1`,

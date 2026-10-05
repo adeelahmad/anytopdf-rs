@@ -196,7 +196,7 @@ remain protected. JSON graph dumps retain diagnostic workspace paths rather than
 copying derived assets. Runtime plugin policy and timeouts are documented in
 `PLUGIN_PROTOCOL.md`. OS-level sandboxing is opt-in through `--plugin-sandbox`
 (`src/sandbox.rs` in core, `docs/design/plugin-sandbox.md`); by default plugins run
-unconfined.
+unconfined, except under `queue`, which defaults to `contain`.
 
 ## Intake: mail watcher
 
@@ -247,7 +247,9 @@ plugin cannot take the worker down. The queue is a directory: job records
 running job carries a lease after which another worker requeues it. The watched
 inbox needs no listener. `queue serve` is the opt-in HTTP intake: it only writes
 uploads into job work directories and enqueues them, binds loopback unless TLS is
-configured, and checks a bearer token on every request.
+configured, and checks a bearer token on every request. Because queued inputs come
+from folders and uploads rather than an operator, `queue` defaults runtime plugins
+to `--plugin-sandbox contain`; an explicit level overrides it.
 
 Webhook messages (`anytopdf.webhook/1`) are written to `webhooks/pending/` before
 they are sent, signed per Standard Webhooks with HMAC-SHA256, and retried with
