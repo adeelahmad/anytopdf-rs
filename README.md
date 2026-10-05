@@ -154,6 +154,13 @@ searchable `transcript` annotations:
 - `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
   `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
 
+Release archives ship the plugin in a `plugins/` folder beside `anytopdf`, and
+Homebrew installs it under `$(brew --prefix anytopdf)/libexec/plugins`. It stays
+off until `ANYTOPDF_PLUGIN_PATH` names that folder, so media conversions without
+a Whisper engine do not warn. The container image has a `WHISPER=cpp` build that
+includes whisper.cpp and enables it (see [docs/distribution.md](docs/distribution.md)).
+From source:
+
 ```bash
 cargo build --release -p anytopdf-plugin-whisper
 export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"

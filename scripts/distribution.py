@@ -21,6 +21,9 @@ HOMEBREW = {
     ("linux", "intel"): "x86_64-unknown-linux-musl",
 }
 SCOOP = {"64bit": "x86_64-pc-windows-msvc"}
+# Runtime plugins shipped in each archive's plugins/ folder. They stay opt-in:
+# anytopdf only runs them once ANYTOPDF_PLUGIN_PATH names that folder.
+PLUGINS = ["anytopdf-plugin-whisper"]
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 
 
@@ -82,13 +85,19 @@ def homebrew_formula(version, digests, repository, description):
         "\n"
         "  def install\n"
         "    bin.install \"anytopdf\"\n"
+        "    libexec.install \"plugins\"\n"
         "    doc.install Dir[\"*.md\"]\n"
         "  end\n"
         "\n"
         "  def caveats\n"
         "    <<~EOS\n"
-        "      Video, metadata and OCR use optional providers. Install the ones you need:\n"
-        "        brew install ffmpeg exiftool tesseract\n"
+        "      Video, metadata, OCR and transcription use optional providers.\n"
+        "      Install the ones you need:\n"
+        "        brew install ffmpeg exiftool tesseract whisper-cpp\n"
+        "      Bundled runtime plugins are opt-in. To transcribe audio and video with\n"
+        "      anytopdf-plugin-whisper, add to your shell profile:\n"
+        "        export ANYTOPDF_PLUGIN_PATH=\"#{opt_libexec}/plugins\"\n"
+        "        export ANYTOPDF_WHISPER_MODEL=/path/to/ggml-base.en.bin\n"
         "      Then run `anytopdf doctor` to check what is available.\n"
         "    EOS\n"
         "  end\n"
@@ -97,6 +106,9 @@ def homebrew_formula(version, digests, repository, description):
         "    assert_match version.to_s, shell_output(\"#{bin}/anytopdf --version\")\n"
         "    assert_match \"anytopdf.capabilities/1\",\n"
         "                 shell_output(\"#{bin}/anytopdf --no-plugins capabilities --json\")\n"
+        + "".join(f"    assert_match \"\\\"protocol\\\":1\",\n"
+                  f"                 shell_output(\"#{{libexec}}/plugins/{plugin} --anytopdf-manifest\")\n"
+                  for plugin in PLUGINS) +
         "  end\n"
         "end\n")
 
@@ -117,6 +129,11 @@ def scoop_manifest(version, digests, repository, description):
             for arch, target in SCOOP.items()
         },
         "bin": "anytopdf.exe",
+        "notes": [
+            "Bundled runtime plugins are opt-in. To transcribe audio and video, set",
+            "ANYTOPDF_PLUGIN_PATH to $dir\\plugins and ANYTOPDF_WHISPER_MODEL to a",
+            "whisper.cpp ggml model file.",
+        ],
         "suggest": {"FFmpeg": "ffmpeg", "ExifTool": "exiftool", "Tesseract": "tesseract"},
         "checkver": "github",
         "autoupdate": {
