@@ -215,7 +215,9 @@ plugin cannot take the worker down. The queue is a directory: job records
 (`anytopdf.job/1`) change state by atomic rename between `jobs/pending`, `running`,
 `done` and `failed`, which lets several workers share it without locks, and a
 running job carries a lease after which another worker requeues it. The watched
-inbox is the only intake channel so far; it holds no network listener.
+inbox needs no listener. `queue serve` is the opt-in HTTP intake: it only writes
+uploads into job work directories and enqueues them, binds loopback unless TLS is
+configured, and checks a bearer token on every request.
 
 Webhook messages (`anytopdf.webhook/1`) are written to `webhooks/pending/` before
 they are sent, signed per Standard Webhooks with HMAC-SHA256, and retried with

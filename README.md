@@ -206,7 +206,7 @@ first failing JSON path. A PDF with no embedded or sidecar manifest exits
 ### Job queue and webhooks
 
 `anytopdf queue` runs conversions from a plain queue directory, so it needs no
-database or daemon. Nothing listens on a port; the worker only makes outbound
+database or daemon. Only `queue serve` listens on a port; the worker only makes outbound
 requests when `--webhook` is given.
 
 ```bash
@@ -240,6 +240,30 @@ text. Deliveries are stored in `QUEUE/webhooks/pending/` before they are sent an
 are retried after 5 s, 5 min, 30 min, 2 h, 5 h, 10 h and 10 h; a 410 response or
 the last failure moves them to `QUEUE/webhooks/failed/`. Delivery is
 at-least-once, so receivers should deduplicate on `webhook-id`.
+
+`anytopdf queue serve QUEUE` is the opt-in HTTP upload intake. It listens on
+`127.0.0.1:8640` by default; any other address needs `--tls-cert` and `--tls-key`,
+and `0.0.0.0` or `::` also needs `--allow-public-bind`. Every request needs
+`Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN` (at least 16 characters; `anytopdf
+queue secret` makes a good one). Uploads are capped by `--max-upload-mb` (default
+100) and must send `Content-Length`. Run `queue work` alongside it to convert them.
+
+```bash
+export ANYTOPDF_QUEUE_TOKEN=$(anytopdf queue secret)
+anytopdf queue serve ~/scans-queue -- --profile share   # options for uploaded files
+curl -H "Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN" \
+  --data-binary @scan.jpg 'http://127.0.0.1:8640/v1/jobs?filename=scan.jpg'
+```
+
+| Request | Answer |
+| --- | --- |
+| `POST /v1/jobs?filename=NAME` with the file as the body | `202` and the job (`job_id`, `state`, `origin`, `inputs`) |
+| `GET /v1/jobs/<job_id>` | `200` and the job, with `output`, `status`, `exit_code` and `pages` once finished |
+| `GET /v1/jobs/<job_id>/output` | `200` and the PDF, or `409` until the job has succeeded |
+
+Uploaded names are reduced to a plain file name inside the job's work directory.
+Clients cannot pass convert options; the server's options after `--` apply.
+Errors are JSON `{"error": "..."}` with `401`, `411`, `413`, `404` or `405`.
 
 ### Remote printing
 
@@ -369,7 +393,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Intake channels
 - [x] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
 - [x] Shared job queue with watched folder input
-- [ ] HTTP upload input for the job queue
+- [x] HTTP upload input for the job queue
 - [ ] IMAP watcher (IDLE and polling, Paperless-ngx style rules, OAuth, DKIM/SPF sender allowlist, quarantine)
 - [ ] Email-to-print
 

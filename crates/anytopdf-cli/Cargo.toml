@@ -36,6 +36,7 @@ anytopdf-core = { path = "../anytopdf-core" }
 anytopdf-builtin = { path = "../anytopdf-builtin", default-features = false }
 anytopdf-pdf = { path = "../anytopdf-pdf" }
 anytopdf-print = { path = "../anytopdf-print" }
+rustls.workspace = true
 clap.workspace = true
 regex.workspace = true
 serde_json.workspace = true
