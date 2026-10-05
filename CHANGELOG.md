@@ -42,6 +42,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Input fidelity: video frames are validated, file types are sniffed, lossy decoding is
   reported, and `--transcript` supplies audio transcripts.
 - `--output-dir` selects the batch output directory.
+- Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) import through
+  headless LibreOffice and Poppler: one page image per page, with the document's
+  positioned text from `pdftotext` and no OCR on those pages. `doctor` reports
+  `soffice`, `pdftoppm` and `pdftotext`.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
 - `--renderer pdfa` writes PDF/A-3b through krilla: embedded fonts, XMP metadata, an

@@ -216,3 +216,13 @@ command recovers them.
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
 `capabilities` command reports which importers, enrichers, renderers, providers and runtime
 plugins this environment supports (`--json` gives the static contract).
+
+## Remote printing
+
+`anytopdf-print` sits in front of the print helper and never parses print data.
+It terminates TLS (rustls), drops peers outside the CIDR allowlist before the
+handshake, checks HTTP Basic credentials against Argon2id hashes on the first
+request, then splices the connection to the helper on loopback. A guard refuses
+non-loopback listeners without users and an allowlist. The same DNS-SD
+description feeds the unicast zone snippet and the mDNS advertisement. Jobs
+still enter the pipeline through the helper and the normal importers.
