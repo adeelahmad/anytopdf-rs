@@ -19,6 +19,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Multi-frame TIFF and GIF inputs import every frame as a page with a `frame` region anchor; `--max-image-frames N` caps the count (0 = unlimited) and warns `input.frames-not-imported`.
 - HTML files (`.html`, `.htm`, `.xhtml`, or any file opening with an HTML doctype) import
   as one text page; scripts, styles and markup are dropped and the title is kept.
+- Email files (`.eml`, `.mbox`, or header-sniffed) import as one text page per message
+  (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
+  written into the job workspace under sanitized names and imported by whichever importer
+  matches; ones that cannot be imported warn `input.members-not-imported`.
+- Importers can expand containers through `Importer::import_with_members`; nesting stops
+  at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
 - Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
 - The graph dump no longer contains workspace paths.
