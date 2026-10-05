@@ -35,6 +35,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   PDF's text layer (`pdftotext -bbox-layout` lines, else the built-in extractor) becomes
   the page's searchable annotations, marked as a native text layer so OCR skips the page.
   Without Poppler, page text becomes text pages and `provider.missing` is reported.
+- Builds with the `imap` cargo feature add `anytopdf watch imap`, which converts each new
+  message in one IMAP mailbox into a PDF through the email importer. TLS is required off
+  loopback, the password never reaches the child `convert`, and progress is kept in a
+  state file keyed by UIDVALIDITY with bounded retries and a `failed/` folder.
 - HEIC/HEIF/AVIF photos import as image pages (OCR included) when `sips` (macOS),
   `heif-convert` (libheif) or ImageMagick is installed; otherwise they fail with a message
   naming those tools.
@@ -134,6 +138,7 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - print: add IPP print server helper and print-raster importer (#14) (af6b0379)
 - cli: make the tagged PDF/A-3a renderer the default (#21) (5839b22f)
 - builtin: import HEIC/HEIF/AVIF photos and existing PDFs (#23) (3787e375)
+- imap: watch an IMAP mailbox and convert each new message (#9) (9a003182)
 
 #### Fixes
 
