@@ -45,6 +45,14 @@ In-scope adversaries are the author of an input file, the author of a PDF passed
 to `extract`, the author of a plugin's response JSON (the response only), and
 someone reading outputs shared under `--profile share`.
 
+### Not yet modeled
+
+The job queue and its signed webhooks (`anytopdf queue`), the remote print front
+(`anytopdf print remote`), the MCP server (`anytopdf mcp`) and the HTML, email
+and Office importers shipped after this threat model was written. Reports
+against them are welcome and are triaged by the maintainer directly until the
+model is revised (threat model §1.16).
+
 ## Out of scope
 
 These close by design (threat model §1.3, §1.10, §1.12):
@@ -65,8 +73,8 @@ These close by design (threat model §1.3, §1.10, §1.12):
 - **Terminal escapes** in human stderr lines (JSON and NDJSON are escaped).
 - **Symlinked caption sidecars**, which are followed. The operator controls the
   input directory layout.
-- **Hostile multi-user or service deployment.** Network intake channels are not
-  shipped.
+- **Hostile multi-user or service deployment.** anytopdf has no tenant
+  isolation.
 - **The operator and the local environment**: flags, `PATH`,
   `ANYTOPDF_PLUGIN_PATH`, `ANYTOPDF_FONT`, `TMPDIR`.
 - **External providers' own bugs** (FFmpeg, ffprobe, ExifTool, Tesseract, docTR,
