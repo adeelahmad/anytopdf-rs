@@ -55,7 +55,7 @@ pub fn capabilities() -> Result<Value> {
             Ok(json!({"id": schema["$id"]}))
         })
         .collect::<Result<Vec<_>>>()?;
-    let importers: Vec<Value> = ["text", "image", "subtitle", "audio", "ffmpeg-video"]
+    let importers: Vec<Value> = ["text", "html", "image", "subtitle", "audio", "ffmpeg-video"]
         .iter()
         .map(|name| json!({"name": name}))
         .collect();
