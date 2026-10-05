@@ -76,3 +76,5 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libpappl-dev pkg-config poppler-utils
       - name: Build and print a test page
         run: make printer-smoke PYTHON=python3 WARNINGS="-Wall -Wextra -Wno-unused-parameter -Werror"
+      - name: Print over TLS through the remote front
+        run: make printer-remote-smoke PYTHON=python3 WARNINGS="-Wall -Wextra -Wno-unused-parameter -Werror"

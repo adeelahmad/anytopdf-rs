@@ -79,3 +79,4 @@ tests/test_workflows.py
 crates/anytopdf-print/src/ipp.rs
 crates/anytopdf-print/src/receipts.rs
 crates/anytopdf-cli/tests/print_receipts.rs
+helpers/anytopdf-printer/remote-smoke.sh
