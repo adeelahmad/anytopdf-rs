@@ -11,14 +11,18 @@ mod auth;
 mod dnssd;
 mod front;
 mod guard;
+mod ipp;
 mod mdns;
+mod receipts;
 
 pub use allow::{Allowlist, Cidr, TAILNET_RANGES};
 pub use auth::{USERS_SCHEMA, Users, hash_password, parse_basic};
 pub use dnssd::{RESOURCE, SERVICE, SUBTYPES, ServiceSpec};
 pub use front::{Front, FrontConfig, load_tls};
 pub use guard::{Exposure, GuardError, check};
+pub use ipp::IppSummary;
 pub use mdns::{Advertisement, advertise, service_info};
+pub use receipts::{RECEIPT_SCHEMA, Receipts};
 
 /// Default port for both the loopback print helper and the remote front; above
 /// 1024 so neither needs elevated privileges.

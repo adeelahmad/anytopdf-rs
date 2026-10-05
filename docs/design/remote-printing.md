@@ -58,15 +58,15 @@ The helper (`helpers/anytopdf-printer`, PR #14) listens on loopback in plaintext
 
 `rustls` 0.23 (ring provider), `rustls-pki-types` (PEM parsing), `argon2` 0.5, `base64ct`, `mdns-sd` 0.21; all MIT or Apache-2.0, all build on Rust 1.88.
 
-## Follow-ups
+## Receipts and doctor
 
-- Receipts (peer, user) need a metadata channel into the helper's job hand-off.
-- `doctor` lines for remote mode and certificate expiry.
+- The front parses each request's HTTP framing (Content-Length or chunked, answering `Expect: 100-continue` itself) and the IPP operation attributes only, and replaces `requesting-user-name` with the signed-in user, so PAPPL's `job-originating-user-name` (and `ANYTOPDF_PRINT_USER`) is the authenticated user. Document bytes pass through untouched. A connection that signed in once keeps its user for later requests; a new `Authorization` header is re-verified.
+- `--receipts FILE` appends `anytopdf.print-receipt/1` JSON lines (unix time, peer address, user, operation, request id, job name) for Print-Job, Print-URI, Create-Job, Send-Document and Send-URI.
+- `convert` turns `ANYTOPDF_PRINT_JOB_ID/JOB_NAME/USER/FORMAT` into `print.*` source metadata, which the manifest carries and the provenance page shows as "Print job", "Printed by" and "Print format". The `share` profile drops them.
+- `doctor` lists `remote-front`, `anytopdf-printer` and `tailscale` under "Printing" (`printing` in `--json`).
+
+## Remaining follow-ups
+
+- End-to-end test through the real PAPPL helper once it is on main (Linux CI job).
 - Verify that PAPPL accepts requests whose `Host` and `printer-uri` name the front's address rather than loopback; if not, the front must rewrite them or the helper must accept any host.
 - Older iOS releases that browse only `_ipp._tcp` will not see an `_ipps`-only advertisement.
-
-## Unverified assumptions
-
-- Apple clients browse unicast DNS-SD from `b._dns-sd._udp.<search domain>`; confirmed by RFC 6763 and Apple behaviour, not tested here against Tailscale MagicDNS search domains.
-- Tailscale's admin DNS settings can split-DNS a domain to a user resolver but cannot host SRV/PTR records directly (inferred, not checked).
-- Windows and Android do not browse unicast DNS-SD by default (inferred); they use the manual URL path.

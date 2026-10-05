@@ -1,10 +1,12 @@
 //! The remote front: accepts TLS connections from allowed peers, checks HTTP
-//! Basic credentials on the first request, then passes the connection through
-//! to the print helper on localhost. Threads and blocking sockets keep it free
+//! Basic credentials, stamps the signed-in user on each IPP request and
+//! forwards requests to the print helper on localhost. Threads and blocking sockets keep it free
 //! of an async runtime; printing traffic is a handful of connections.
 
 use crate::allow::Allowlist;
 use crate::auth::Users;
+use crate::ipp;
+use crate::receipts::Receipts;
 use anyhow::{Context, Result, bail};
 use rustls::ServerConnection;
 use rustls_pki_types::pem::PemObject;
@@ -22,9 +24,12 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const FAILED_AUTH_DELAY: Duration = Duration::from_secs(1);
 const MAX_HEAD: usize = 16 * 1024;
+const MAX_ATTRIBUTES: usize = 64 * 1024;
 
 const UNAUTHORIZED: &[u8] = b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"anytopdf\", charset=\"UTF-8\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 const HEAD_TOO_LARGE: &[u8] = b"HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+const BAD_REQUEST: &[u8] =
+    b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 const BAD_GATEWAY: &[u8] =
     b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
@@ -40,6 +45,8 @@ pub struct FrontConfig {
     pub allow: Allowlist,
     pub max_connections: usize,
     pub idle_timeout: Duration,
+    /// Appends one line per submitted job when set.
+    pub receipts: Option<Receipts>,
 }
 
 /// Loads a PEM certificate chain and private key (for example the files
@@ -128,87 +135,437 @@ fn handle(tcp: TcpStream, peer: SocketAddr, config: &FrontConfig) -> io::Result<
     tcp.set_read_timeout(Some(POLL))?;
     tcp.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let conn = ServerConnection::new(Arc::clone(&config.tls)).map_err(io::Error::other)?;
-    let mut tls = TlsPump { conn, tcp };
-
-    let mut head = Vec::new();
-    let deadline = Instant::now() + HEAD_TIMEOUT;
-    let head_end = loop {
-        if let Some(pos) = find(&head, b"\r\n\r\n") {
-            break pos + 4;
-        }
-        if head.len() > MAX_HEAD {
-            tls.send(HEAD_TOO_LARGE)?;
-            tls.close();
-            return Ok(());
-        }
-        if Instant::now() > deadline || tls.poll(&mut head)? {
-            return Ok(());
-        }
+    let mut session = Session {
+        tls: TlsPump { conn, tcp },
+        peer,
+        config,
+        upstream: None,
+        stage: Stage::Head,
+        user: None,
+        verified_header: None,
     };
+    let result = session.run();
+    session.tls.close();
+    result
+}
 
-    if !config.users.is_empty() {
-        let header = header_value(&head[..head_end], "authorization");
-        match config.users.authorize(header.as_deref()) {
-            Some(user) => eprintln!("print remote: {peer}: signed in as {user}"),
-            None => {
-                if header.is_some() {
-                    eprintln!("print remote: {peer}: wrong user name or password");
-                    std::thread::sleep(FAILED_AUTH_DELAY);
+/// Where the client-to-helper stream is: reading a request head, collecting
+/// IPP attributes to stamp, or forwarding the rest of a body.
+enum Stage {
+    Head,
+    Attributes(Pending),
+    Body { framing: Framing, chunked: bool },
+}
+
+struct Pending {
+    head: Vec<String>,
+    framing: Framing,
+    declared_len: Option<u64>,
+    decoded: Vec<u8>,
+}
+
+enum Step {
+    Progress,
+    Wait,
+    /// Send this response to the client and close.
+    Reject(&'static [u8]),
+}
+
+struct Session<'a> {
+    tls: TlsPump,
+    peer: SocketAddr,
+    config: &'a FrontConfig,
+    upstream: Option<TcpStream>,
+    stage: Stage,
+    user: Option<String>,
+    verified_header: Option<String>,
+}
+
+impl Session<'_> {
+    fn run(&mut self) -> io::Result<()> {
+        let mut inbuf = Vec::new();
+        let mut buf = vec![0u8; 16 * 1024];
+        let mut client_open = true;
+        let mut last = Instant::now();
+        let started = Instant::now();
+        loop {
+            if client_open {
+                let before = inbuf.len();
+                client_open = !self.tls.poll(&mut inbuf)?;
+                if inbuf.len() != before {
+                    last = Instant::now();
                 }
-                tls.send(UNAUTHORIZED)?;
-                tls.close();
+            }
+            loop {
+                match self.step(&mut inbuf)? {
+                    Step::Progress => {}
+                    Step::Wait => break,
+                    Step::Reject(response) => {
+                        self.tls.send(response)?;
+                        return Ok(());
+                    }
+                }
+            }
+            if !client_open {
+                if !matches!(self.stage, Stage::Head) || !inbuf.is_empty() {
+                    return Ok(());
+                }
+                match &self.upstream {
+                    Some(up) => {
+                        let _ = up.shutdown(Shutdown::Write);
+                    }
+                    None => return Ok(()),
+                }
+            }
+            if self.upstream.is_none() && self.user.is_none() && !self.config.users.is_empty() {
+                if started.elapsed() > HEAD_TIMEOUT {
+                    return Ok(());
+                }
+                continue;
+            }
+            if let Some(up) = self.upstream.as_mut() {
+                match up.read(&mut buf) {
+                    Ok(0) => return Ok(()),
+                    Ok(n) => {
+                        self.tls.send(&buf[..n])?;
+                        last = Instant::now();
+                    }
+                    Err(e) if is_timeout(&e) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            if last.elapsed() > self.config.idle_timeout {
                 return Ok(());
             }
         }
     }
 
-    let mut upstream = match TcpStream::connect_timeout(&config.upstream, CONNECT_TIMEOUT) {
-        Ok(stream) => stream,
-        Err(e) => {
-            tls.send(BAD_GATEWAY)?;
-            tls.close();
-            return Err(io::Error::new(
-                e.kind(),
-                format!("print helper at {} is unreachable: {e}", config.upstream),
-            ));
-        }
-    };
-    upstream.set_nodelay(true)?;
-    upstream.set_read_timeout(Some(POLL))?;
-    upstream.set_write_timeout(Some(WRITE_TIMEOUT))?;
-    upstream.write_all(&head)?;
-
-    let mut buf = vec![0u8; 16 * 1024];
-    let mut client_open = true;
-    let mut last = Instant::now();
-    loop {
-        if client_open {
-            let mut data = Vec::new();
-            let eof = tls.poll(&mut data)?;
-            if !data.is_empty() {
-                upstream.write_all(&data)?;
-                last = Instant::now();
+    fn step(&mut self, inbuf: &mut Vec<u8>) -> io::Result<Step> {
+        match std::mem::replace(&mut self.stage, Stage::Head) {
+            Stage::Head => self.head(inbuf),
+            Stage::Attributes(mut pending) => {
+                let done = pending.framing.decode(inbuf, &mut pending.decoded)?;
+                let end = match ipp::attributes_len(&pending.decoded) {
+                    Ok(Some(end)) => end,
+                    Ok(None) if done || pending.decoded.len() > MAX_ATTRIBUTES => {
+                        return Ok(Step::Reject(BAD_REQUEST));
+                    }
+                    Ok(None) => {
+                        self.stage = Stage::Attributes(pending);
+                        return Ok(Step::Wait);
+                    }
+                    Err(_) => return Ok(Step::Reject(BAD_REQUEST)),
+                };
+                let Ok((attributes, summary)) =
+                    ipp::stamp_user(&pending.decoded[..end], self.user.as_deref())
+                else {
+                    return Ok(Step::Reject(BAD_REQUEST));
+                };
+                if summary.submits_job() {
+                    eprintln!(
+                        "print remote: {}: {} from {}",
+                        self.peer.ip(),
+                        summary.operation_name(),
+                        self.user.as_deref().unwrap_or("(no user)")
+                    );
+                    if let Some(receipts) = &self.config.receipts {
+                        receipts.record(self.peer, self.user.as_deref(), &summary);
+                    }
+                }
+                let chunked = matches!(pending.framing, Framing::Chunked(_));
+                let mut head = pending.head;
+                match pending.declared_len {
+                    Some(len) => head.push(format!(
+                        "Content-Length: {}",
+                        len - end as u64 + attributes.len() as u64
+                    )),
+                    None => head.push("Transfer-Encoding: chunked".into()),
+                }
+                let mut out = head_bytes(&head);
+                let mut body = attributes;
+                body.extend_from_slice(&pending.decoded[end..]);
+                encode(&mut out, &body, chunked, done);
+                self.upstream()?.write_all(&out)?;
+                if !done {
+                    self.stage = Stage::Body {
+                        framing: pending.framing,
+                        chunked,
+                    };
+                }
+                Ok(Step::Progress)
             }
-            if eof {
-                client_open = false;
-                let _ = upstream.shutdown(Shutdown::Write);
+            Stage::Body {
+                mut framing,
+                chunked,
+            } => {
+                let mut data = Vec::new();
+                let done = framing.decode(inbuf, &mut data)?;
+                if data.is_empty() && !done {
+                    self.stage = Stage::Body { framing, chunked };
+                    return Ok(Step::Wait);
+                }
+                let mut out = Vec::with_capacity(data.len() + 16);
+                encode(&mut out, &data, chunked, done);
+                self.upstream()?.write_all(&out)?;
+                if !done {
+                    self.stage = Stage::Body { framing, chunked };
+                }
+                Ok(Step::Progress)
             }
-        }
-        match upstream.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                tls.send(&buf[..n])?;
-                last = Instant::now();
-            }
-            Err(e) if is_timeout(&e) => {}
-            Err(e) => return Err(e),
-        }
-        if last.elapsed() > config.idle_timeout {
-            break;
         }
     }
-    tls.close();
-    Ok(())
+
+    fn head(&mut self, inbuf: &mut Vec<u8>) -> io::Result<Step> {
+        let Some(pos) = find(inbuf, b"\r\n\r\n") else {
+            if inbuf.len() > MAX_HEAD {
+                return Ok(Step::Reject(HEAD_TOO_LARGE));
+            }
+            return Ok(Step::Wait);
+        };
+        let raw: Vec<u8> = inbuf.drain(..pos + 4).collect();
+        let Ok(text) = std::str::from_utf8(&raw[..pos]) else {
+            return Ok(Step::Reject(BAD_REQUEST));
+        };
+        let mut lines = text.split("\r\n");
+        let request_line = lines.next().unwrap_or_default().to_string();
+        let headers: Vec<(&str, &str)> = lines
+            .filter_map(|l| l.split_once(':'))
+            .map(|(k, v)| (k.trim(), v.trim()))
+            .collect();
+        let get = |name: &str| {
+            headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .map(|(_, v)| *v)
+        };
+
+        if !self.config.users.is_empty() {
+            match get("authorization") {
+                Some(h) if self.verified_header.as_deref() == Some(h) => {}
+                Some(h) => match self.config.users.authorize(Some(h)) {
+                    Some(user) => {
+                        if self.user.as_deref() != Some(&user) {
+                            eprintln!("print remote: {}: signed in as {user}", self.peer.ip());
+                        }
+                        self.user = Some(user);
+                        self.verified_header = Some(h.to_string());
+                    }
+                    None => {
+                        eprintln!(
+                            "print remote: {}: wrong user name or password",
+                            self.peer.ip()
+                        );
+                        std::thread::sleep(FAILED_AUTH_DELAY);
+                        return Ok(Step::Reject(UNAUTHORIZED));
+                    }
+                },
+                None if self.user.is_some() => {}
+                None => return Ok(Step::Reject(UNAUTHORIZED)),
+            }
+        }
+
+        let chunked =
+            get("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked"));
+        let declared_len = if chunked {
+            None
+        } else {
+            match get("content-length").map(|v| v.parse::<u64>()) {
+                Some(Ok(n)) => Some(n),
+                Some(Err(_)) => return Ok(Step::Reject(BAD_REQUEST)),
+                None => Some(0),
+            }
+        };
+        let framing = match declared_len {
+            Some(n) => Framing::Length(n),
+            None => Framing::Chunked(ChunkDecoder::default()),
+        };
+        if get("expect").is_some_and(|v| v.eq_ignore_ascii_case("100-continue")) {
+            self.tls.send(b"HTTP/1.1 100 Continue\r\n\r\n")?;
+        }
+        if self.upstream.is_none() {
+            match TcpStream::connect_timeout(&self.config.upstream, CONNECT_TIMEOUT) {
+                Ok(up) => {
+                    up.set_nodelay(true)?;
+                    up.set_read_timeout(Some(POLL))?;
+                    up.set_write_timeout(Some(WRITE_TIMEOUT))?;
+                    self.upstream = Some(up);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "print remote: print helper at {} is unreachable: {e}",
+                        self.config.upstream
+                    );
+                    return Ok(Step::Reject(BAD_GATEWAY));
+                }
+            }
+        }
+
+        let mut head = vec![request_line.clone()];
+        head.extend(
+            headers
+                .iter()
+                .filter(|(k, _)| {
+                    ![
+                        "authorization",
+                        "expect",
+                        "content-length",
+                        "transfer-encoding",
+                    ]
+                    .iter()
+                    .any(|drop| k.eq_ignore_ascii_case(drop))
+                })
+                .map(|(k, v)| format!("{k}: {v}")),
+        );
+        let is_ipp = request_line.starts_with("POST ")
+            && get("content-type")
+                .is_some_and(|v| v.to_ascii_lowercase().starts_with("application/ipp"));
+        if is_ipp && declared_len != Some(0) {
+            self.stage = Stage::Attributes(Pending {
+                head,
+                framing,
+                declared_len,
+                decoded: Vec::new(),
+            });
+            return Ok(Step::Progress);
+        }
+        match declared_len {
+            Some(n) => head.push(format!("Content-Length: {n}")),
+            None => head.push("Transfer-Encoding: chunked".into()),
+        }
+        self.upstream()?.write_all(&head_bytes(&head))?;
+        if declared_len != Some(0) {
+            self.stage = Stage::Body { framing, chunked };
+        }
+        Ok(Step::Progress)
+    }
+
+    fn upstream(&mut self) -> io::Result<&mut TcpStream> {
+        self.upstream
+            .as_mut()
+            .ok_or_else(|| io::Error::other("no upstream connection"))
+    }
+}
+
+fn head_bytes(lines: &[String]) -> Vec<u8> {
+    let mut out = lines.join("\r\n").into_bytes();
+    out.extend_from_slice(b"\r\n\r\n");
+    out
+}
+
+/// Appends body bytes in the outgoing framing; a chunked body ends with the
+/// zero-length chunk once `last` is set.
+fn encode(out: &mut Vec<u8>, data: &[u8], chunked: bool, last: bool) {
+    if !chunked {
+        out.extend_from_slice(data);
+        return;
+    }
+    if !data.is_empty() {
+        out.extend_from_slice(format!("{:x}\r\n", data.len()).as_bytes());
+        out.extend_from_slice(data);
+        out.extend_from_slice(b"\r\n");
+    }
+    if last {
+        out.extend_from_slice(b"0\r\n\r\n");
+    }
+}
+
+enum Framing {
+    Length(u64),
+    Chunked(ChunkDecoder),
+}
+
+impl Framing {
+    /// Moves decoded body bytes from the front of `input` into `out`; true once
+    /// the body is complete.
+    fn decode(&mut self, input: &mut Vec<u8>, out: &mut Vec<u8>) -> io::Result<bool> {
+        match self {
+            Framing::Length(remaining) => {
+                let take = (*remaining).min(input.len() as u64) as usize;
+                out.extend(input.drain(..take));
+                *remaining -= take as u64;
+                Ok(*remaining == 0)
+            }
+            Framing::Chunked(decoder) => decoder.decode(input, out),
+        }
+    }
+}
+
+#[derive(Default)]
+enum ChunkState {
+    #[default]
+    Size,
+    Data(u64),
+    DataEnd,
+    Trailer,
+}
+
+#[derive(Default)]
+struct ChunkDecoder {
+    state: ChunkState,
+}
+
+impl ChunkDecoder {
+    fn decode(&mut self, input: &mut Vec<u8>, out: &mut Vec<u8>) -> io::Result<bool> {
+        let bad = || io::Error::new(io::ErrorKind::InvalidData, "malformed chunked body");
+        loop {
+            match self.state {
+                ChunkState::Size => {
+                    let Some(i) = find(input, b"\r\n") else {
+                        return if input.len() > 1024 {
+                            Err(bad())
+                        } else {
+                            Ok(false)
+                        };
+                    };
+                    let line = std::str::from_utf8(&input[..i]).map_err(|_| bad())?;
+                    let size = line.split(';').next().unwrap_or_default().trim();
+                    let size = u64::from_str_radix(size, 16).map_err(|_| bad())?;
+                    input.drain(..i + 2);
+                    self.state = if size == 0 {
+                        ChunkState::Trailer
+                    } else {
+                        ChunkState::Data(size)
+                    };
+                }
+                ChunkState::Data(remaining) => {
+                    if input.is_empty() {
+                        return Ok(false);
+                    }
+                    let take = remaining.min(input.len() as u64) as usize;
+                    out.extend(input.drain(..take));
+                    self.state = if take as u64 == remaining {
+                        ChunkState::DataEnd
+                    } else {
+                        ChunkState::Data(remaining - take as u64)
+                    };
+                }
+                ChunkState::DataEnd => {
+                    if input.len() < 2 {
+                        return Ok(false);
+                    }
+                    if &input[..2] != b"\r\n" {
+                        return Err(bad());
+                    }
+                    input.drain(..2);
+                    self.state = ChunkState::Size;
+                }
+                ChunkState::Trailer => {
+                    let Some(i) = find(input, b"\r\n") else {
+                        return if input.len() > MAX_HEAD {
+                            Err(bad())
+                        } else {
+                            Ok(false)
+                        };
+                    };
+                    input.drain(..i + 2);
+                    if i == 0 {
+                        self.state = ChunkState::Size;
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Drives a rustls server connection over a TCP socket with a short read
@@ -278,28 +635,42 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// First value of a header in an HTTP request head, matched case-insensitively.
-fn header_value(head: &[u8], name: &str) -> Option<String> {
-    let text = std::str::from_utf8(head).ok()?;
-    text.split("\r\n").skip(1).find_map(|line| {
-        let (key, value) = line.split_once(':')?;
-        key.trim()
-            .eq_ignore_ascii_case(name)
-            .then(|| value.trim().to_string())
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn header_lookup_ignores_case_and_request_line() {
-        let head = b"POST /ipp/print HTTP/1.1\r\nHost: x\r\nAUTHORIZATION:  Basic abc \r\n\r\n";
-        assert_eq!(
-            header_value(head, "authorization").as_deref(),
-            Some("Basic abc")
+    fn chunked_bodies_decode_across_reads_and_skip_trailers() {
+        let mut decoder = ChunkDecoder::default();
+        let mut out = Vec::new();
+        let mut input = b"4;ext=1\r\nWiki\r\n5\r\npe".to_vec();
+        assert!(!decoder.decode(&mut input, &mut out).unwrap());
+        input.extend_from_slice(b"dia\r\n0\r\nX-Trailer: 1\r\n\r\nNEXT");
+        assert!(decoder.decode(&mut input, &mut out).unwrap());
+        assert_eq!(out, b"Wikipedia");
+        assert_eq!(input, b"NEXT");
+    }
+
+    #[test]
+    fn malformed_chunk_sizes_are_errors() {
+        let mut out = Vec::new();
+        assert!(
+            ChunkDecoder::default()
+                .decode(&mut b"zz\r\n".to_vec(), &mut out)
+                .is_err()
         );
-        assert_eq!(header_value(head, "expect"), None);
+        assert!(
+            ChunkDecoder::default()
+                .decode(&mut b"1\r\nabc\r\n".to_vec(), &mut out)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn chunked_encoding_ends_with_the_zero_chunk() {
+        let mut out = Vec::new();
+        encode(&mut out, b"abc", true, false);
+        encode(&mut out, b"", true, true);
+        assert_eq!(out, b"3\r\nabc\r\n0\r\n\r\n");
     }
 }

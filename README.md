@@ -219,7 +219,13 @@ anytopdf print remote --listen 100.101.102.103:8631 --allow-tailnet \
 ```
 
 It refuses a non-loopback listener without users and an allowlist, and
-`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. Discovery:
+`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. The signed-in
+user replaces the IPP `requesting-user-name`, so the helper records who really
+printed; `--receipts receipts.jsonl` also appends one `anytopdf.print-receipt/1`
+line per job with the time, peer address, user and job name. The PDF of a print
+job carries the job id, name, user and format as `print.*` source metadata in the
+manifest and as a receipt on the provenance page (`archive` profile only; `share`
+drops them). `anytopdf doctor` reports the print helper and Tailscale. Discovery:
 `anytopdf print advertise` announces the printer over multicast DNS on the local
 network (IPP Everywhere `_ipps._tcp` with the AirPrint `_universal` subtype);
 multicast does not cross a VPN, so `anytopdf print dns-sd --domain home.example
