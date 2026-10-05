@@ -168,7 +168,9 @@ paths. If embedding fails, the same JSON is written beside the PDF as
 (`schemas/extract.schema.json`) with `origin` (`embedded` or `sidecar`), the
 `manifest`, the `chunks` and `warnings`. A manifest or chunks `schema_version`
 other than the supported one adds an `extract.version-mismatch` warning (also
-on stderr) but still exits 0. A PDF with no embedded or sidecar manifest exits
+on stderr) but still exits 0. A version-matched manifest or chunks file that
+does not match its schema exits 3 (input); the error names the document and the
+first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
 ## Roadmap

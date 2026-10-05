@@ -6,6 +6,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `extract` exits 3 (input) when a version-matched manifest or chunks file does not match its
+  schema, naming the document and the first failing JSON path; other `schema_version` values
+  still warn and exit 0.
 - `--events` streams NDJSON progress events (`anytopdf.events/1`) to stderr; failing runs
   end with one failed `run.finished` and print no human `error:` line.
 - The invisible text layer is content-only; provenance moves out of it (supersedes the

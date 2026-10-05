@@ -53,6 +53,29 @@ pub fn extract(path: &Path) -> Result<Value, CliError> {
             );
             crate::convert::print_diagnostic(&d);
             warnings.push(json!({"code": d.code.as_str(), "message": d.message}));
+            continue;
+        }
+        let text = crate::capabilities::schema_text(label)
+            .ok_or_else(|| fail(ExitClass::Internal, format!("no schema for {label}")))?;
+        let schema: Value = tag(ExitClass::Internal, serde_json::from_str(text))?;
+        let errors = anytopdf_core::schema::validate(&schema, value);
+        if let Some(first) = errors.first() {
+            let path = if first.path.is_empty() {
+                "/"
+            } else {
+                &first.path
+            };
+            let more = match errors.len() - 1 {
+                0 => String::new(),
+                n => format!(" (+{n} more)"),
+            };
+            return Err(fail(
+                ExitClass::Input,
+                format!(
+                    "{label} does not match {expected}: {path}: {}{more}",
+                    first.message
+                ),
+            ));
         }
     }
     Ok(json!({
