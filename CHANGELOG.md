@@ -6,6 +6,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf queue` (`add`, `work`, `status`, `secret`) adds a folder-backed job queue
+  with a watched inbox and Standard Webhooks (`job.received`, `job.completed`,
+  `job.failed`) signed with HMAC-SHA256 and retried from a durable outbox; new
+  `anytopdf.job/1` and `anytopdf.webhook/1` schemas. Other commands are unchanged
+  and open no sockets.
 - `extract` exits 3 (input) when a version-matched manifest or chunks file
   does not match its schema, naming the document and the first failing JSON path;
   other `schema_version` values still warn and exit 0.

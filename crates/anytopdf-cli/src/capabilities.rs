@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::exit::ExitClass;
 
-const SCHEMAS: [(&str, &str); 9] = [
+const SCHEMAS: [(&str, &str); 11] = [
     (
         "convert",
         include_str!("../../../schemas/convert.schema.json"),
@@ -37,6 +37,11 @@ const SCHEMAS: [(&str, &str); 9] = [
     (
         "events",
         include_str!("../../../schemas/events.schema.json"),
+    ),
+    ("job", include_str!("../../../schemas/job.schema.json")),
+    (
+        "webhook",
+        include_str!("../../../schemas/webhook.schema.json"),
     ),
 ];
 

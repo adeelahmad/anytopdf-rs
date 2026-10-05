@@ -182,3 +182,19 @@ command recovers them.
 
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
 `capabilities` command reports available providers.
+
+## Job queue and webhooks
+
+`anytopdf queue` sits outside the pipeline: it never calls the pipeline in-process.
+Each job runs the same `convert` command as a child process with `--events --json`,
+so exit codes, NDJSON events and schemas are unchanged and a crashing conversion or
+plugin cannot take the worker down. The queue is a directory: job records
+(`anytopdf.job/1`) change state by atomic rename between `jobs/pending`, `running`,
+`done` and `failed`, which lets several workers share it without locks, and a
+running job carries a lease after which another worker requeues it. The watched
+inbox is the only intake channel so far; it holds no network listener.
+
+Webhook messages (`anytopdf.webhook/1`) are written to `webhooks/pending/` before
+they are sent, signed per Standard Webhooks with HMAC-SHA256, and retried with
+backoff, giving at-least-once delivery that survives a worker restart. Payloads use
+file names and queue-relative paths only.

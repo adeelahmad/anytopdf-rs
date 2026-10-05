@@ -65,6 +65,60 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Run a folder-backed conversion queue with a watched inbox and signed webhooks.
+    Queue {
+        #[command(subcommand)]
+        command: QueueCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum QueueCommand {
+    /// Add a conversion job to a queue directory and print its id.
+    Add {
+        /// Queue directory (created if missing).
+        queue: PathBuf,
+        /// Files or directories to convert.
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Convert options after `--`, for example `-- --ocr off --profile share`.
+        #[arg(last = true)]
+        convert: Vec<String>,
+    },
+    /// Convert queued jobs and files dropped into the inbox, delivering webhooks.
+    Work(QueueWorkArgs),
+    /// List the jobs and webhook deliveries in a queue directory.
+    Status {
+        /// Queue directory.
+        queue: PathBuf,
+    },
+    /// Print a new webhook signing secret for ANYTOPDF_WEBHOOK_SECRET.
+    Secret,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct QueueWorkArgs {
+    /// Queue directory (created if missing).
+    pub(crate) queue: PathBuf,
+    /// Exit once the queue and inbox are empty instead of watching.
+    #[arg(long)]
+    pub(crate) once: bool,
+    /// Seconds between inbox scans; a file is claimed once two scans agree on it.
+    #[arg(long, default_value_t = 2.0)]
+    pub(crate) poll_interval: f64,
+    /// Seconds before a running conversion is stopped and its job fails.
+    #[arg(long, default_value = "3600", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) job_timeout: u64,
+    /// POST signed job.received, job.completed and job.failed events here (repeatable);
+    /// requires ANYTOPDF_WEBHOOK_SECRET.
+    #[arg(long)]
+    pub(crate) webhook: Vec<String>,
+    /// Suppress the worker log on stderr.
+    #[arg(short, long)]
+    pub(crate) quiet: bool,
+    /// Convert options for inbox files after `--`, for example `-- --ocr off`.
+    #[arg(last = true)]
+    pub(crate) convert: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
