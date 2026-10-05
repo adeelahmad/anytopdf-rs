@@ -20,8 +20,10 @@ fn definitions(prefix: &str) -> Vec<String> {
             let relative = path
                 .strip_prefix(&tests)
                 .expect("path under tests")
-                .display()
-                .to_string();
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
             let text = fs::read_to_string(&path).expect("read test source");
             for (index, line) in text.lines().enumerate() {
                 if line.starts_with(&format!("fn {prefix}"))
