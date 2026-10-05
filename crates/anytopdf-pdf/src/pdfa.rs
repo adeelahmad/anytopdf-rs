@@ -332,8 +332,9 @@ impl Renderer for PdfARenderer {
 impl PdfARenderer {
     fn visual_page(&self, doc: &mut Document, font: &TextFont, unit: &Unit, image: Image) {
         let (w_px, h_px) = image.size();
-        let page_w_mm = w_px as f32 / self.dpi * 25.4;
-        let page_h_mm = h_px as f32 / self.dpi * 25.4;
+        let dpi = crate::layout::unit_dpi(unit, self.dpi);
+        let page_w_mm = w_px as f32 / dpi * 25.4;
+        let page_h_mm = h_px as f32 / dpi * 25.4;
         let (w, h) = (page_w_mm * PT_PER_MM, page_h_mm * PT_PER_MM);
         let mut page = doc.start_page_with(PageSettings::new(w, h));
         let mut surface = page.surface();
@@ -521,6 +522,36 @@ mod tests {
             .keys()
             .map(|n| doc.extract_text(&[*n]).unwrap_or_default())
             .collect()
+    }
+
+    #[test]
+    fn visual_dpi_metadata_sets_the_physical_page_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let visual = dir.path().join("page.png");
+        ::image::GrayImage::new(600, 300).save(&visual).unwrap();
+        let source = SourceRecord::new(visual.clone());
+        let mut unit = Unit::visual(source.id, visual);
+        unit.metadata.insert("visual.dpi".into(), "300".into());
+        let graph = DocumentGraph {
+            units: vec![unit],
+            sources: vec![source],
+            ..Default::default()
+        };
+        let (bytes, _) = render(dir.path(), &graph, "dpi.pdf");
+        let doc = lopdf::Document::load_mem(&bytes).unwrap();
+        let first = *doc.get_pages().values().next().unwrap();
+        let media = doc
+            .get_object(first)
+            .and_then(lopdf::Object::as_dict)
+            .and_then(|page| page.get(b"MediaBox"))
+            .and_then(lopdf::Object::as_array)
+            .unwrap();
+        let size: Vec<f32> = media[2..]
+            .iter()
+            .map(|v| v.as_float().unwrap().round())
+            .collect();
+        // 600 x 300 pixels at 300 dpi is 2 x 1 inches.
+        assert_eq!(size, [144.0, 72.0]);
     }
 
     #[test]

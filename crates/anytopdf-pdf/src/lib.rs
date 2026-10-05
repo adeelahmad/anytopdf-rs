@@ -224,13 +224,7 @@ impl SearchablePdfRenderer {
         let dimensions = ::image::ImageReader::open(visual)?
             .with_guessed_format()?
             .into_dimensions()?;
-        // Print-job pages carry their own resolution; other visuals use the default.
-        let dpi = unit
-            .metadata
-            .get("visual.dpi")
-            .and_then(|v| v.parse::<f32>().ok())
-            .filter(|v| v.is_finite() && *v > 0.0)
-            .unwrap_or(self.dpi);
+        let dpi = layout::unit_dpi(unit, self.dpi);
         let page_w_mm = dimensions.0 as f32 / dpi * 25.4;
         let page_h_mm = dimensions.1 as f32 / dpi * 25.4;
 
