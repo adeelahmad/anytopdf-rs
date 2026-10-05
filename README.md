@@ -177,8 +177,8 @@ first failing JSON path. A PDF with no embedded or sidecar manifest exits
 
 anytopdf is meant to produce an evidence file: one PDF that is both the human
 rendition and the machine index (embedded manifest, chunks, provenance and hashes),
-works offline, and is ready for agents to read. `- [x]` is implemented on the sprint 2
-branch and `- [ ]` is planned.
+works offline, and is ready for agents to read. `- [x]` is implemented on `main`
+and `- [ ]` is planned.
 Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Searchable text and diagnostics
