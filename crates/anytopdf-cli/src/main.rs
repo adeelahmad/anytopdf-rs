@@ -7,6 +7,7 @@ mod environment;
 mod events;
 mod exit;
 mod extract;
+mod mcp;
 mod naming;
 mod publish;
 mod queue;
@@ -45,16 +46,7 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<(), CliError> {
-    let mut global_args = vec![format!("--plugin-timeout={}", cli.plugin_timeout)];
-    if cli.no_plugins {
-        global_args.push("--no-plugins".into());
-    }
-    for kind in &cli.allow_plugin_kind {
-        global_args.push(format!("--allow-plugin-kind={kind}"));
-    }
-    for kind in &cli.deny_plugin_kind {
-        global_args.push(format!("--deny-plugin-kind={kind}"));
-    }
+    let forwarded = mcp::Forwarded::from_cli(&cli);
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
         timeout: Duration::from_secs(cli.plugin_timeout),
@@ -84,7 +76,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
             Ok(())
         }
         Commands::Probe { input, .. } => probe(&input, &policy),
-        Commands::Queue { command } => queue::run(command, global_args),
+        Commands::Queue { command } => queue::run(command, forwarded.0),
+        Commands::Mcp => Ok(mcp::serve(forwarded)?),
     }
 }
 

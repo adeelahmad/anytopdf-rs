@@ -72,6 +72,8 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: QueueCommand,
     },
+    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    Mcp,
 }
 
 #[derive(Debug, Subcommand)]
@@ -142,7 +144,7 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) fail_fast: bool,
 
-    /// Renderer plugin that writes the output.
+    /// Renderer plugin that writes the output: `pdf` or `pdfa` (PDF/A-3b).
     #[arg(long, default_value = "pdf")]
     pub(crate) renderer: String,
 
