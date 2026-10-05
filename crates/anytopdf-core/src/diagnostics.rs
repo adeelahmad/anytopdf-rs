@@ -19,6 +19,7 @@ pub enum DiagnosticCode {
     ProviderFailed,
     OcrFallback,
     FramesNotImported,
+    MembersNotImported,
     LossyDecode,
     TranscriptAmbiguous,
     CaptionUnreadable,
@@ -42,6 +43,7 @@ impl DiagnosticCode {
         Self::ProviderFailed,
         Self::OcrFallback,
         Self::FramesNotImported,
+        Self::MembersNotImported,
         Self::LossyDecode,
         Self::TranscriptAmbiguous,
         Self::CaptionUnreadable,
@@ -65,6 +67,7 @@ impl DiagnosticCode {
             Self::ProviderFailed => "provider.failed",
             Self::OcrFallback => "ocr.fallback",
             Self::FramesNotImported => "input.frames-not-imported",
+            Self::MembersNotImported => "input.members-not-imported",
             Self::LossyDecode => "input.lossy-decode",
             Self::TranscriptAmbiguous => "transcript.ambiguous",
             Self::CaptionUnreadable => "caption.unreadable",
@@ -178,7 +181,7 @@ mod tests {
 
     #[test]
     fn codes_have_unique_stable_strings() {
-        assert_eq!(DiagnosticCode::ALL.len(), 19);
+        assert_eq!(DiagnosticCode::ALL.len(), 20);
         let strings: Vec<&str> = DiagnosticCode::ALL.iter().map(|c| c.as_str()).collect();
         let unique: std::collections::BTreeSet<&str> = strings.iter().copied().collect();
         assert_eq!(unique.len(), strings.len(), "codes must be pairwise unique");
@@ -189,6 +192,7 @@ mod tests {
         assert_eq!(ProviderMissing.as_str(), "provider.missing");
         assert_eq!(OcrFallback.as_str(), "ocr.fallback");
         assert_eq!(FramesNotImported.as_str(), "input.frames-not-imported");
+        assert_eq!(MembersNotImported.as_str(), "input.members-not-imported");
         assert_eq!(LossyDecode.as_str(), "input.lossy-decode");
         assert_eq!(TranscriptAmbiguous.as_str(), "transcript.ambiguous");
         assert_eq!(PluginWarning.as_str(), "plugin.warning");
@@ -196,7 +200,7 @@ mod tests {
 
     #[test]
     fn only_optional_provider_notices_are_informational() {
-        assert_eq!(DiagnosticCode::ALL.len(), 19);
+        assert_eq!(DiagnosticCode::ALL.len(), 20);
         let info = [ProviderMissing, OcrFallback, ManifestSidecar];
         for code in DiagnosticCode::ALL {
             let expected = if info.contains(code) {
@@ -222,7 +226,7 @@ mod tests {
 
     #[test]
     fn wire_form_round_trips_every_code() {
-        assert_eq!(DiagnosticCode::ALL.len(), 19);
+        assert_eq!(DiagnosticCode::ALL.len(), 20);
         for code in DiagnosticCode::ALL {
             let wire = Diagnostic::new(*code, "msg with [brackets]").to_string();
             let parsed = Diagnostic::from_wire(&wire);

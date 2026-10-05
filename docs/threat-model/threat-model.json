@@ -1,0 +1,925 @@
+{
+  "spec_version": 1,
+  "repository": "https://github.com/adeelahmad/anytopdf-rs",
+  "commit": "35bc4072837e4453cad187f4417dc3499daba25d",
+  "date": "2026-10-05",
+  "scope_subpath": null,
+  "description": "A local CLI that converts a user's images, text, subtitles, video and audio into one searchable PDF with an invisible OCR/caption layer and an embedded JSON manifest, using optional local tools and trusted runtime plugins. It runs with the user's permissions and has no network listener. Input file contents and names are the untrusted surface; flags, environment and installed plugins are trusted.",
+  "confidence": {
+    "documented": 204,
+    "inferred": 10
+  },
+  "components": [
+    {
+      "name": "cli-commands",
+      "entry_points": [
+        "convert"
+      ],
+      "touches": [
+        "env",
+        "filesystem"
+      ],
+      "in_scope": true,
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "name": "cli-extract",
+      "entry_points": [
+        "extract"
+      ],
+      "touches": [
+        "filesystem"
+      ],
+      "in_scope": true,
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "name": "input-importers",
+      "entry_points": [
+        "discover_inputs",
+        "image-importer",
+        "text-importer",
+        "subtitle-importer",
+        "video-importer"
+      ],
+      "touches": [
+        "child_processes",
+        "filesystem"
+      ],
+      "in_scope": true,
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "name": "provider-adapters",
+      "entry_points": [
+        "caption-enricher",
+        "metadata-enricher",
+        "ocr-enricher"
+      ],
+      "touches": [
+        "child_processes",
+        "filesystem",
+        "network"
+      ],
+      "in_scope": true,
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "name": "plugin-host",
+      "entry_points": [
+        "plugin-discovery",
+        "plugin-response"
+      ],
+      "touches": [
+        "child_processes",
+        "env",
+        "filesystem"
+      ],
+      "in_scope": true,
+      "provenance": "documented",
+      "source": "README \"Plugin model\" \"discovered from `PATH` and directories in `ANYTOPDF_PLUGIN_PATH`\""
+    },
+    {
+      "name": "pdf-renderer",
+      "entry_points": [],
+      "touches": [
+        "env",
+        "filesystem"
+      ],
+      "in_scope": true,
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    }
+  ],
+  "out_of_scope": [
+    {
+      "item": "release-tooling",
+      "reason": "scripts/, Makefile and CI are build tooling, not part of the shipped binary (§1.3)",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "item": "example-plugin",
+      "reason": "examples/anytopdf-plugin-example.py is a demonstration, not built into the binary (§1.3)",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "item": "test-suites",
+      "reason": "tests/, crates/*/tests and #[cfg(test)] code are not compiled into release builds (§1.3)",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "item": "third-party-plugins",
+      "reason": "installed plugin executables are trusted operator-chosen code (§1.3)",
+      "provenance": "documented",
+      "source": "README \"Diagnostics and strict mode\" \"Install only trusted plugins or use `--no-plugins`\""
+    }
+  ],
+  "trust_boundaries": [
+    {
+      "component": "cli-commands",
+      "boundary": "input names and contents cross from the input author; flags and environment come from the trusted operator",
+      "reachability_precondition": "input names or contents reach naming, publishing, redaction or diagnostics; hostile flag values are trusted-input",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "component": "cli-extract",
+      "boundary": "PDF bytes and sibling sidecar files passed to extract are untrusted",
+      "reachability_precondition": "reachable from the bytes of a PDF passed to extract or the sidecar files beside it",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "component": "input-importers",
+      "boundary": "input bytes, file names, directory layout and sibling sidecars come from the input author",
+      "reachability_precondition": "reachable from input bytes, file names or directory layout under a path the operator passed",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "component": "provider-adapters",
+      "boundary": "input content reaches external providers; providers themselves are trusted code",
+      "reachability_precondition": "reachable from input content seen by ExifTool, ffprobe, FFmpeg or OCR on a derived workspace PNG",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "component": "plugin-host",
+      "boundary": "plugin response JSON is validated data; the plugin process is trusted code",
+      "reachability_precondition": "response validation: reachable from a plugin response file; discovery needs a PATH or ANYTOPDF_PLUGIN_PATH directory (excluded)",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Host validation and execution policy\""
+    },
+    {
+      "component": "pdf-renderer",
+      "boundary": "graph text and images derived from input are rendered; under --profile share the output reader is a third party",
+      "reachability_precondition": "reachable when graph text or images derived from input reach the renderer",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    }
+  ],
+  "entry_points": [
+    {
+      "entry_point": "convert",
+      "parameter": "input-paths",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "choose which files and trees to convert",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "input-bytes",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "bound input size yourself (D4); integrity claims are project-owned",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "names-in-scanned-tree",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — inputs-never-overwritten",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "transcript-files",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "pass only files you mean to embed",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "README \"`--transcript` is never silently ignored\""
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "output-destinations",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "put outputs outside input directories",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "README \"Put outputs outside input directories\""
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "filter-regex",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "none; linear-time regex",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "video-numeric-flags",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "values are range-checked; bad values exit 2",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "README \"Exit codes\" \"Invalid option or value\""
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "frame-caps",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "set a non-zero cap for untrusted media",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "README \"`--max-video-frames` also bounds extracted frames per pass\""
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "profile-and-mode-flags",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "choose share before sharing outputs",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "lang-ocr-renderer",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "choose only installed, trusted runtime renderers",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"`convert --renderer runtime:NAME`\""
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "plugin-flags",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "use --no-plugins where installed plugins are not trusted",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "ANYTOPDF_FONT",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "point it only at a trusted TTF file",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "convert",
+      "parameter": "SOURCE_DATE_EPOCH",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "an invalid value exits 2",
+      "component": "cli-commands",
+      "provenance": "documented",
+      "source": "README \"an invalid value exits 2\""
+    },
+    {
+      "entry_point": "discover_inputs",
+      "parameter": "tree-depth-and-file-count",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "do not scan untrusted trees without resource limits (D4)",
+      "component": "input-importers",
+      "provenance": "inferred",
+      "source": "open question Q8"
+    },
+    {
+      "entry_point": "image-importer",
+      "parameter": "image-pixels-dimensions-frames",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "bound input size yourself (D4); integrity claims are project-owned",
+      "component": "input-importers",
+      "provenance": "documented",
+      "source": "README \"Security and plugins\" \"size and page caps\" unchecked"
+    },
+    {
+      "entry_point": "text-importer",
+      "parameter": "text-file",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "bound input size yourself (D4); integrity claims are project-owned",
+      "component": "input-importers",
+      "provenance": "documented",
+      "source": "README \"Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)\""
+    },
+    {
+      "entry_point": "subtitle-importer",
+      "parameter": "cues-and-timestamps",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "bound input size yourself (D4); integrity claims are project-owned",
+      "component": "input-importers",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "video-importer",
+      "parameter": "container-streams",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "trust and patch FFmpeg (§1.9); bound duration yourself (D4)",
+      "component": "input-importers",
+      "provenance": "documented",
+      "source": "README \"each video extraction pass 300 seconds\""
+    },
+    {
+      "entry_point": "caption-enricher",
+      "parameter": "sibling-sidecar-contents",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "control symlinks in the input tree; a symlinked sidecar is followed and its target embedded (D14)",
+      "component": "provider-adapters",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "metadata-enricher",
+      "parameter": "exiftool-ffprobe-json",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "treat metadata and OCR text as untrusted (§1.8)",
+      "component": "provider-adapters",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "ocr-enricher",
+      "parameter": "recognized-text",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "treat metadata and OCR text as untrusted (§1.8)",
+      "component": "provider-adapters",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "entry_point": "plugin-discovery",
+      "parameter": "PATH-and-ANYTOPDF_PLUGIN_PATH",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "keep every directory on them writable only by trusted users",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "README \"Install only trusted plugins\""
+    },
+    {
+      "entry_point": "plugin-discovery",
+      "parameter": "plugin-executables",
+      "attacker_controllable": "no",
+      "caller_must_enforce": "install only trusted plugins",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "README \"Install only trusted plugins or use `--no-plugins`\""
+    },
+    {
+      "entry_point": "plugin-discovery",
+      "parameter": "manifest-json",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — plugin-response-validation",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Manifest\""
+    },
+    {
+      "entry_point": "plugin-response",
+      "parameter": "response-file",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — plugin-response-validation",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Captured output and response JSON are limited to 16 MiB each\""
+    },
+    {
+      "entry_point": "plugin-response",
+      "parameter": "ids-and-source_id",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — plugin-response-validation",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Enrichment responses must preserve existing source and unit identities\""
+    },
+    {
+      "entry_point": "plugin-response",
+      "parameter": "visual_path",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — plugin-response-validation",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"The host resolves symlinks before validating the path\""
+    },
+    {
+      "entry_point": "plugin-response",
+      "parameter": "annotations-regions-times",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — plugin-response-validation",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Annotations must have a provider, finite coordinates\""
+    },
+    {
+      "entry_point": "plugin-response",
+      "parameter": "source-sha256-size",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "trust installed plugins for content IDs; a supplied digest skips host hashing",
+      "component": "plugin-host",
+      "provenance": "inferred",
+      "source": "open question Q13"
+    },
+    {
+      "entry_point": "plugin-response",
+      "parameter": "warnings",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "none — plugin-warnings-recoded",
+      "component": "plugin-host",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"reports every plugin-supplied warning string as the diagnostic code `plugin.warning`\""
+    },
+    {
+      "entry_point": "extract",
+      "parameter": "pdf-and-sidecars",
+      "attacker_controllable": "yes",
+      "caller_must_enforce": "treat output as unverified (D7); bound file size yourself",
+      "component": "cli-extract",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    }
+  ],
+  "environment": {
+    "assumes": [
+      "a single local user runs the CLI with their own permissions",
+      "the system temp directory, PATH, ANYTOPDF_PLUGIN_PATH, ANYTOPDF_FONT and provider binaries are trusted",
+      "runtime plugins and external providers are trusted native code"
+    ],
+    "does_not": [
+      "open network sockets from anytopdf code (docTR and FFmpeg may use the network)",
+      "install signal handlers",
+      "change process-global state such as environment variables or the working directory",
+      "sandbox plugins or providers"
+    ],
+    "provenance": "inferred",
+    "source": "open questions Q15"
+  },
+  "build_variants": [
+    {
+      "name": "apple-vision",
+      "default": "on (macOS)",
+      "effect": "no effect on the security model",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "README \"On macOS the `apple-vision` Cargo feature uses native Vision\""
+    },
+    {
+      "name": "no-default-features",
+      "default": "off",
+      "effect": "no effect on the security model",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "README \"Build\" \"Linux fully-static\" build command"
+    },
+    {
+      "name": "--no-plugins",
+      "default": "off (plugins enabled)",
+      "effect": "preserves no-plugin-execution-when-disabled",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"`--no-plugins`: bypass runtime discovery entirely\""
+    },
+    {
+      "name": "--plugin-timeout",
+      "default": "60",
+      "effect": "narrows subprocess-time-and-output-bounds",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"bound each manifest/request invocation (default 60)\""
+    },
+    {
+      "name": "--profile",
+      "default": "archive",
+      "effect": "voids share-profile-path-redaction",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "README \"`--profile archive|share` (default `archive`)\""
+    },
+    {
+      "name": "--max-image-frames/--max-video-frames",
+      "default": "0",
+      "effect": "voids frame-caps-when-set",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "README \"`--max-image-frames N` caps the count (0 = unlimited)\""
+    },
+    {
+      "name": "--overwrite",
+      "default": "off",
+      "effect": "voids existing-output-not-replaced; preserves inputs-never-overwritten",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "README \"input files and explicit transcripts are protected even with that flag\""
+    },
+    {
+      "name": "--include-hidden",
+      "default": "off",
+      "effect": "no effect on the security model",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "crates/anytopdf-cli/src/cli.rs include_hidden help text"
+    },
+    {
+      "name": "--no-embedded-subtitles/--ocr off",
+      "default": "off",
+      "effect": "no effect on the security model",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "README \"Reliability and operation\""
+    },
+    {
+      "name": "--allow-plugin-kind/--deny-plugin-kind",
+      "default": "all kinds",
+      "effect": "no effect on the security model",
+      "discouraged": false,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Capability filters control registration, not executable permissions\""
+    }
+  ],
+  "adversaries": {
+    "in_scope": [
+      "input-author",
+      "extract-pdf-author",
+      "plugin-response-author",
+      "output-reader"
+    ],
+    "out_of_scope": [
+      "plugin-code",
+      "local-environment-controller",
+      "operator",
+      "network-attacker"
+    ],
+    "provenance": "documented",
+    "source": "; PLUGIN_PROTOCOL \"Host validation and execution policy\"; README \"Install only trusted plugins or use `--no-plugins`\"; README \"`share` also strips local paths\"; README \"plugins run with your account's permissions\""
+  },
+  "properties_provided": [
+    {
+      "property": "extract-robust-on-hostile-pdf",
+      "conditions": "any PDF and sibling sidecars: one extract document with exit 0, or exit 3; non-termination on cycles is Q17; size exhaustion is D4",
+      "violation_symptom": "crash, wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "property": "no-plugin-execution-when-disabled",
+      "conditions": "--no-plugins is set",
+      "violation_symptom": "x-unexpected-code-execution",
+      "severity_tier": "security",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"`--no-plugins`: bypass runtime discovery entirely\""
+    },
+    {
+      "property": "inputs-never-overwritten",
+      "conditions": "every file anytopdf writes (PDFs, --output-dir PDFs, --dump-graph, embed-failure sidecar JSON), even with --overwrite; canonical paths; hard links and mid-run changes excluded (Q4)",
+      "violation_symptom": "x-input-overwritten",
+      "severity_tier": "security",
+      "provenance": "documented",
+      "source": "README \"input files and explicit transcripts are protected even with that flag\""
+    },
+    {
+      "property": "existing-output-not-replaced",
+      "conditions": "without --overwrite; every write staged beside the destination and renamed",
+      "violation_symptom": "wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"An explicit existing `-o` requires `--overwrite`\""
+    },
+    {
+      "property": "plugin-response-validation",
+      "conditions": "size, regular file, protocol, identities, visual_path containment after symlink resolution, finite and in-range numbers; rejected enrichment rolled back",
+      "violation_symptom": "bad-data-accepted",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"Host validation and execution policy\""
+    },
+    {
+      "property": "subprocess-time-and-output-bounds",
+      "conditions": "each invocation killed at its timeout; captures and responses capped at 16 MiB; total job time not bounded",
+      "violation_symptom": "hang, unbounded-allocation",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Captured stdout, stderr and plugin response JSON each have a 16 MiB limit\""
+    },
+    {
+      "property": "failed-enrichment-rolls-back",
+      "conditions": "source, graph and unit enrichers; plugin side effects are not undone",
+      "violation_symptom": "wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "ARCHITECTURE \"Source, graph and unit enrichers roll back their in-memory changes on failure\""
+    },
+    {
+      "property": "share-profile-path-redaction",
+      "conditions": "--profile share; paths and metadata only, not text content (D6)",
+      "violation_symptom": "info-leak",
+      "severity_tier": "security",
+      "provenance": "documented",
+      "source": "README \"`share` also strips local paths, including from stderr diagnostics, the Summary and `--json` messages\""
+    },
+    {
+      "property": "hidden-layer-content-only",
+      "conditions": "all profiles; the manifest in the same PDF still carries metadata under archive",
+      "violation_symptom": "info-leak",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Search model\" \"source paths and file metadata are never written into it\""
+    },
+    {
+      "property": "extract-schema-check",
+      "conditions": "schema_version equals the supported version",
+      "violation_symptom": "bad-data-accepted",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"A version-matched manifest or chunks file that does not match its schema exits 3\""
+    },
+    {
+      "property": "cli-result-contract",
+      "conditions": "exit codes 0-7; one --json document; one run.finished; closed stderr never panics",
+      "violation_symptom": "wrong-output, crash",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Progress events\" \"Every run ends with exactly one `run.finished` event\""
+    },
+    {
+      "property": "transcript-never-ignored",
+      "conditions": "every --transcript file is attached or warned about",
+      "violation_symptom": "wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Searchable text and diagnostics\" \"`--transcript` is never silently ignored\""
+    },
+    {
+      "property": "frame-caps-when-set",
+      "conditions": "--max-image-frames or --max-video-frames above 0",
+      "violation_symptom": "unbounded-allocation",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"`--max-image-frames N` caps the count (0 = unlimited)\""
+    },
+    {
+      "property": "plugin-warnings-recoded",
+      "conditions": "all plugin warning strings",
+      "violation_symptom": "x-diagnostic-spoof",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"even if it imitates a built-in code\""
+    },
+    {
+      "property": "reproducible-output",
+      "conditions": "SOURCE_DATE_EPOCH set; same inputs and provider versions",
+      "violation_symptom": "wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Byte-reproducible output with `SOURCE_DATE_EPOCH` and recorded provider versions\""
+    },
+    {
+      "property": "failed-input-isolation",
+      "conditions": "default mode; --fail-fast exits 7, --strict exits 5; panics are Q6",
+      "violation_symptom": "wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Exit codes\" \"the rest of the batch continues\""
+    },
+    {
+      "property": "workspace-confinement-of-derived-files",
+      "conditions": "built-in code only; plugins are not confined (D1); no cleanup promise after abnormal exit (D11)",
+      "violation_symptom": "wrong-output",
+      "severity_tier": "correctness",
+      "provenance": "documented",
+      "source": "README \"Design invariants\" \"Temporary derived artifacts live inside one job workspace\""
+    }
+  ],
+  "properties_not_provided": [
+    {
+      "property": "sidecar-symlink-following",
+      "reason": "same-stem .srt/.vtt/.txt/.md next to media; is_file() follows symlinks so the target is read and embedded; the operator controls the input layout. Basis: maintainer ruling.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "maintainer ruling, 2026-10"
+    },
+    {
+      "property": "os-sandbox",
+      "reason": "what a plugin or provider process does on the host; not P4 or P5. Basis: stated limit.",
+      "false_friend": true,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"without filesystem/network isolation or hard CPU/memory quotas\""
+    },
+    {
+      "property": "capability-filter-as-execution-control",
+      "reason": "manifest commands of every discovered plugin still run; only --no-plugins stops execution. Basis: stated limit.",
+      "false_friend": true,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"manifest commands still run during discovery\""
+    },
+    {
+      "property": "descendant-containment",
+      "reason": "only the direct child is killed. Basis: stated limit.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "PLUGIN_PROTOCOL \"independently spawned descendants are not guaranteed to stop\""
+    },
+    {
+      "property": "untrusted-input-resource-bounds",
+      "reason": "memory, disk and CPU exhaustion from input size or shape, including PDFs passed to extract (maintainer ruling 2026-10); not P5, P12 or crashes (Q6, P17). Basis: stated limit.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"Security and plugins\" \"size and page caps, zip-bomb rejection\" unchecked"
+    },
+    {
+      "property": "archive-profile-privacy",
+      "reason": "default archive profile keeps metadata (GPS, camera, serials) and absolute paths. Basis: stated limit.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"`--profile archive|share` (default `archive`) selects metadata detail\""
+    },
+    {
+      "property": "share-profile-content-redaction",
+      "reason": "visible text, OCR, captions, transcripts, base names and SHA-256 stay. Basis: absence.",
+      "false_friend": true,
+      "provenance": "documented",
+      "source": "README \"Reliability and operation\" describes `share` only as stripping paths and metadata; basis: absence"
+    },
+    {
+      "property": "output-authenticity",
+      "reason": "no signatures; extract does not bind manifest or sidecars to the PDF. Basis: absence.",
+      "false_friend": true,
+      "provenance": "documented",
+      "source": "README \"Embedded manifest and chunks\" names no signature; basis: absence"
+    },
+    {
+      "property": "terminal-safe-diagnostics",
+      "reason": "human stderr lines print names and messages raw; JSON output is escaped. Basis: absence.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"Diagnostics and strict mode\" states no escaping; basis: absence"
+    },
+    {
+      "property": "complex-script-layout",
+      "reason": "missing glyphs warn. Basis: stated limit.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"Complex text shaping and bidirectional layout are not guaranteed\""
+    },
+    {
+      "property": "cross-file-atomicity",
+      "reason": "each file atomic on its own. Basis: stated limit.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"PDF and JSON outputs are separate file transactions\""
+    },
+    {
+      "property": "abnormal-exit-cleanup",
+      "reason": "no signal handlers. Basis: absence.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"Reliability and operation\" promises staging, not cleanup; basis: absence"
+    },
+    {
+      "property": "concurrent-run-coordination",
+      "reason": "without --overwrite one run fails; with it the last rename wins. Basis: absence.",
+      "false_friend": false,
+      "provenance": "documented",
+      "source": "README \"Reliability and operation\" has no concurrency statement; basis: absence"
+    },
+    {
+      "property": "untrusted-plugin-safety",
+      "reason": "installing a plugin grants it the user's permissions. Basis: stated limit.",
+      "false_friend": true,
+      "provenance": "documented",
+      "source": "README \"Install only trusted plugins or use `--no-plugins`\""
+    }
+  ],
+  "attack_classes": [
+    "decompression and pixel bombs",
+    "frame and page floods",
+    "malicious media against external decoders",
+    "terminal escape injection",
+    "path and metadata leaks in shared outputs"
+  ],
+  "downstream_responsibilities": [
+    "install only trusted plugins; keep plugin search directories trusted; use --no-plugins otherwise",
+    "convert untrusted media in an OS sandbox with quotas; set non-zero frame caps",
+    "use --profile share before sharing outputs; review content for sensitive data yourself",
+    "do not treat manifest SHA-256 values as proof a PDF is unaltered; sign and verify externally",
+    "escape text from PDFs, JSON, extract output and stderr before HTML, terminal, shell or database use",
+    "put outputs outside the directories you scan",
+    "keep FFmpeg, ExifTool, Tesseract, Python and docTR from trusted sources",
+    "pre-install docTR weights or use --ocr tesseract/off on offline hosts",
+    "do not run two conversions to the same output at once; clean temp dirs after killed runs",
+    "treat extract output as unverified for sidecar origin or version-mismatch warnings",
+    "treat file base names on the provenance page and in the manifest as attacker-chosen text",
+    "plugin authors treat request content as untrusted, write responses atomically and stay in the workspace"
+  ],
+  "known_misuse": [
+    {
+      "pattern": "scanning an untrusted tree with defaults, then sharing the PDF",
+      "why_unsafe": "plugins run, frame caps are off, and the archive profile embeds GPS and camera metadata",
+      "instead": "--no-plugins, non-zero frame caps, --profile share, inside a sandbox"
+    },
+    {
+      "pattern": "using --deny-plugin-kind to block an untrusted plugin",
+      "why_unsafe": "the plugin's manifest command still runs on every invocation",
+      "instead": "remove the plugin from the search path or use --no-plugins"
+    },
+    {
+      "pattern": "treating the manifest as tamper evidence",
+      "why_unsafe": "anyone who can edit the PDF can rewrite the manifest to match",
+      "instead": "sign the PDF and verify the signature"
+    },
+    {
+      "pattern": "writing outputs inside the scanned directory",
+      "why_unsafe": "later scans ingest earlier outputs and their sidecars",
+      "instead": "write outputs to a separate directory"
+    },
+    {
+      "pattern": "treating --profile share as anonymization",
+      "why_unsafe": "OCR text and visible content are not redacted",
+      "instead": "redact content before conversion"
+    },
+    {
+      "pattern": "running untrusted conversions on a shared host with defaults",
+      "why_unsafe": "no input size limits and no plugin sandbox",
+      "instead": "per-job containers with quotas, plus non-zero frame caps"
+    }
+  ],
+  "known_non_findings": [
+    {
+      "reported_as": "a runtime plugin can read or write any file, open sockets, or use unlimited CPU and memory",
+      "why_safe": "Against plugin-host, x-unsandboxed-host-access is the disclaimed os-sandbox property: plugins are trusted native processes with no filesystem, network or resource isolation.",
+      "cites": "properties_not_provided[1]",
+      "suppression": "actor is an installed anytopdf-plugin-* executable acting through its own process, not its response JSON; no P4 or P5 check bypassed"
+    },
+    {
+      "reported_as": "a plugin whose capability kind is denied still executes",
+      "why_safe": "Against plugin-host, x-unexpected-code-execution is the disclaimed capability-filter-as-execution-control property: capability filters control registration, and manifest commands still run during discovery.",
+      "cites": "properties_not_provided[2]",
+      "suppression": "--no-plugins not set; the only execution is the --anytopdf-manifest command during discovery"
+    }
+  ],
+  "dispositions": [
+    "valid",
+    "valid_hardening",
+    "out_of_model_trusted_input",
+    "out_of_model_adversary",
+    "out_of_model_unsupported_component",
+    "out_of_model_non_default_build",
+    "by_design_disclaimed",
+    "known_non_finding",
+    "model_gap"
+  ],
+  "open_questions": [
+    {
+      "claim": "hard links and concurrent filesystem changes during a run are outside inputs-never-overwritten",
+      "field": "properties_provided",
+      "proposed": "yes"
+    },
+    {
+      "claim": "a panic, abort or memory-safety fault on hostile media during convert is a bug",
+      "field": "properties_provided",
+      "proposed": "yes, correctness-only no-panic claim; decoder memory-safety routed to dependencies"
+    },
+    {
+      "claim": "directory scans never follow symlinks and skip hidden entries by default",
+      "field": "properties_provided",
+      "proposed": "yes, correctness-only"
+    },
+    {
+      "claim": "untrusted text cannot inject PDF operators",
+      "field": "properties_provided",
+      "proposed": "yes, correctness-only; printpdf bugs routed to dependencies"
+    },
+    {
+      "claim": "extract failing to terminate on cyclic object references is a bug",
+      "field": "properties_provided",
+      "proposed": "yes; add hang to extract-robust-on-hostile-pdf"
+    },
+    {
+      "claim": "a plugin-supplied sha256/size is trusted for content-derived IDs",
+      "field": "properties_not_provided",
+      "proposed": "yes, as a disclaimer"
+    },
+    {
+      "claim": "FFmpeg opening URLs referenced by a crafted container is disclaimed",
+      "field": "properties_not_provided",
+      "proposed": "yes, as part of os-sandbox"
+    },
+    {
+      "claim": "share-profile redaction covers paths in plugin or provider messages outside registered prefixes",
+      "field": "properties_provided",
+      "proposed": "no; registered prefixes only"
+    },
+    {
+      "claim": "relative visual_path values that resolve inside the workspace are acceptable",
+      "field": "properties_provided",
+      "proposed": "yes; containment is the contract"
+    }
+  ]
+}

@@ -35,6 +35,22 @@ Convert each with `--strict --dump-graph`, selecting `--ocr vision` or
 source IDs and normalized OCR regions in the graphs. Extract text with `pdftotext`
 and render every PDF page using `pdftoppm -png` for visual review.
 
+## Sprint 4 final gate — 2026-10-05
+
+Sprint 4 is signed off on `main` at 9fa5a91 plus documentation-only changes
+(ROADMAP, SECURITY and the threat model). Run in a Linux x86-64 container with
+Rust 1.88.0:
+
+- `sh scripts/verify.sh` passed: formatting, `cargo check`, Clippy with warnings
+  denied, 251 Rust tests with default features and 251 with
+  `--no-default-features`, and 29 Python tests.
+- `scripts/smoke.py --require-poppler` passed against the release binary: text,
+  image, Unicode extraction, pagination, graph and overwrite protection.
+- FFmpeg, ffprobe and Poppler were available; ExifTool, Tesseract, docTR and Apple
+  Vision were not, so provider-dependent paths rely on hosted CI and earlier
+  records.
+- Hosted CI on Linux, macOS and Windows passed on 9fa5a91.
+
 ## Historical local validation — 2026-10-04
 
 The following record predates the automation changes and expanded tests. It is

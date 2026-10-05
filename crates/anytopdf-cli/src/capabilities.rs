@@ -55,10 +55,18 @@ pub fn capabilities() -> Result<Value> {
             Ok(json!({"id": schema["$id"]}))
         })
         .collect::<Result<Vec<_>>>()?;
-    let importers: Vec<Value> = ["text", "image", "subtitle", "audio", "ffmpeg-video"]
-        .iter()
-        .map(|name| json!({"name": name}))
-        .collect();
+    let importers: Vec<Value> = [
+        "text",
+        "html",
+        "email",
+        "image",
+        "subtitle",
+        "audio",
+        "ffmpeg-video",
+    ]
+    .iter()
+    .map(|name| json!({"name": name}))
+    .collect();
     Ok(json!({
         "schema_version": "anytopdf.capabilities/1",
         "exit_codes": ExitClass::ALL
