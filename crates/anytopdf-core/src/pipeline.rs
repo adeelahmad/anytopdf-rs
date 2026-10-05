@@ -94,7 +94,7 @@ impl Pipeline {
             for enricher in self.registry.source_enrichers() {
                 if enricher.supports(&source) {
                     let original = source.clone();
-                    match enricher.enrich_source(&ctx, &mut source) {
+                    match crate::catch_panic(|| enricher.enrich_source(&ctx, &mut source)) {
                         Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                         Err(e) => {
                             source = original;
@@ -125,7 +125,7 @@ impl Pipeline {
                 }
             };
 
-            match importer.import(&ctx, source.clone()) {
+            match crate::catch_panic(|| importer.import(&ctx, source.clone())) {
                 Ok(outcome) => {
                     let candidate = DocumentGraph {
                         sources: vec![outcome.source.clone()],
@@ -187,12 +187,12 @@ impl Pipeline {
         // full transcript unit for RAG extraction.
         for enricher in self.registry.graph_enrichers() {
             let original = graph.clone();
-            match enricher
-                .enrich_graph(&ctx, &mut graph)
-                .and_then(|warnings| {
+            match crate::catch_panic(|| enricher.enrich_graph(&ctx, &mut graph)).and_then(
+                |warnings| {
                     graph.validate()?;
                     Ok(warnings)
-                }) {
+                },
+            ) {
                 Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
                 Err(e) => {
                     graph = original;
@@ -224,8 +224,7 @@ impl Pipeline {
                         enricher: name.clone(),
                     });
                     let original = unit.clone();
-                    match enricher
-                        .enrich_unit(&ctx, &snapshot, unit)
+                    match crate::catch_panic(|| enricher.enrich_unit(&ctx, &snapshot, unit))
                         .and_then(|warnings| {
                             anyhow::ensure!(
                                 unit.id == original.id && unit.source_id == original.source_id,
@@ -290,9 +289,8 @@ impl Pipeline {
         renderer_name: &str,
         output: &Path,
     ) -> Result<crate::RenderReport> {
-        self.registry
-            .renderer(renderer_name)?
-            .render(&run.context, &run.graph, output)
+        let renderer = self.registry.renderer(renderer_name)?;
+        crate::catch_panic(|| renderer.render(&run.context, &run.graph, output))
     }
 }
 
@@ -614,5 +612,86 @@ mod tests {
         let failures = enrichment_failures(false);
         assert_eq!(failures.len(), 1);
         assert!(!failures[0].provider_exhausted);
+    }
+    struct PanickyImport;
+    impl Plugin for PanickyImport {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl Importer for PanickyImport {
+        fn probe(&self, _: &SourceRecord) -> ProbeScore {
+            ProbeScore::CERTAIN
+        }
+        fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
+            if source.path.ends_with("hostile.txt") {
+                panic!("decoder overflow");
+            }
+            TextImport.import(ctx, source)
+        }
+    }
+
+    struct PanickyEnricher;
+    impl Plugin for PanickyEnricher {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl UnitEnricher for PanickyEnricher {
+        fn supports(&self, _: &DocumentGraph, _: &Unit) -> bool {
+            true
+        }
+        fn enrich_unit(
+            &self,
+            _: &JobContext,
+            _: &DocumentGraph,
+            unit: &mut Unit,
+        ) -> Result<Vec<String>> {
+            unit.visible_text = Some("half written".into());
+            panic!("ocr binding fault");
+        }
+    }
+
+    #[test]
+    fn importer_panic_skips_only_that_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let hostile = dir.path().join("hostile.txt");
+        let fine = dir.path().join("fine.txt");
+        std::fs::write(&hostile, b"boom").unwrap();
+        std::fs::write(&fine, b"kept").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(PanickyImport));
+        let run = Pipeline::new(registry)
+            .ingest(&[hostile, fine], true)
+            .unwrap();
+        assert_eq!(run.graph.sources.len(), 1);
+        assert_eq!(run.graph.units[0].visible_text.as_deref(), Some("kept"));
+        let failed: Vec<_> = run
+            .warnings
+            .iter()
+            .filter(|d| d.code == DiagnosticCode::ImportFailed)
+            .collect();
+        assert_eq!(failed.len(), 1, "{:?}", run.warnings);
+        assert!(failed[0].message.contains("panicked: decoder overflow"));
+    }
+
+    #[test]
+    fn enricher_panic_rolls_back_the_unit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.txt");
+        std::fs::write(&path, b"original").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        registry.register_unit_enricher(Arc::new(PanickyEnricher));
+        let run = Pipeline::new(registry).ingest(&[path], true).unwrap();
+        assert_eq!(run.graph.units[0].visible_text.as_deref(), Some("original"));
+        assert!(
+            run.warnings
+                .iter()
+                .any(|d| d.code == DiagnosticCode::EnrichmentFailed
+                    && d.message.contains("panicked: ocr binding fault")),
+            "{:?}",
+            run.warnings
+        );
     }
 }

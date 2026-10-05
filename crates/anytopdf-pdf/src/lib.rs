@@ -5,6 +5,8 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 mod attachments;
 mod fonts;
+#[cfg(test)]
+mod injection_tests;
 mod layout;
 mod provenance;
 pub use attachments::{EmbeddedFile, embed_files, read_embedded_files};

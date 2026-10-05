@@ -328,6 +328,8 @@ fn extract_embedded(media: &Path, workspace: &Path) -> Result<Vec<Cue>> {
         .args([
             "-v",
             "error",
+            "-protocol_whitelist",
+            crate::FFMPEG_PROTOCOLS,
             "-select_streams",
             "s",
             "-show_entries",
@@ -356,7 +358,8 @@ fn extract_embedded(media: &Path, workspace: &Path) -> Result<Vec<Cue>> {
     for index in indexes {
         let target = workspace.join(format!("subtitle-{}-{index}.srt", uuid::Uuid::new_v4()));
         let result = Command::new(&ffmpeg)
-            .args(["-hide_banner", "-loglevel", "error", "-i"])
+            .args(["-hide_banner", "-loglevel", "error"])
+            .args(["-protocol_whitelist", crate::FFMPEG_PROTOCOLS, "-i"])
             .arg(media)
             .args(["-map", &format!("0:{index}"), "-c:s", "srt", "-y"])
             .arg(&target)

@@ -104,6 +104,49 @@ mod tests {
         assert_eq!(all.len(), 3);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn directory_scans_skip_symlinked_files_and_directories() {
+        use std::os::unix::fs::symlink;
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("secret.txt"), "outside").unwrap();
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("real.txt"), "inside").unwrap();
+        symlink(
+            outside.path().join("secret.txt"),
+            root.path().join("link.txt"),
+        )
+        .unwrap();
+        symlink(outside.path(), root.path().join("linked-dir")).unwrap();
+        symlink(root.path(), root.path().join("loop")).unwrap();
+        let options = DiscoveryOptions {
+            include_hidden: true,
+            filter: None,
+        };
+        let paths = discover_inputs(&[root.path().into()], &options).unwrap();
+        assert_eq!(
+            paths,
+            vec![root.path().canonicalize().unwrap().join("real.txt")]
+        );
+        let named = discover_inputs(&[root.path().join("link.txt")], &options).unwrap();
+        assert_eq!(
+            named,
+            vec![outside.path().canonicalize().unwrap().join("secret.txt")],
+            "a symlink named on the command line is followed"
+        );
+    }
+
+    #[test]
+    fn hidden_directory_named_explicitly_is_scanned() {
+        let root = tempfile::tempdir().unwrap();
+        let hidden = root.path().join(".notes");
+        fs::create_dir(&hidden).unwrap();
+        fs::write(hidden.join("a.txt"), "A").unwrap();
+        fs::write(hidden.join(".b.txt"), "B").unwrap();
+        let paths = discover_inputs(&[hidden.clone()], &DiscoveryOptions::default()).unwrap();
+        assert_eq!(paths, vec![hidden.canonicalize().unwrap().join("a.txt")]);
+    }
+
     #[test]
     fn missing_input_is_an_error() {
         let root = tempfile::tempdir().unwrap();

@@ -354,6 +354,9 @@ fn convert_inner(
     run.warnings.append(&mut warnings);
 
     redactor.add_dir(&run.context.workspace.join("x"));
+    for executable in anytopdf_core::runtime_plugin_candidates(policy) {
+        redactor.add_parent_of(&executable);
+    }
     let redactor = &*redactor;
     for diagnostic in &run.warnings {
         report_diagnostic(sink, diagnostic, redactor, args.profile);

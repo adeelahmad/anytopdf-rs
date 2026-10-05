@@ -86,6 +86,8 @@ impl SourceEnricher for MetadataEnricher {
                     .args([
                         "-v",
                         "error",
+                        "-protocol_whitelist",
+                        crate::FFMPEG_PROTOCOLS,
                         "-show_format",
                         "-show_streams",
                         "-of",

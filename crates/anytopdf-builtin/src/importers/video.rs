@@ -181,7 +181,8 @@ fn extract(
 
     let mut command = Command::new(ffmpeg);
     command
-        .args(["-hide_banner", "-loglevel", "info", "-i"])
+        .args(["-hide_banner", "-loglevel", "info"])
+        .args(["-protocol_whitelist", crate::FFMPEG_PROTOCOLS, "-i"])
         .arg(input)
         .args(["-map", "0:v:0", "-vf"])
         .arg(format!("{select},showinfo"))

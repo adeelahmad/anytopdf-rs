@@ -32,6 +32,16 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
 
+### Security hardening
+
+- A panic inside an importer, enricher or renderer no longer aborts `convert`: the input is
+  skipped with `import.failed` (or the enrichment rolls back) like any other failing input.
+- The host recomputes `sha256` and `size` for every source that is a readable file; a
+  plugin-supplied digest is used only for sources the host cannot read.
+- FFmpeg and ffprobe run with `-protocol_whitelist file`, so a crafted container cannot make
+  them fetch network URLs.
+- `--profile share` also strips runtime plugin directories from diagnostics.
+
 ## 0.1.0
 
 Initial searchable-media release: raster images, plain text/Markdown, SRT/VTT,
