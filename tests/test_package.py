@@ -30,4 +30,5 @@ class PackageTests(unittest.TestCase):
                         names = package.getnames()
                 self.assertTrue(any(name.endswith("/LICENSE-MIT") for name in names))
                 self.assertTrue(any(name.endswith("/LICENSE-APACHE") for name in names))
+                self.assertTrue(any(name.endswith("/LICENSE-DejaVu.txt") for name in names))
                 self.assertTrue(any(name.endswith("/README.md") for name in names))

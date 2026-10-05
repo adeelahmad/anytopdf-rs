@@ -1,13 +1,14 @@
 //! Fonts and text drawing for the PDF/A renderer: per-character font fallback,
 //! bidirectional reordering and shaping (rustybuzz, through krilla).
-use crate::fonts::subset_document_font;
+use crate::fonts::{BUNDLED_FONT, subset_document_font};
 use anyhow::{Context, Result, anyhow};
 use anytopdf_core::DocumentGraph;
 use krilla::geom::Point;
 use krilla::surface::Surface;
 use krilla::text::{Font, TextDirection};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use unicode_bidi::{BidiInfo, Level};
 
 /// One embedded font with the advance (in ems) of every character it maps.
@@ -44,27 +45,33 @@ fn document_chars(graph: &DocumentGraph) -> BTreeSet<char> {
 }
 
 impl FontSet {
-    /// Load `primary` and then each fallback that maps a still-missing character.
-    /// Fonts whose licence forbids embedding are skipped with a warning.
+    /// Load `primary` (the bundled DejaVu Sans when `None`) and then each fallback
+    /// that maps a still-missing character. Fonts whose licence forbids embedding are
+    /// skipped with a warning.
     pub(crate) fn load(
-        primary: &PathBuf,
+        primary: Option<&Path>,
         fallbacks: &[PathBuf],
         graph: &DocumentGraph,
         warnings: &mut Vec<String>,
     ) -> Result<Self> {
         let mut missing = document_chars(graph);
         let mut faces = Vec::new();
-        for (index, path) in std::iter::once(primary).chain(fallbacks).enumerate() {
+        let bundled = Path::new("bundled DejaVu Sans");
+        let paths = std::iter::once(primary).chain(fallbacks.iter().map(|p| Some(p.as_path())));
+        for (index, path) in paths.enumerate() {
             if index > 0 && missing.iter().all(|c| c.is_whitespace()) {
                 break;
             }
-            let bytes = match std::fs::read(path) {
-                Ok(bytes) => bytes,
-                Err(e) if index == 0 => {
+            let bytes = match path.map(std::fs::read) {
+                None => Cow::Borrowed(BUNDLED_FONT),
+                Some(Ok(bytes)) => Cow::Owned(bytes),
+                Some(Err(e)) if index == 0 => {
+                    let path = path.unwrap_or(bundled);
                     return Err(e).with_context(|| format!("read font {}", path.display()));
                 }
-                Err(_) => continue,
+                Some(Err(_)) => continue,
             };
+            let path = path.unwrap_or(bundled);
             let Ok(face) = ttf_parser::Face::parse(&bytes, 0) else {
                 if index == 0 {
                     return Err(anyhow!("parse font {}", path.display()));
