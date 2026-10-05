@@ -185,7 +185,7 @@ fn mcp_protocol_errors_use_json_rpc_codes() {
 }
 
 #[test]
-fn mcp_answers_malformed_json_with_a_parse_error() {
+fn mcp_answers_malformed_json_and_invalid_utf8_then_keeps_serving() {
     let dir = tempfile::tempdir().unwrap();
     let mut command = process::command();
     let mut child = command
@@ -199,10 +199,20 @@ fn mcp_answers_malformed_json_with_a_parse_error() {
         .stdin
         .take()
         .unwrap()
-        .write_all(b"{not json\n")
+        .write_all(b"{not json\n\"\xff\"\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n")
         .unwrap();
     let output = child.wait_with_output().unwrap();
-    let reply: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(reply["error"]["code"], -32700);
-    assert_eq!(reply["id"], Value::Null);
+    assert!(output.status.success());
+    let replies: Vec<Value> = String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(replies.len(), 3, "{replies:?}");
+    for parse_error in &replies[..2] {
+        assert_eq!(parse_error["error"]["code"], -32700);
+        assert_eq!(parse_error["id"], Value::Null);
+    }
+    assert_eq!(replies[2]["id"], 7);
+    assert_eq!(replies[2]["result"], json!({}));
 }

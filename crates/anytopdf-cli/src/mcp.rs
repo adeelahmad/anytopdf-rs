@@ -61,9 +61,18 @@ pub(crate) fn serve(forwarded: Forwarded) -> Result<()> {
     let server = Server { exe, forwarded };
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout().lock();
-    for line in stdin.lock().lines() {
-        let line = line.context("reading MCP request")?;
-        if line.trim().is_empty() {
+    let mut input = stdin.lock();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        if input
+            .read_until(b'\n', &mut line)
+            .context("reading MCP request")?
+            == 0
+        {
+            return Ok(());
+        }
+        if line.trim_ascii().is_empty() {
             continue;
         }
         if let Some(response) = server.handle_line(&line) {
@@ -79,7 +88,6 @@ pub(crate) fn serve(forwarded: Forwarded) -> Result<()> {
             }
         }
     }
-    Ok(())
 }
 
 struct Server {
@@ -88,8 +96,9 @@ struct Server {
 }
 
 impl Server {
-    fn handle_line(&self, line: &str) -> Option<Value> {
-        let message: Value = match serde_json::from_str(line) {
+    fn handle_line(&self, line: &[u8]) -> Option<Value> {
+        // Invalid UTF-8 is a parse error for this message, not a reason to stop serving.
+        let message: Value = match serde_json::from_slice(line) {
             Ok(value) => value,
             Err(e) => return Some(error_response(Value::Null, PARSE_ERROR, e.to_string())),
         };
