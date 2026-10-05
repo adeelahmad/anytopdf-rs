@@ -240,7 +240,10 @@ fn ocr_entry(status: &OcrProviderStatus, hints: &mut Vec<String>) -> Entry {
                 "enable Apple Vision OCR: build with the default `apple-vision` feature".into(),
             ),
             "doctr" => {
-                if which::which("python3").is_err() {
+                if which::which("python3")
+                    .or_else(|_| which::which("python"))
+                    .is_err()
+                {
                     hints.push(install_hint("python3"));
                 }
                 hints.push("enable docTR OCR: python3 -m pip install python-doctr".into())
