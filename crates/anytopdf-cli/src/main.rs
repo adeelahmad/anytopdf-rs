@@ -7,6 +7,7 @@ mod events;
 mod exit;
 mod extract;
 mod naming;
+mod print;
 mod publish;
 use anytopdf_core::RuntimePluginPolicy;
 use clap::Parser;
@@ -67,6 +68,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             Ok(())
         }
         Commands::Probe { input, .. } => probe(&input, &policy),
+        Commands::Print(command) => print::print(command),
     }
 }
 

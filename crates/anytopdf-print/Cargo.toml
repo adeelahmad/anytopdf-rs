@@ -1,0 +1,22 @@
+[package]
+name = "anytopdf-print"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Remote printing front for anytopdf: TLS, password and peer allowlist in front of the local print helper, plus DNS-SD and mDNS discovery."
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+base64ct.workspace = true
+mdns-sd.workspace = true
+rustls.workspace = true
+rustls-pki-types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

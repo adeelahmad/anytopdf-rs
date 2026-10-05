@@ -1,6 +1,8 @@
 # Remote printing design note (backlog item 4)
 
-Status: draft for review. Depends on backlog item 3 (network printer helper), which owns the IPP server itself.
+Status: implemented in `crates/anytopdf-print` and `anytopdf print` (front, users, guard, discovery). Wiring receipts and `doctor` waits on backlog item 3's helper, which owns the IPP server itself (a PAPPL helper on localhost that spools PWG/Apple Raster and runs `anytopdf convert`).
+
+Decisions taken: discovery is multicast DNS on the LAN plus unicast DNS-SD records and a manual URL for remote clients (owner asked for IPP, AirPrint-style, DNS and mDNS); configuration is command-line flags plus a JSON users file instead of a TOML config; the CIDR allowlist is hand-rolled, so `ipnet` is not a dependency.
 
 ## Scope
 
@@ -33,42 +35,35 @@ Item 3 gives a helper process that speaks IPP Everywhere, bound to localhost by 
 7. **Untrusted input.** Remote jobs go through the same caps item 3 and the security backlog define (size and page caps, per-sender budgets keyed by authenticated user, sandboxed conversion with no network). Item 4 only adds the per-user budget key.
 8. **doctor.** `anytopdf doctor` reports the print helper, whether remote mode is configured, cert expiry, and whether `tailscale` is on PATH (for `tailscale cert` and to show the tailnet address). Informational only.
 
-## Config shape (proposed)
+## Commands
 
-```toml
-[print]
-listen = "127.0.0.1:8631"          # item 3 default
-
-[print.remote]                      # item 4; absent means remote mode off
-listen = "100.101.102.103:8631"
-tls_cert = "/path/printer.crt"
-tls_key = "/path/printer.key"
-users = { adeel = "$argon2id$..." } # set with `anytopdf print passwd <user>`
-allow = ["100.64.0.0/10", "fd7a:115c:a1e0::/48"]
-dns_sd_domain = "home.example"      # only used by `print dns-sd`
+```
+anytopdf print passwd <user> --users users.json          # password on stdin, Argon2id hash, file mode 0600
+anytopdf print remote --listen 100.x.y.z:8631 --allow-tailnet \
+    --tls-cert host.crt --tls-key host.key --users users.json [--upstream 127.0.0.1:8631]
+anytopdf print dns-sd --domain home.example --host printer.home.example [--address IP] [--json]
+anytopdf print advertise [--port 8631] [--host anytopdf.local]   # mDNS on the LAN
+anytopdf print url --host printer.home.example
 ```
 
-Port 8631 instead of 631 so the helper never needs root.
+Port 8631 instead of 631 so neither process needs root. The front and the helper can both use 8631 because the front binds the tailnet address and the helper binds loopback. Guard refusals exit 2 (usage).
 
-## Interface needed from item 3
+mDNS: mdns-sd answers one subtype per instance, so the LAN record is `_ipps._tcp` with the AirPrint `_universal` subtype; the unicast zone also lists the IPP Everywhere `_print` subtype.
 
-To build this I need, from the print-server thread:
+## Interface with item 3
 
-- how the helper is launched (binary name, args or config file) and how it receives listen address, so the Rust front can point it at loopback;
-- whether TLS and Basic auth live in the helper or can be left to the front (preferred: front does both, helper stays loopback-only and plaintext);
-- the job hand-off (how a received job reaches `convert`, and where the job metadata lives) so receipts can add peer and user fields.
+The helper listens on loopback in plaintext and does no TLS or authentication; the front points `--upstream` at it. Jobs reach the pipeline through the helper's spool and `anytopdf convert`, so remote printing adds no importer. The integration test uses a stand-in helper on loopback.
 
-## Plan
+## Dependencies added
 
-1. This note (review).
-2. Without waiting on item 3: config parsing and the non-loopback guard, CIDR allowlist, `print dns-sd` record generator, `print url`, password hashing, with unit tests. Pure Rust, no network in tests, no new C dependencies.
-3. Once item 3's helper exists: the rustls front that splices to it, receipts, doctor lines, an integration test with a loopback client.
-4. Docs: README section and SECURITY notes for remote mode.
+`rustls` 0.23 (ring provider), `rustls-pki-types` (PEM parsing), `argon2` 0.5, `base64ct`, `mdns-sd` 0.21; all MIT or Apache-2.0, all build on Rust 1.88.
 
-## Open questions for the owner
+## Follow-ups
 
-- Is unicast DNS-SD plus a manual URL enough, or must discovery work with zero DNS setup? Zero setup across a tunnel would need an mDNS reflector on the remote side, which this note does not propose.
-- New dependencies for step 2/3: `rustls` (+ `rustls-pemfile`), `argon2`, `ipnet`. All MIT/Apache-2.0. OK to add?
+- Receipts (peer, user) need a metadata channel into the helper's job hand-off.
+- `doctor` lines for remote mode and certificate expiry.
+- Verify that PAPPL accepts requests whose `Host` and `printer-uri` name the front's address rather than loopback; if not, the front must rewrite them or the helper must accept any host.
+- Older iOS releases that browse only `_ipp._tcp` will not see an `_ipps`-only advertisement.
 
 ## Unverified assumptions
 
