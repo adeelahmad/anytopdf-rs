@@ -15,6 +15,7 @@ PLUGIN_PROTOCOL.md
 README.md
 RELEASING.md
 ROADMAP.md
+SECURITY.md
 crates/anytopdf-builtin/Cargo.toml
 crates/anytopdf-builtin/src/captions.rs
 crates/anytopdf-builtin/src/discovery.rs

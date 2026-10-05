@@ -57,6 +57,8 @@ pub fn capabilities() -> Result<Value> {
         .collect::<Result<Vec<_>>>()?;
     let importers: Vec<Value> = [
         "text",
+        "html",
+        "email",
         "image",
         "subtitle",
         "audio",
