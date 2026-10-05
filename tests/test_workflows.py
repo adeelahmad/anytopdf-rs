@@ -158,6 +158,21 @@ class WorkflowTests(unittest.TestCase):
         missing = self.cli("check-event", event={"before": "a" * 40, "after": good})
         self.assertNotEqual(missing.returncode, 0, "Missing event history must fail closed")
 
+    def test_force_push_checks_commits_beyond_the_default_branch(self):
+        main = self.git("rev-parse", "HEAD")
+        self.git("update-ref", "refs/remotes/origin/main", main)
+        self.git("checkout", "--quiet", "-b", "topic")
+        good = self.commit("fix: rebuilt branch")
+        forced = {"before": "b" * 40, "after": good, "forced": True,
+                  "repository": {"default_branch": "main"}}
+        result = self.cli("check-event", event=forced)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Checked 1 Conventional Commits", result.stdout)
+        bad = self.commit("unstructured change")
+        result = self.cli("check-event", event={**forced, "after": bad})
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Conventional Commit", result.stderr)
+
     def test_release_validates_metadata_and_uses_changelog_notes(self):
         valid = self.cli("validate", "--tag", "v1.2.3")
         self.assertEqual(valid.returncode, 0, valid.stderr)
