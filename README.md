@@ -81,6 +81,8 @@ and register itself as an importer without modifying the core binary.
 
 Importers:
 - raster images
+- existing PDFs: pages rendered by Poppler `pdftoppm` with their own text layer kept (OCR only for textless pages); text only without Poppler
+- HEIC/HEIF/AVIF photos, converted by `sips` (macOS), `heif-convert` (libheif) or ImageMagick
 - PWG Raster and Apple Raster (URF) print jobs
 - video through FFmpeg
 - audio container placeholder units
@@ -152,7 +154,7 @@ FFmpeg, ExifTool and Tesseract are described in
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF importers are future work.
+a supplied transcript or a plugin.
 
 Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
 their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
@@ -419,9 +421,6 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Provider version detection
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
-- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
-- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
-- [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
@@ -455,12 +454,12 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Arabic, Hebrew and CJK shaping, bidi and font fallback (`--renderer pdfa`)
 
 ### Input formats
-- [ ] PDF input (keep the text layer, OCR only textless pages)
-- [x] HTML files
+- [x] PDF input: Poppler renders each page and `pdftotext -bbox-layout` lines become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
+- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
 - [ ] URL snapshot
-- [x] EML and mbox
-- [x] Archives (zip, tar)
-- [ ] HEIC
+- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
+- [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
+- [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
 - [x] Office documents through LibreOffice and Poppler
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 

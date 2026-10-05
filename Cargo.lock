@@ -162,6 +162,7 @@ dependencies = [
  "flate2",
  "image",
  "infer",
+ "lopdf",
  "mail-parser",
  "objc2",
  "objc2-foundation",

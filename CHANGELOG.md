@@ -31,6 +31,13 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
   written into the job workspace under sanitized names and imported by whichever importer
   matches; ones that cannot be imported warn `input.members-not-imported`.
+- PDF inputs import page by page. With Poppler, `pdftoppm` renders each page and the
+  PDF's text layer (`pdftotext -bbox-layout` lines, else the built-in extractor) becomes
+  the page's searchable annotations, marked as a native text layer so OCR skips the page.
+  Without Poppler, page text becomes text pages and `provider.missing` is reported.
+- HEIC/HEIF/AVIF photos import as image pages (OCR included) when `sips` (macOS),
+  `heif-convert` (libheif) or ImageMagick is installed; otherwise they fail with a message
+  naming those tools.
 - Zip, tar and gzipped tar archives import as an index page plus each member through its
   own importer. Extraction is bounded (512 MiB per member, 1 GiB per archive, 10,000
   entries, 200:1 zip ratio, 2 GiB and 10,000 members per input across nesting); names

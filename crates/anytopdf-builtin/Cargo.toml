@@ -19,6 +19,7 @@ anytopdf-core = { path = "../anytopdf-core" }
 image.workspace = true
 flate2.workspace = true
 infer.workspace = true
+lopdf.workspace = true
 mail-parser.workspace = true
 regex.workspace = true
 serde_json.workspace = true
