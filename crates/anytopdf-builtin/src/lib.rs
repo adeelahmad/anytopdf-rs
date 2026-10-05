@@ -63,6 +63,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_video_frames,
     )));
     registry.register_importer(Arc::new(importers::AudioImporter));
+    registry.register_importer(Arc::new(importers::OfficeImporter));
 
     registry.register_unit_enricher(Arc::new(ocr::OcrEnricher::new(opts.ocr, opts.ocr_language)));
     registry.register_graph_enricher(Arc::new(captions::CaptionEnricher::new(

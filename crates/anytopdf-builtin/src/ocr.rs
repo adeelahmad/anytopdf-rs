@@ -84,7 +84,14 @@ impl Plugin for OcrEnricher {
 
 impl UnitEnricher for OcrEnricher {
     fn supports(&self, _graph: &DocumentGraph, unit: &Unit) -> bool {
-        self.mode != OcrMode::Off && unit.kind == UnitKind::Visual && unit.visual_path.is_some()
+        self.mode != OcrMode::Off
+            && unit.kind == UnitKind::Visual
+            && unit.visual_path.is_some()
+            && unit
+                .metadata
+                .get(crate::importers::TEXT_LAYER_KEY)
+                .map(String::as_str)
+                != Some(crate::importers::TEXT_LAYER_NATIVE)
     }
 
     fn enrich_unit(
@@ -448,6 +455,19 @@ mod tests {
     fn tesseract_rejects_malformed_output() {
         assert!(parse_tesseract_tsv("bad headers", 100, 100).is_err());
         assert!(parse_tesseract_tsv("", 100, 100).is_err());
+    }
+
+    #[test]
+    fn pages_with_a_native_text_layer_skip_ocr() {
+        let enricher = OcrEnricher::new(OcrMode::Auto, "eng".into());
+        let graph = DocumentGraph::default();
+        let mut unit = Unit::visual(uuid::Uuid::new_v4(), "page-1.png".into());
+        assert!(enricher.supports(&graph, &unit));
+        unit.metadata.insert(
+            crate::importers::TEXT_LAYER_KEY.into(),
+            crate::importers::TEXT_LAYER_NATIVE.into(),
+        );
+        assert!(!enricher.supports(&graph, &unit));
     }
 
     #[test]
