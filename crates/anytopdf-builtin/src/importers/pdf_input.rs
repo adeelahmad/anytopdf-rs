@@ -90,7 +90,9 @@ impl Importer for PdfInputImporter {
             warnings.push(
                 Diagnostic::new(
                     DiagnosticCode::ProviderMissing,
-                    format!("pdftoppm unavailable; {name} was imported as text without page images"),
+                    format!(
+                        "pdftoppm unavailable; {name} was imported as text without page images"
+                    ),
                 )
                 .to_string(),
             );

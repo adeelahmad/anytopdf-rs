@@ -351,7 +351,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Arabic, Hebrew and CJK shaping
 
 ### Input formats
-- [x] PDF input: Poppler renders each page and `pdftotext -bbox` word boxes become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
+- [x] PDF input: Poppler renders each page and `pdftotext -bbox-layout` lines become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
 - [ ] URL snapshot
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
