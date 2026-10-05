@@ -72,3 +72,30 @@ fn core_sha256_hex_matches_fips_180_4_vectors() {
         "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
     );
 }
+
+#[test]
+fn png_fixture_helpers_are_defined_once_in_common() {
+    let mut offending = Vec::new();
+    for name in [
+        "crc32(",
+        "png_chunk(",
+        "encode_png(",
+        "write_png(",
+        "write_gray_ramp_png(",
+        "write_rgb_png(",
+    ] {
+        let defined = definitions(name);
+        if defined.len() != 1 || !defined[0].starts_with("common/") {
+            offending.push(format!("{name} -> [{}]", defined.join(", ")));
+        }
+    }
+    let chunk = definitions("chunk(");
+    if !chunk.is_empty() {
+        offending.push(format!("chunk( -> [{}]", chunk.join(", ")));
+    }
+    assert!(
+        offending.is_empty(),
+        "PNG fixture helpers must be defined once under common/:\n{}",
+        offending.join("\n")
+    );
+}

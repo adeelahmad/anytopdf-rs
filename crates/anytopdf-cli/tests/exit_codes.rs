@@ -38,7 +38,7 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
 }
 
 /// 4x3 8-bit grayscale PNG using a stored (uncompressed) deflate block.
-fn write_png(path: &Path) {
+fn write_gray_ramp_png(path: &Path) {
     let raw: Vec<u8> = (0..3).flat_map(|_| [0u8, 10, 100, 200, 250]).collect();
     let (mut a, mut b) = (1u32, 0u32);
     for byte in &raw {
@@ -119,7 +119,7 @@ fn unavailable_explicit_ocr_provider_exits_4() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("pixel.png");
     let output = dir.path().join("out.pdf");
-    write_png(&source);
+    write_gray_ramp_png(&source);
     let result = run(&[
         source.as_ref(),
         "--ocr".as_ref(),
@@ -180,4 +180,15 @@ fn render_failure_exits_6_without_publishing() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(!output.exists());
+}
+
+#[test]
+fn gray_ramp_png_fixture_bytes_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ramp.png");
+    write_gray_ramp_png(&path);
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&path).unwrap()),
+        "bd6a4c5dc04a58bb63fd728dc2d41498fa4dfa2fd4c612ea1a39efc27be2e041"
+    );
 }

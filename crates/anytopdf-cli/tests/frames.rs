@@ -27,7 +27,7 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
 }
 
 /// 4x3 8-bit RGB PNG using a stored (uncompressed) deflate block.
-fn write_png(path: &Path) {
+fn write_rgb_png(path: &Path) {
     let raw: Vec<u8> = (0..3u8)
         .flat_map(|row| {
             std::iter::once(0u8).chain((0..4u8).flat_map(move |col| [col * 60, row * 80, 200]))
@@ -71,7 +71,7 @@ fn single_frame_png_manifest_matches_the_2f6f36e_golden() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("one.png");
     let output = dir.path().join("out.pdf");
-    write_png(&source);
+    write_rgb_png(&source);
     let convert = anytopdf()
         .args(["--no-plugins", "convert"])
         .arg(&source)
@@ -318,4 +318,15 @@ fn multi_frame_conversion_is_byte_reproducible() {
     assert_eq!(extract(&a)["manifest"], extract(&b)["manifest"]);
     let convert = run(&["--json"], &source, &dir.path().join("c.pdf"));
     assert_eq!(json_stdout(&convert)["outputs"][0]["pages"], 4);
+}
+
+#[test]
+fn rgb_png_fixture_bytes_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rgb.png");
+    write_rgb_png(&path);
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&path).unwrap()),
+        "c8186323045c7bb6bfc1655931ae1a9eebd6e2fcfda0be148300b9d0e191c8bf"
+    );
 }

@@ -141,3 +141,19 @@ fn convert_all(inputs: &[&Path], dir: &Path) -> serde_json::Value {
     );
     serde_json::from_slice(&fs::read(json).unwrap()).unwrap()
 }
+
+#[test]
+fn gray_png_fixture_bytes_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.png"), dir.path().join("b.png"));
+    write_png(&a, 8, 8);
+    write_png(&b, 4, 3);
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&a).unwrap()),
+        "f78c6580bef3099c7bd64109a30e919326cf8112b31a280e2d4ff667d5883b9b"
+    );
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&b).unwrap()),
+        "e8c313359eeaf147a590d309f68468e4d504c80fc1613a5d4483ad46300db5d8"
+    );
+}
