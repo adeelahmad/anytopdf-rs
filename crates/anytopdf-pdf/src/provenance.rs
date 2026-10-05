@@ -55,6 +55,7 @@ pub(crate) fn provenance_lines(
         if let Some(ty) = &source.detected_type {
             lines.push(format!("Type: {ty}"));
         }
+        lines.extend(print_job_lines(&source.metadata));
         let (mut first, mut last) = (usize::MAX, 0);
         for range in graph
             .units
@@ -68,6 +69,25 @@ pub(crate) fn provenance_lines(
         if last > 0 {
             lines.push(format!("Pages: {first}–{last}"));
         }
+    }
+    lines
+}
+
+/// Receipt lines for a source that arrived as a print job.
+fn print_job_lines(metadata: &anytopdf_core::Metadata) -> Vec<String> {
+    let Some(id) = metadata.get("print.job-id") else {
+        return Vec::new();
+    };
+    let mut job = format!("Print job: {id}");
+    if let Some(name) = metadata.get("print.job-name") {
+        job.push_str(&format!(" \"{name}\""));
+    }
+    let mut lines = vec![job];
+    if let Some(user) = metadata.get("print.user") {
+        lines.push(format!("Printed by: {user}"));
+    }
+    if let Some(format) = metadata.get("print.format") {
+        lines.push(format!("Print format: {format}"));
     }
     lines
 }
@@ -151,6 +171,31 @@ pub(crate) mod tests {
             (ub.id, PageRange { first: 2, last: 3 }),
         ]);
         (graph, map)
+    }
+
+    #[test]
+    fn print_job_sources_show_their_receipt() {
+        let (mut graph, map) = prov_graph();
+        for (k, v) in [
+            ("print.job-id", "12"),
+            ("print.job-name", "Receipt"),
+            ("print.user", "adeel"),
+            ("print.format", "image/pwg-raster"),
+        ] {
+            graph.sources[1].metadata.insert(k.into(), v.into());
+        }
+        let lines = provenance_lines(&graph, &map);
+        let at = lines.iter().position(|l| l == "Source: scan.png").unwrap();
+        assert_eq!(
+            &lines[at + 4..at + 7],
+            [
+                "Print job: 12 \"Receipt\"",
+                "Printed by: adeel",
+                "Print format: image/pwg-raster"
+            ]
+        );
+        let notes = lines.iter().position(|l| l == "Source: notes.txt").unwrap();
+        assert!(!lines[notes..at].iter().any(|l| l.starts_with("Print")));
     }
 
     #[test]

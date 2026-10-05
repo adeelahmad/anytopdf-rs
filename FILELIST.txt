@@ -76,3 +76,6 @@ tests/test_plugin_example.py
 tests/test_release.py
 tests/test_release_recovery.py
 tests/test_workflows.py
+crates/anytopdf-print/src/ipp.rs
+crates/anytopdf-print/src/receipts.rs
+crates/anytopdf-cli/tests/print_receipts.rs
