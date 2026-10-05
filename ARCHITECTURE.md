@@ -196,6 +196,17 @@ remain protected. JSON graph dumps retain diagnostic workspace paths rather than
 copying derived assets. Runtime plugin policy and timeouts are documented in
 `PLUGIN_PROTOCOL.md`; the host does not claim OS-level sandboxing.
 
+## Intake: mail watcher
+
+`crates/anytopdf-imap` is an intake channel, not a pipeline stage. It watches one
+mailbox, spools each new message as a raw `.eml` file and hands it to a
+`MessageSink`. The CLI's sink (feature `imap`, `anytopdf watch imap`) runs
+`anytopdf convert` in a child process per message, so a crash or hang on one
+message cannot stop the watcher. A job-queue sink can replace it without
+changing the watcher. The watcher does no MIME parsing: format knowledge stays
+in whichever importer claims RFC 822 input. Progress is a JSON state file keyed by
+UIDVALIDITY and written atomically after every message.
+
 ## Diagnostics
 
 Every warning or notice is a typed Diagnostic with a stable code (plugin-supplied warning

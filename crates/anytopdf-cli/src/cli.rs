@@ -59,6 +59,12 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Watch a mail source and convert each new message into its own PDF.
+    #[cfg_attr(not(feature = "imap"), command(hide = true))]
+    Watch {
+        #[command(subcommand)]
+        source: WatchSource,
+    },
     /// Detect the format and importer for an input without converting it.
     Probe {
         /// File to inspect.
@@ -363,4 +369,104 @@ pub(crate) struct ConvertArgs {
     /// Emit one JSON document on stdout.
     #[arg(long)]
     pub(crate) json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WatchSource {
+    /// Fetch new messages from an IMAP mailbox and convert each one.
+    ///
+    /// Each message is saved as a raw `.eml` file and converted by `anytopdf convert`
+    /// into `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`; arguments after `--`
+    /// are passed to convert. Turning email into pages needs an importer that accepts
+    /// RFC 822 messages (built in or an `anytopdf-plugin-*`). The password is read from
+    /// ANYTOPDF_IMAP_PASSWORD or --password-file, never from the command line.
+    Imap(Box<ImapArgs>),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ImapArgs {
+    /// IMAP server host name.
+    #[arg(long, env = "ANYTOPDF_IMAP_HOST")]
+    pub(crate) host: String,
+
+    /// Server port (default 993 for implicit TLS, 143 otherwise).
+    #[arg(long, env = "ANYTOPDF_IMAP_PORT")]
+    pub(crate) port: Option<u16>,
+
+    /// Connection security: implicit TLS, STARTTLS, or none (loopback hosts only).
+    #[arg(long, env = "ANYTOPDF_IMAP_TLS", default_value = "implicit", value_parser = ["implicit", "starttls", "none"])]
+    pub(crate) tls: String,
+
+    /// Login user name.
+    #[arg(long, env = "ANYTOPDF_IMAP_USER")]
+    pub(crate) user: String,
+
+    /// Read the password from this file instead of ANYTOPDF_IMAP_PASSWORD.
+    #[arg(long, env = "ANYTOPDF_IMAP_PASSWORD_FILE")]
+    pub(crate) password_file: Option<PathBuf>,
+
+    /// Mailbox to watch.
+    #[arg(long, env = "ANYTOPDF_IMAP_MAILBOX", default_value = "INBOX")]
+    pub(crate) mailbox: String,
+
+    /// Extra IMAP SEARCH criteria, e.g. 'FROM "scanner@example.com"'.
+    #[arg(long)]
+    pub(crate) search: Option<String>,
+
+    /// PEM file of additional trusted CA certificates (for self-signed servers).
+    #[arg(long)]
+    pub(crate) ca_file: Option<PathBuf>,
+
+    /// Directory that receives one PDF per message.
+    #[arg(long)]
+    pub(crate) output_dir: PathBuf,
+
+    /// Directory for watcher progress, spooled and failed messages
+    /// (default: <output-dir>/.anytopdf-imap). Use one per mailbox.
+    #[arg(long)]
+    pub(crate) state_dir: Option<PathBuf>,
+
+    /// On first run, also convert messages already in the mailbox.
+    #[arg(long)]
+    pub(crate) backfill: bool,
+
+    /// Check the mailbox once and exit instead of watching.
+    #[arg(long)]
+    pub(crate) once: bool,
+
+    /// Seconds between checks (also the IDLE refresh interval).
+    #[arg(long, default_value = "60", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) poll_interval: u64,
+
+    /// Skip messages larger than this many bytes.
+    #[arg(long, default_value_t = 50 * 1024 * 1024)]
+    pub(crate) max_message_bytes: u64,
+
+    /// Conversion attempts before a message is moved to <state-dir>/failed.
+    #[arg(long, default_value = "3", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) max_attempts: u32,
+
+    /// Maximum seconds for one message conversion.
+    #[arg(long, default_value = "600", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) convert_timeout: u64,
+
+    /// Set the \Seen flag on converted messages.
+    #[arg(long)]
+    pub(crate) mark_seen: bool,
+
+    /// Move converted messages to this mailbox.
+    #[arg(long)]
+    pub(crate) move_to: Option<String>,
+
+    /// Keep converted messages' .eml files in <state-dir>/spool.
+    #[arg(long)]
+    pub(crate) keep_eml: bool,
+
+    /// Suppress per-message progress on stderr.
+    #[arg(short, long)]
+    pub(crate) quiet: bool,
+
+    /// Options passed to each `anytopdf convert` run (after `--`).
+    #[arg(last = true)]
+    pub(crate) convert_args: Vec<std::ffi::OsString>,
 }

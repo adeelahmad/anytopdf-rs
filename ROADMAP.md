@@ -62,6 +62,8 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `anytopdf queue serve`: HTTP upload intake with a bearer token, localhost by default, TLS for any other address, 100 MB default upload cap
 - [x] archive importer (zip, tar, tar.gz) with path-traversal and zip-bomb limits
 - [x] Whisper transcription runtime plugin
+- [x] PDF importer (Poppler page images plus the PDF's own text as the hidden layer; OCR only for textless pages) and HEIC/HEIF/AVIF importer
+- [x] `helpers/anytopdf-printer`: optional IPP Everywhere printer built on PAPPL, with a PWG/Apple raster importer
 - [x] `anytopdf print remote`: TLS print front for Tailscale/WireGuard with user passwords, a peer allowlist and DNS-SD discovery
 - [x] krilla renderer, now the default: tagged PDF/A-3a with bookmarks, bidi shaping and font fallback, manifest and chunks as associated files
 - [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
@@ -74,10 +76,10 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 
 1. Webhooks and a job queue: done, including the HTTP upload input.
 2. IMAP mail watcher: in progress.
-3. PAPPL print server (IPP Everywhere / AirPrint / Mopria helper process): in progress.
+3. PAPPL print server: done as the optional `helpers/anytopdf-printer` IPP Everywhere helper with a print-raster importer; AirPrint and Mopria certification still open.
 4. Remote printing: done; signed-in user stamps and print receipts in progress.
 5. New renderer and PDF/A-3: done. Tagged PDF/A-3a through krilla is the default renderer, with bookmarks, bidi shaping, font fallback and a bundled DejaVu Sans font; `--renderer pdf` keeps printpdf.
-6. More inputs: HTML, email and zip/tar archives done; PDF and HEIC/HEIF/AVIF in progress.
+6. More inputs: done (HTML, email, zip/tar archives, PDF with its own text layer, HEIC/HEIF/AVIF).
 7. Office documents and Whisper transcription: done (Whisper as a runtime plugin).
 8. Distribution and an MCP server: MCP server and package manifests done; published tap and bucket, winget, `curl | sh`, npx/uvx wrappers, signing and notarization still open.
 
@@ -85,7 +87,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 - [x] `SECURITY.md` with private reporting through GitHub, and the threat model in `docs/threat-model/`
 - [ ] OS sandbox and descendant process containment for runtime plugins (in progress), then hard CPU/memory/disk quotas
 - [ ] untrusted-input handling for intake channels (no network, size/page caps, zip-bomb rejection)
-- [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, remote print front, MCP server, new importers)
+- [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, remote print front, PAPPL printer helper, MCP server, new importers)
 - [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
 
 ## Later media semantics
