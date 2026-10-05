@@ -212,3 +212,176 @@ fn extract_without_manifest_exits_with_input_code() {
     let absent = run_extract(&dir.path().join("absent.pdf"), true);
     assert_eq!(absent.status.code(), Some(3));
 }
+
+fn rewrite_sidecar(dir: &Path, kind: &str, value: &Value) {
+    fs::write(
+        dir.join(format!("plain.pdf.{kind}.json")),
+        serde_json::to_vec(value).unwrap(),
+    )
+    .unwrap();
+}
+
+fn nested_array(depth: usize) -> Value {
+    let mut value = Value::from(1);
+    for _ in 0..depth {
+        value = Value::Array(vec![value]);
+    }
+    value
+}
+
+#[test]
+fn extract_rejects_manifest_missing_a_required_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, mut manifest, _) = sidecar_fixture(dir.path(), |_| {});
+    assert_eq!(extract_ok(&plain)["origin"], "sidecar");
+    manifest.as_object_mut().unwrap().remove("generator");
+    rewrite_sidecar(dir.path(), "manifest", &manifest);
+    let out = run_extract(&plain, true);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "stderr: {stderr}");
+    assert!(out.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        stderr.contains("manifest does not match anytopdf.manifest/1"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("`generator`"), "stderr: {stderr}");
+    assert!(
+        !stderr.contains("[extract.version-mismatch]"),
+        "stderr: {stderr}"
+    );
+    let typed = dir.path().display().to_string();
+    let canonical = fs::canonicalize(dir.path()).unwrap().display().to_string();
+    let stripped = canonical.strip_prefix(r"\\?\").unwrap_or(&canonical);
+    for form in [typed.as_str(), canonical.as_str(), stripped] {
+        assert!(!stderr.contains(form), "stderr leaks {form}: {stderr}");
+    }
+}
+
+#[test]
+fn extract_rejects_manifest_with_wrong_anchor_type() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, mut manifest, _) = sidecar_fixture(dir.path(), |_| {});
+    assert!(manifest["units"][0]["anchor"].is_object());
+    assert_eq!(extract_ok(&plain)["origin"], "sidecar");
+    manifest["units"][0]["anchor"] = Value::from("region");
+    rewrite_sidecar(dir.path(), "manifest", &manifest);
+    let out = run_extract(&plain, true);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "stderr: {stderr}");
+    assert!(out.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        stderr.contains("manifest does not match anytopdf.manifest/1: /units/0/anchor"),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
+fn extract_rejects_chunks_missing_a_required_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, _, mut chunks) = sidecar_fixture(dir.path(), |_| {});
+    assert_eq!(extract_ok(&plain)["origin"], "sidecar");
+    chunks["chunks"][0].as_object_mut().unwrap().remove("text");
+    rewrite_sidecar(dir.path(), "chunks", &chunks);
+    let out = run_extract(&plain, true);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "stderr: {stderr}");
+    assert!(out.stdout.is_empty(), "stdout must be empty");
+    assert!(
+        stderr.contains("chunks does not match anytopdf.chunks/1: /chunks/0"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("`text`"), "stderr: {stderr}");
+}
+
+#[test]
+fn extract_reports_how_many_further_schema_errors_exist() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, mut manifest, _) = sidecar_fixture(dir.path(), |_| {});
+    assert_eq!(extract_ok(&plain)["origin"], "sidecar");
+    let obj = manifest.as_object_mut().unwrap();
+    obj.remove("generator");
+    obj.remove("profile");
+    rewrite_sidecar(dir.path(), "manifest", &manifest);
+    let out = run_extract(&plain, true);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "stderr: {stderr}");
+    assert!(
+        stderr.contains("manifest does not match anytopdf.manifest/1"),
+        "stderr: {stderr}"
+    );
+    assert!(stderr.contains("(+1 more)"), "stderr: {stderr}");
+}
+
+#[test]
+fn extract_rejects_deep_nesting_without_crashing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, mut manifest, _) = sidecar_fixture(dir.path(), |_| {});
+    assert_eq!(extract_ok(&plain)["origin"], "sidecar");
+    manifest["units"][0]["anchor"] = nested_array(100);
+    rewrite_sidecar(dir.path(), "manifest", &manifest);
+    let a = run_extract(&plain, true);
+    let a_err = String::from_utf8_lossy(&a.stderr);
+    assert_eq!(a.status.code(), Some(3), "case A stderr: {a_err}");
+    assert!(
+        a_err.contains("manifest does not match anytopdf.manifest/1: /units/0/anchor"),
+        "case A stderr: {a_err}"
+    );
+    manifest["units"][0]["anchor"] = nested_array(200);
+    rewrite_sidecar(dir.path(), "manifest", &manifest);
+    let b = run_extract(&plain, true);
+    let b_err = String::from_utf8_lossy(&b.stderr);
+    assert_eq!(b.status.code(), Some(3), "case B stderr: {b_err}");
+    assert!(!b_err.contains("does not match"), "case B stderr: {b_err}");
+}
+
+#[test]
+fn extract_skips_schema_validation_on_version_mismatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let (plain, _, _) = sidecar_fixture(dir.path(), |manifest| {
+        manifest["schema_version"] = Value::from("anytopdf.manifest/999");
+        manifest.as_object_mut().unwrap().remove("generator");
+    });
+    let out = run_extract(&plain, true);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "stderr: {stderr}");
+    let doc = single_document(&out.stdout);
+    assert!(
+        doc["warnings"]
+            .as_array()
+            .expect("warnings array")
+            .iter()
+            .any(|w| w["code"] == "extract.version-mismatch"),
+        "warnings: {}",
+        doc["warnings"]
+    );
+    assert!(stderr.contains("[extract.version-mismatch]"), "{stderr}");
+    assert!(!stderr.contains("does not match"), "{stderr}");
+}
+
+#[test]
+fn extract_accepts_share_profile_output_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let notes = dir.path().join("notes.txt");
+    fs::write(&notes, "Extract fixture line one\nline two\n").unwrap();
+    let pdf = dir.path().join("share.pdf");
+    let out = anytopdf()
+        .arg("convert")
+        .arg(&notes)
+        .args(["--profile", "share", "--ocr", "off", "-o"])
+        .arg(&pdf)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "convert failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let doc = extract_ok(&pdf);
+    assert_eq!(doc["origin"], "embedded");
+    assert_eq!(
+        doc["manifest"],
+        embedded_json(&pdf, "anytopdf-manifest.json")
+    );
+    assert_eq!(doc["chunks"], embedded_json(&pdf, "anytopdf-chunks.json"));
+    assert_eq!(doc["warnings"], serde_json::json!([]));
+}

@@ -165,3 +165,23 @@ fn frames_are_documented_in_readme_and_changelog() {
         );
     }
 }
+
+#[test]
+fn extract_schema_rejection_is_documented() {
+    let readme = repo_file("README.md");
+    let changelog = repo_file("CHANGELOG.md");
+    let first = changelog.split("\n## ").nth(1).unwrap_or("");
+    let needle = ["does not match its schema"];
+    assert!(
+        missing(&readme, &needle).is_empty(),
+        "README missing {needle:?}"
+    );
+    assert!(
+        missing(first, &needle).is_empty(),
+        "CHANGELOG first section missing {needle:?}"
+    );
+    assert!(
+        readme.contains("extract.version-mismatch"),
+        "README lost extract.version-mismatch"
+    );
+}
