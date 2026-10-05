@@ -32,7 +32,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.92.0
         with:
           components: rustfmt, clippy
       - uses: actions/setup-python@v5
