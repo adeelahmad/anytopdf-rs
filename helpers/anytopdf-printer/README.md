@@ -51,6 +51,28 @@ and the reason is in the log.
 | `log-file`         |                          | `-` (stderr)                 |
 | `log-level`        |                          | `info`                       |
 
+## Job hand-off
+
+For every job the helper runs, without a shell:
+
+```
+$ANYTOPDF_BIN convert <spool>/<job>.pwg --output <output-directory>/<name>.pdf
+```
+
+with the job's IPP metadata added to the environment:
+
+| Variable                  | Value                         |
+|---------------------------|-------------------------------|
+| `ANYTOPDF_PRINT_JOB_ID`   | PAPPL job id                  |
+| `ANYTOPDF_PRINT_JOB_NAME` | `job-name`                    |
+| `ANYTOPDF_PRINT_USER`     | `job-originating-user-name`   |
+| `ANYTOPDF_PRINT_FORMAT`   | submitted `document-format`   |
+
+Exit status 0 completes the job; anything else aborts it. The spool file is
+removed afterwards either way. Point `ANYTOPDF_BIN` at a wrapper to record
+receipts or post-process the PDF. Front ends such as remote printing can proxy
+IPP to this helper on loopback and add their own metadata the same way.
+
 The spool directory also holds the saved printer configuration. Other PAPPL
 sub-commands (`printers`, `jobs`, `cancel`, `status`, `shutdown`) work as usual;
 run `./anytopdf-printer --help`.

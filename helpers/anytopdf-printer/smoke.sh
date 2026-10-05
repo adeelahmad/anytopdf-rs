@@ -44,7 +44,15 @@ png += chunk(b"IEND", b"")
 open(sys.argv[1], "wb").write(png)
 EOF
 
-ANYTOPDF_BIN="$anytopdf" "$printer" server \
+# Record the job metadata the helper hands to the converter.
+cat > "$work/convert.sh" <<WRAPPER
+#!/bin/sh
+env | grep '^ANYTOPDF_PRINT_' > "$work/job.env"
+exec "$anytopdf" "\$@"
+WRAPPER
+chmod +x "$work/convert.sh"
+
+ANYTOPDF_BIN="$work/convert.sh" "$printer" server \
     -o server-port="${SMOKE_PORT:-18631}" \
     -o spool-directory="$work/spool" \
     -o output-directory="$work/out" \
@@ -84,4 +92,11 @@ echo "$info" | grep -E '^(Pages|Page size):'
 echo "$info" | grep -Eq '^Page size: +612 x 792 pts' || { echo "smoke: expected a Letter page" >&2; exit 1; }
 pdfdetach -list "$pdf" | grep -q anytopdf-manifest.json || { echo "smoke: manifest missing" >&2; exit 1; }
 [ -z "$(find "$work/spool" -name '*.pwg')" ] || { echo "smoke: spool file left behind" >&2; exit 1; }
+for expected in ANYTOPDF_PRINT_JOB_NAME=smoke-test ANYTOPDF_PRINT_FORMAT=image/png; do
+    grep -qx "$expected" "$work/job.env" || {
+        echo "smoke: converter did not receive $expected" >&2
+        cat "$work/job.env" >&2
+        exit 1
+    }
+done
 echo "smoke: printed $(basename "$pdf")"

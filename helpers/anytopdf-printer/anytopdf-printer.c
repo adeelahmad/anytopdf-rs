@@ -126,18 +126,40 @@ safe_name(const char *name,
 //
 // 'run_anytopdf()' - Convert a spooled raster file to a searchable PDF.
 //
+// The converter also receives the job's IPP metadata in ANYTOPDF_PRINT_*
+// environment variables, so a wrapper set as ANYTOPDF_BIN can record it.
+//
 
 static bool
 run_anytopdf(pappl_job_t *job,
              const char  *spool,
              const char  *output)
 {
-  pid_t pid;
-  int   status, err;
-  char  *argv[] = { config.anytopdf, "convert", (char *)spool, "--output", (char *)output, NULL };
+  pid_t  pid;
+  int    status, err;
+  size_t count = 0, i;
+  char   **envp, id[64], name[1024], user[512], format[256];
+  char   *argv[] = { config.anytopdf, "convert", (char *)spool, "--output", (char *)output, NULL };
 
-  err = strchr(config.anytopdf, '/') ? posix_spawn(&pid, config.anytopdf, NULL, NULL, argv, environ)
-                                     : posix_spawnp(&pid, config.anytopdf, NULL, NULL, argv, environ);
+  snprintf(id, sizeof(id), "ANYTOPDF_PRINT_JOB_ID=%d", papplJobGetID(job));
+  snprintf(name, sizeof(name), "ANYTOPDF_PRINT_JOB_NAME=%s", papplJobGetName(job) ? papplJobGetName(job) : "");
+  snprintf(user, sizeof(user), "ANYTOPDF_PRINT_USER=%s", papplJobGetUsername(job) ? papplJobGetUsername(job) : "");
+  snprintf(format, sizeof(format), "ANYTOPDF_PRINT_FORMAT=%s", papplJobGetFormat(job) ? papplJobGetFormat(job) : "");
+
+  while (environ[count])
+    count ++;
+  if ((envp = calloc(count + 5, sizeof(char *))) == NULL)
+    return (false);
+  for (i = 0; i < count; i ++)
+    envp[i] = environ[i];
+  envp[count]     = id;
+  envp[count + 1] = name;
+  envp[count + 2] = user;
+  envp[count + 3] = format;
+
+  err = strchr(config.anytopdf, '/') ? posix_spawn(&pid, config.anytopdf, NULL, NULL, argv, envp)
+                                     : posix_spawnp(&pid, config.anytopdf, NULL, NULL, argv, envp);
+  free(envp);
   if (err)
   {
     papplLogJob(job, PAPPL_LOGLEVEL_ERROR, "Unable to run '%s': %s", config.anytopdf, strerror(err));
