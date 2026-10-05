@@ -10,8 +10,6 @@ PYTHON=${PYTHON:-python3}
 "$CARGO" fmt --all -- --check
 "$CARGO" check --workspace --locked
 "$CARGO" clippy --workspace --all-targets --locked -- -D warnings
-"$CARGO" clippy -p anytopdf --all-targets --features imap --locked -- -D warnings
 "$CARGO" test --workspace --locked
 "$CARGO" test --workspace --no-default-features --locked
-"$CARGO" test -p anytopdf --features imap --locked
 "$PYTHON" -m unittest discover -s tests -p 'test_*.py'

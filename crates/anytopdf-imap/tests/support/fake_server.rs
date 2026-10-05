@@ -11,6 +11,24 @@ use std::{
 
 pub const USER: &str = "user";
 pub const PASSWORD: &str = "pass word";
+pub const TOKEN: &str = "ya29.test-token";
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n =
+            chunk.iter().fold(0u32, |acc, b| acc << 8 | u32::from(*b)) << (8 * (3 - chunk.len()));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
 
 #[derive(Default)]
 pub struct Server {
@@ -102,6 +120,24 @@ fn session(stream: Box<dyn Stream>, shared: &Shared, greet: bool) {
                 reply.extend(format!("{tag} OK logged in\r\n").bytes());
             } else {
                 reply.extend(format!("{tag} NO bad credentials\r\n").bytes());
+            }
+        } else if upper == "AUTHENTICATE XOAUTH2" {
+            let expected = base64(format!("user={USER}\x01auth=Bearer {TOKEN}\x01\x01").as_bytes());
+            let out = reader.get_mut();
+            let _ = out.write_all(b"+ \r\n").and_then(|()| out.flush());
+            let mut answer = String::new();
+            let _ = reader.read_line(&mut answer);
+            if answer.trim_end() == expected {
+                reply.extend(format!("{tag} OK authenticated\r\n").bytes());
+            } else {
+                // Gmail-style JSON error challenge, then NO after the empty reply.
+                let out = reader.get_mut();
+                let _ = out
+                    .write_all(b"+ eyJzdGF0dXMiOiI0MDAifQ==\r\n")
+                    .and_then(|()| out.flush());
+                let mut empty = String::new();
+                let _ = reader.read_line(&mut empty);
+                reply.extend(format!("{tag} NO invalid credentials\r\n").bytes());
             }
         } else if upper.starts_with("CAPABILITY") {
             reply.extend(format!("* CAPABILITY IMAP4rev1 UIDPLUS\r\n{tag} OK\r\n").bytes());

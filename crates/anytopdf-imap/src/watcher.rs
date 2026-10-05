@@ -1,3 +1,4 @@
+use crate::sender::SenderPolicy;
 use crate::state::WatchState;
 use anyhow::{Context, Result};
 use std::{
@@ -42,10 +43,12 @@ pub struct SpooledMessage {
     pub size: u64,
 }
 
-/// A successful hand-off. `output` is set when the sink produced a file directly.
+/// A successful hand-off. `output` is set when the sink produced a file directly;
+/// `note` says what happened otherwise (for example the queued job id).
 #[derive(Clone, Debug, Default)]
 pub struct Delivery {
     pub output: Option<PathBuf>,
+    pub note: Option<String>,
 }
 
 /// Receives each spooled message. Returning `Ok` means the watcher may forget the
@@ -66,6 +69,8 @@ pub struct WatchOptions {
     pub move_to: Option<String>,
     /// Keep delivered `.eml` files in `<state-dir>/spool` instead of deleting them.
     pub keep_eml: bool,
+    /// Messages from other senders are skipped and left in the mailbox.
+    pub senders: SenderPolicy,
     pub quiet: bool,
 }
 
@@ -78,6 +83,8 @@ pub struct PassReport {
     pub parked: Vec<u32>,
     /// Gone from the server before they could be fetched.
     pub vanished: Vec<u32>,
+    /// Refused by the sender policy; left in the mailbox and not retried.
+    pub rejected: Vec<u32>,
 }
 
 pub struct Watcher {
@@ -205,6 +212,12 @@ impl Watcher {
             Self::park(uid, state, report);
             return Ok(());
         }
+        if let Err(reason) = self.opts.senders.check(&bytes) {
+            self.log(&format!("uid {uid}: skipped, {reason}"));
+            state.retry.remove(&uid);
+            report.rejected.push(uid);
+            return Ok(());
+        }
         let stem = message_stem(&self.mailbox, state.uid_validity, uid);
         let spool = self.opts.state_dir.join("spool");
         let path = spool.join(format!("{stem}.eml"));
@@ -221,9 +234,10 @@ impl Watcher {
             Ok(delivery) => {
                 state.retry.remove(&uid);
                 report.delivered.push(uid);
-                match &delivery.output {
-                    Some(out) => self.log(&format!("uid {uid}: wrote {}", out.display())),
-                    None => self.log(&format!("uid {uid}: delivered")),
+                match (&delivery.output, &delivery.note) {
+                    (Some(out), _) => self.log(&format!("uid {uid}: wrote {}", out.display())),
+                    (None, Some(note)) => self.log(&format!("uid {uid}: {note}")),
+                    (None, None) => self.log(&format!("uid {uid}: delivered")),
                 }
                 if self.opts.mark_seen
                     && let Err(e) = mailbox.mark_seen(uid)
@@ -456,6 +470,7 @@ mod tests {
                 mark_seen: false,
                 move_to: None,
                 keep_eml: false,
+                senders: SenderPolicy::default(),
                 quiet: true,
             },
         )
@@ -582,6 +597,27 @@ mod tests {
         w.poll_once(&mut mailbox, &mut sink).unwrap();
         assert_eq!(mailbox.seen, vec![7]);
         assert_eq!(mailbox.moved, vec![(7, "Archive/PDF".to_string())]);
+    }
+
+    #[test]
+    fn senders_outside_the_policy_are_skipped_and_not_retried() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut mailbox = FakeMailbox::with(&[]);
+        mailbox
+            .messages
+            .insert(1, b"From: scanner@example.com\r\n\r\nok".to_vec());
+        mailbox
+            .messages
+            .insert(2, b"From: mallory@evil.test\r\n\r\nno".to_vec());
+        let mut sink = FakeSink::default();
+        let mut w = watcher(dir.path(), true);
+        w.opts.senders = SenderPolicy::new(&["example.com".into()], None).unwrap();
+        let report = w.poll_once(&mut mailbox, &mut sink).unwrap();
+        assert_eq!((report.delivered, report.rejected), (vec![1], vec![2]));
+        assert_eq!(
+            w.poll_once(&mut mailbox, &mut sink).unwrap(),
+            PassReport::default()
+        );
     }
 
     #[test]

@@ -42,14 +42,57 @@ impl FromStr for TlsMode {
     }
 }
 
-/// Connection settings for one mailbox. The password is never logged or serialized.
+/// How the watcher logs in. Secrets are never logged or serialized.
+#[derive(Clone, PartialEq, Eq)]
+pub enum Credential {
+    /// IMAP `LOGIN` with a password (or an app password).
+    Password(String),
+    /// SASL `XOAUTH2` (Gmail, Microsoft 365) with an access token.
+    OAuth2Token(String),
+    /// Like `OAuth2Token`, re-read on every connection so an external refresher can
+    /// replace short-lived tokens without restarting the watcher.
+    OAuth2TokenFile(PathBuf),
+}
+
+impl Credential {
+    /// The secret to send now, reading a token file if needed.
+    pub fn secret(&self) -> Result<String> {
+        let secret = match self {
+            Credential::Password(s) | Credential::OAuth2Token(s) => s.clone(),
+            Credential::OAuth2TokenFile(path) => read_password(path)?.trim().to_string(),
+        };
+        if secret.is_empty() {
+            bail!("IMAP {} is empty", self.kind());
+        }
+        Ok(secret)
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Credential::Password(_) => "password",
+            Credential::OAuth2Token(_) | Credential::OAuth2TokenFile(_) => "OAuth2 token",
+        }
+    }
+}
+
+impl std::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Credential::Password(_) => f.write_str("Password(<redacted>)"),
+            Credential::OAuth2Token(_) => f.write_str("OAuth2Token(<redacted>)"),
+            Credential::OAuth2TokenFile(path) => write!(f, "OAuth2TokenFile({})", path.display()),
+        }
+    }
+}
+
+/// Connection settings for one mailbox.
 #[derive(Clone)]
 pub struct ImapConfig {
     pub host: String,
     pub port: u16,
     pub tls: TlsMode,
     pub user: String,
-    pub password: String,
+    pub credential: Credential,
     pub mailbox: String,
     /// Extra IMAP SEARCH criteria ANDed with the UID range, e.g. `FROM "scanner@example.com"`.
     pub search: Option<String>,
@@ -66,7 +109,7 @@ impl std::fmt::Debug for ImapConfig {
             .field("port", &self.port)
             .field("tls", &self.tls)
             .field("user", &self.user)
-            .field("password", &"<redacted>")
+            .field("credential", &self.credential)
             .field("mailbox", &self.mailbox)
             .field("search", &self.search)
             .field("ca_file", &self.ca_file)
@@ -83,15 +126,15 @@ impl ImapConfig {
         if self.user.is_empty() {
             bail!("IMAP user is empty");
         }
-        if self.password.is_empty() {
-            bail!("IMAP password is empty");
+        if !matches!(self.credential, Credential::OAuth2TokenFile(_)) {
+            self.credential.secret()?;
         }
         if self.mailbox.is_empty() {
             bail!("IMAP mailbox is empty");
         }
         if self.tls == TlsMode::None && !is_loopback_host(&self.host) {
             bail!(
-                "--tls none is only allowed for loopback hosts; {} would receive the password in clear text",
+                "--tls none is only allowed for loopback hosts; {} would receive the credentials in clear text",
                 self.host
             );
         }
@@ -131,7 +174,7 @@ mod tests {
             port: tls.default_port(),
             tls,
             user: "u".into(),
-            password: "p".into(),
+            credential: Credential::Password("p".into()),
             mailbox: "INBOX".into(),
             search: None,
             ca_file: None,
@@ -166,8 +209,10 @@ mod tests {
     #[test]
     fn debug_output_redacts_the_password() {
         let mut c = config("imap.example.com", TlsMode::Implicit);
-        c.password = "hunter2".into();
+        c.credential = Credential::Password("hunter2".into());
         assert!(!format!("{c:?}").contains("hunter2"));
+        c.credential = Credential::OAuth2Token("ya29.secret".into());
+        assert!(!format!("{c:?}").contains("ya29"));
     }
 
     #[test]

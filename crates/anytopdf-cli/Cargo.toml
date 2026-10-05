@@ -27,7 +27,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target
 pkg-fmt = "zip"
 
 [features]
-default = ["apple-vision"]
+default = ["apple-vision", "imap"]
 apple-vision = ["anytopdf-builtin/apple-vision"]
 # `anytopdf watch imap`: fetch mail over IMAP and convert each message.
 imap = ["dep:anytopdf-imap"]

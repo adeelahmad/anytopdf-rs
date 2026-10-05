@@ -18,16 +18,18 @@ mod imap {
     use super::*;
     use crate::cli::Cli;
     use crate::exit::tag;
+    use crate::queue::{Job, Origin, Queue, check_convert_args};
     use anyhow::{Context, Result, bail};
     use anytopdf_core::CommandExt;
     use anytopdf_imap::{
-        Delivery, ImapConfig, Mailbox, MessageSink, SpooledMessage, TlsMode, WatchOptions, Watcher,
-        connect, read_password,
+        Credential, Delivery, ImapConfig, Mailbox, MessageSink, SenderPolicy, SpooledMessage,
+        TlsMode, WatchOptions, Watcher, connect, read_password,
     };
     use clap::Parser;
     use std::{ffi::OsString, path::PathBuf, process::Command, time::Duration};
 
     const PASSWORD_ENV: &str = "ANYTOPDF_IMAP_PASSWORD";
+    const TOKEN_ENV: &str = "ANYTOPDF_IMAP_OAUTH_TOKEN";
     const IO_TIMEOUT: Duration = Duration::from_secs(120);
 
     /// Converts each spooled message with a child `anytopdf convert`, so a crash or
@@ -46,8 +48,9 @@ mod imap {
             command
                 .args(&self.global)
                 .args(convert_args(input, output, &self.extra))
-                // Plugins run by the converter must not inherit the mailbox password.
-                .env_remove(PASSWORD_ENV);
+                // Plugins run by the converter must not inherit mailbox credentials.
+                .env_remove(PASSWORD_ENV)
+                .env_remove(TOKEN_ENV);
             command
         }
     }
@@ -72,6 +75,37 @@ mod imap {
             }
             Ok(Delivery {
                 output: Some(output),
+                note: None,
+            })
+        }
+    }
+
+    /// Hands each message to an `anytopdf queue` directory as a job. The queue owns a
+    /// copy of the message, so the watcher may delete its spool file afterwards.
+    struct QueueSink {
+        queue: Queue,
+        convert: Vec<String>,
+    }
+
+    impl MessageSink for QueueSink {
+        fn deliver(&mut self, message: &SpooledMessage) -> Result<Delivery> {
+            let mut job = Job::new(
+                Origin::Imap,
+                Vec::new(),
+                self.convert.clone(),
+                std::env::current_dir()?,
+            );
+            let input_dir = self.queue.work_dir(&job.id).join("input");
+            std::fs::create_dir_all(&input_dir)
+                .with_context(|| format!("create {}", input_dir.display()))?;
+            let input = input_dir.join(format!("{}.eml", message.stem));
+            std::fs::copy(&message.path, &input)
+                .with_context(|| format!("copy message into {}", input.display()))?;
+            job.inputs = vec![input];
+            self.queue.enqueue(&job)?;
+            Ok(Delivery {
+                output: None,
+                note: Some(format!("queued as {}", job.id)),
             })
         }
     }
@@ -109,23 +143,38 @@ mod imap {
         flags
     }
 
+    fn credential(args: &ImapArgs) -> Result<Credential, CliError> {
+        let from_env = |var: &str, file_flag: &str| {
+            std::env::var(var)
+                .map_err(|_| fail(ExitClass::Usage, format!("set {var} or pass {file_flag}")))
+        };
+        Ok(match args.auth.as_str() {
+            "xoauth2" => match &args.oauth_token_file {
+                Some(path) => {
+                    Credential::OAuth2TokenFile(tag(ExitClass::Usage, std::path::absolute(path))?)
+                }
+                None => Credential::OAuth2Token(from_env(TOKEN_ENV, "--oauth-token-file")?),
+            },
+            _ => match &args.password_file {
+                Some(path) => Credential::Password(tag(ExitClass::Usage, read_password(path))?),
+                None => Credential::Password(from_env(PASSWORD_ENV, "--password-file")?),
+            },
+        })
+    }
+
     pub(crate) fn watch_imap(args: ImapArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
         let tls: TlsMode = tag(ExitClass::Usage, args.tls.parse())?;
-        let password = match &args.password_file {
-            Some(path) => tag(ExitClass::Usage, read_password(path))?,
-            None => std::env::var(PASSWORD_ENV).map_err(|_| {
-                fail(
-                    ExitClass::Usage,
-                    format!("set {PASSWORD_ENV} or pass --password-file"),
-                )
-            })?,
-        };
+        let credential = credential(&args)?;
+        let senders = tag(
+            ExitClass::Usage,
+            SenderPolicy::new(&args.allow_from, args.require_dmarc.as_deref()),
+        )?;
         let config = ImapConfig {
             host: args.host.clone(),
             port: args.port.unwrap_or(tls.default_port()),
             tls,
             user: args.user.clone(),
-            password,
+            credential,
             mailbox: args.mailbox.clone(),
             search: args.search.clone(),
             ca_file: args.ca_file.clone(),
@@ -134,38 +183,58 @@ mod imap {
         tag(ExitClass::Usage, config.validate())?;
 
         // Reject bad convert options now rather than failing every message later.
-        let probe = convert_args(
-            "message.eml".as_ref(),
-            "message.pdf".as_ref(),
-            &args.convert_args,
-        );
-        if let Err(e) =
-            Cli::try_parse_from(std::iter::once(OsString::from("anytopdf")).chain(probe))
-        {
-            let first = e.to_string();
-            let first = first.lines().next().unwrap_or_default();
-            return Err(fail(
-                ExitClass::Usage,
-                format!("invalid convert options after `--`: {first}"),
-            ));
-        }
-
-        let output_dir = tag(
-            ExitClass::Usage,
-            std::fs::create_dir_all(&args.output_dir)
-                .and_then(|()| std::path::absolute(&args.output_dir))
-                .with_context(|| format!("prepare --output-dir {}", args.output_dir.display())),
-        )?;
+        let (mut sink, base): (Box<dyn MessageSink>, PathBuf) = match &args.queue {
+            Some(dir) => {
+                let convert = args
+                    .convert_args
+                    .iter()
+                    .map(|a| a.clone().into_string())
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| fail(ExitClass::Usage, "convert options must be UTF-8"))?;
+                check_convert_args(&convert)?;
+                let queue = tag(ExitClass::Usage, Queue::open(dir))?;
+                let base = queue.root().to_path_buf();
+                (Box::new(QueueSink { queue, convert }), base)
+            }
+            None => {
+                let probe = convert_args(
+                    "message.eml".as_ref(),
+                    "message.pdf".as_ref(),
+                    &args.convert_args,
+                );
+                if let Err(e) =
+                    Cli::try_parse_from(std::iter::once(OsString::from("anytopdf")).chain(probe))
+                {
+                    let first = e.to_string();
+                    let first = first.lines().next().unwrap_or_default();
+                    return Err(fail(
+                        ExitClass::Usage,
+                        format!("invalid convert options after `--`: {first}"),
+                    ));
+                }
+                let dir = args
+                    .output_dir
+                    .as_ref()
+                    .expect("clap requires --output-dir without --queue");
+                let output_dir = tag(
+                    ExitClass::Usage,
+                    std::fs::create_dir_all(dir)
+                        .and_then(|()| std::path::absolute(dir))
+                        .with_context(|| format!("prepare --output-dir {}", dir.display())),
+                )?;
+                let sink = ConvertSink {
+                    exe: std::env::current_exe().context("locate the anytopdf executable")?,
+                    global: plugin_flags(policy),
+                    output_dir: output_dir.clone(),
+                    extra: args.convert_args.clone(),
+                    timeout: Duration::from_secs(args.convert_timeout),
+                };
+                (Box::new(sink), output_dir)
+            }
+        };
         let state_dir = match &args.state_dir {
             Some(dir) => tag(ExitClass::Usage, std::path::absolute(dir))?,
-            None => output_dir.join(".anytopdf-imap"),
-        };
-        let mut sink = ConvertSink {
-            exe: std::env::current_exe().context("locate the anytopdf executable")?,
-            global: plugin_flags(policy),
-            output_dir,
-            extra: args.convert_args.clone(),
-            timeout: Duration::from_secs(args.convert_timeout),
+            None => tag(ExitClass::Usage, std::path::absolute(base))?.join(".anytopdf-imap"),
         };
         let watcher = Watcher::new(
             &config.host,
@@ -179,6 +248,7 @@ mod imap {
                 mark_seen: args.mark_seen,
                 move_to: args.move_to.clone(),
                 keep_eml: args.keep_eml,
+                senders,
                 quiet: args.quiet,
             },
         );
@@ -190,14 +260,20 @@ mod imap {
             let mut mailbox = first.take().expect("connected above");
             let report = tag(
                 ExitClass::Provider,
-                watcher.poll_once(&mut mailbox, &mut sink),
+                watcher.poll_once(&mut mailbox, sink.as_mut()),
             )?;
             if !args.quiet {
                 eprintln!(
-                    "imap: {} converted, {} to retry, {} skipped",
+                    "imap: {} {}, {} to retry, {} skipped, {} refused by sender policy",
                     report.delivered.len(),
+                    if args.queue.is_some() {
+                        "queued"
+                    } else {
+                        "converted"
+                    },
                     report.failed.len(),
-                    report.parked.len()
+                    report.parked.len(),
+                    report.rejected.len()
                 );
             }
             return Ok(());
@@ -210,7 +286,7 @@ mod imap {
         };
         watcher.run(
             &mut connect_next,
-            &mut sink,
+            sink.as_mut(),
             Duration::from_secs(args.poll_interval),
         )?;
         Ok(())
@@ -261,6 +337,11 @@ mod imap {
                 command
                     .get_envs()
                     .any(|(key, value)| key == PASSWORD_ENV && value.is_none())
+            );
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == TOKEN_ENV && value.is_none())
             );
             let args: Vec<_> = command.get_args().collect();
             assert_eq!(args[0], "convert");

@@ -75,7 +75,7 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 Priority order as of sprint 4 sign-off, with status on `main`.
 
 1. Webhooks and a job queue: done, including the HTTP upload input.
-2. IMAP mail watcher: in progress.
+2. IMAP mail watcher: done (`anytopdf watch imap`: IDLE or polling, sender allowlist with DMARC check, OAuth2 XOAUTH2 tokens, job-queue hand-off, shipped in release builds); richer rules and a quarantine folder still open.
 3. PAPPL print server: done as the optional `helpers/anytopdf-printer` IPP Everywhere helper with a print-raster importer; AirPrint and Mopria certification still open.
 4. Remote printing: done; signed-in user stamps and print receipts in progress.
 5. New renderer and PDF/A-3: done. Tagged PDF/A-3a through krilla is the default renderer, with bookmarks, bidi shaping, font fallback and a bundled DejaVu Sans font; `--renderer pdf` keeps printpdf.
@@ -87,7 +87,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 - [x] `SECURITY.md` with private reporting through GitHub, and the threat model in `docs/threat-model/`
 - [ ] OS sandbox and descendant process containment for runtime plugins (in progress), then hard CPU/memory/disk quotas
 - [ ] untrusted-input handling for intake channels (no network, size/page caps, zip-bomb rejection)
-- [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, remote print front, PAPPL printer helper, MCP server, new importers)
+- [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, IMAP watcher, remote print front, PAPPL printer helper, MCP server, new importers)
 - [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
 
 ## Later media semantics

@@ -1,13 +1,14 @@
 //! Drives the real IMAP transport against a small scripted server on loopback.
 use anyhow::Result;
 use anytopdf_imap::{
-    Delivery, ImapConfig, MessageSink, SpooledMessage, TlsMode, WatchOptions, Watcher, connect,
+    Credential, Delivery, ImapConfig, MessageSink, SpooledMessage, TlsMode, WatchOptions, Watcher,
+    connect,
 };
 use std::time::Duration;
 
 #[path = "support/fake_server.rs"]
 mod fake_server;
-use fake_server::{PASSWORD, Shared, USER, serve};
+use fake_server::{PASSWORD, Shared, TOKEN, USER, serve};
 
 fn config(port: u16, tls: TlsMode) -> ImapConfig {
     ImapConfig {
@@ -15,7 +16,7 @@ fn config(port: u16, tls: TlsMode) -> ImapConfig {
         port,
         tls,
         user: USER.into(),
-        password: PASSWORD.into(),
+        credential: Credential::Password(PASSWORD.into()),
         mailbox: "INBOX".into(),
         search: None,
         ca_file: None,
@@ -56,6 +57,7 @@ fn watcher_fetches_new_messages_over_imap_once_each() {
             mark_seen: true,
             move_to: None,
             keep_eml: false,
+            senders: Default::default(),
             quiet: true,
         },
     );
@@ -88,7 +90,7 @@ fn watcher_fetches_new_messages_over_imap_once_each() {
 fn wrong_password_is_a_login_error() {
     let port = serve(Shared::default());
     let mut cfg = config(port, TlsMode::None);
-    cfg.password = "nope".into();
+    cfg.credential = Credential::Password("nope".into());
     let err = connect(&cfg).err().unwrap();
     assert!(format!("{err:#}").contains("IMAP login as user"), "{err:#}");
 }
@@ -100,4 +102,41 @@ fn starttls_refusal_stops_before_sending_credentials() {
     assert!(connect(&config(port, TlsMode::StartTls)).is_err());
     let commands = shared.lock().unwrap().commands.clone();
     assert_eq!(commands, vec!["STARTTLS".to_string()]);
+}
+
+#[test]
+fn xoauth2_logs_in_with_a_token_and_rejects_a_bad_one() {
+    let shared = Shared::default();
+    let port = serve(shared.clone());
+    let mut cfg = config(port, TlsMode::None);
+    cfg.credential = Credential::OAuth2Token(TOKEN.into());
+    let mut mailbox = connect(&cfg).unwrap();
+    use anytopdf_imap::Mailbox;
+    assert_eq!(mailbox.status().unwrap().uid_validity, 42);
+    drop(mailbox);
+    assert!(
+        shared
+            .lock()
+            .unwrap()
+            .commands
+            .iter()
+            .all(|c| !c.starts_with("LOGIN"))
+    );
+
+    cfg.credential = Credential::OAuth2Token("expired".into());
+    let err = connect(&cfg).err().unwrap();
+    assert!(format!("{err:#}").contains("IMAP login as user"), "{err:#}");
+}
+
+#[test]
+fn xoauth2_token_file_is_read_on_each_connection() {
+    let port = serve(Shared::default());
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("token");
+    std::fs::write(&file, "stale\n").unwrap();
+    let mut cfg = config(port, TlsMode::None);
+    cfg.credential = Credential::OAuth2TokenFile(file.clone());
+    assert!(connect(&cfg).is_err());
+    std::fs::write(&file, format!("{TOKEN}\n")).unwrap();
+    assert!(connect(&cfg).is_ok());
 }
