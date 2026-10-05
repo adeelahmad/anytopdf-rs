@@ -81,8 +81,11 @@ run `./anytopdf-printer --help`.
 
 Print jobs are untrusted input. The helper listens on localhost by default and
 the web interface only allows local administration. Setting
-`listen-hostname=*` exposes it to the network without a password; TLS with
-authentication is a later step on the roadmap. Conversion runs as the user who
+`listen-hostname=*` exposes it to the network without a password. To accept
+jobs from other devices, keep the helper on localhost and run
+`anytopdf print remote` in front of it: it adds TLS, a password, a peer
+allowlist and receipts, and stamps the signed-in user as the job's owner
+(`remote-smoke.sh` and `make printer-remote-smoke` exercise that path). Conversion runs as the user who
 started the server, and the raster importer rejects pages larger than 2^27 pixels
 before allocating them.
 
