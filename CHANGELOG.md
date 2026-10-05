@@ -53,12 +53,17 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   headless LibreOffice and Poppler: one page image per page, with the document's
   positioned text from `pdftotext` and no OCR on those pages. `doctor` reports
   `soffice`, `pdftoppm` and `pdftotext`.
+- The `anytopdf-plugin-whisper` runtime plugin transcribes audio and video with
+  whisper.cpp or an OpenAI-compatible Whisper CLI into timed transcript pages.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
-- `--renderer pdfa` writes PDF/A-3b through krilla: embedded fonts, XMP metadata, an
-  sRGB output intent, and the manifest and chunks as associated files. The hidden
-  layer uses fill opacity 0 instead of text rendering mode 3. `extract` now reads
-  compressed attachments.
+- `--renderer pdfa` writes tagged PDF/A-3a through krilla: embedded fonts, XMP
+  metadata, an sRGB output intent, a structure tree, bookmarks per source, and the
+  manifest and chunks as associated files. Lines are reordered with the bidi
+  algorithm and shaped, and characters fall back to further fonts (`ANYTOPDF_FONT`
+  may list several). The hidden layer uses fill opacity 0 instead of text rendering
+  mode 3. `extract` now reads compressed attachments.
+- The Rust toolchain is 1.92.0.
 
 ## 0.1.0
 

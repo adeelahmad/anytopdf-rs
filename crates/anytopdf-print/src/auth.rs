@@ -116,8 +116,12 @@ impl Users {
 }
 
 fn validate_name(name: &str) -> Result<()> {
-    if name.is_empty() || name.contains(':') || name.chars().any(char::is_control) {
-        bail!("user name must be non-empty and contain no ':' or control characters");
+    if name.is_empty()
+        || name.len() > 255
+        || name.contains(':')
+        || name.chars().any(char::is_control)
+    {
+        bail!("user name must be 1-255 bytes with no ':' or control characters");
     }
     Ok(())
 }

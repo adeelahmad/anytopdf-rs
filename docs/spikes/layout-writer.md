@@ -81,6 +81,10 @@ krilla itself does no layout: its optional rustybuzz path is basic only, and bid
   time-range words at the same positions as the printpdf renderer (within 0.01 pt),
   and veraPDF 1.28.2 reports PDF/A-3b compliance for text, PNG, JPEG, CMYK JPEG and
   TIFF pages with the manifest and chunks attached.
+- After the Rust 1.92 bump the renderer moved to krilla 0.8.2 and PDF/A-3a (tagged).
+  Parley was not needed: unicode-bidi orders runs, krilla shapes each run with
+  rustybuzz, and fonts fall back per character. veraPDF 1.28.2 reports PDF/A-3a
+  compliance for text, PNG, JPEG, TIFF and mixed Arabic, Hebrew and CJK text.
 
 ## Recommendation
 

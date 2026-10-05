@@ -113,7 +113,9 @@ Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 
 - `pdf` (default): printpdf. The CLI adds the manifest and chunks afterwards with
   lopdf.
-- `pdfa`: krilla 0.5, PDF/A-3b validated by krilla at write time. It builds the
+- `pdfa`: krilla 0.8, tagged PDF/A-3a validated by krilla at write time, with a
+  structure tree, bookmarks, bidi reordering, rustybuzz shaping and per-character
+  font fallback (`pdfa_text.rs`). It builds the
   manifest and chunks itself from the graph and its own render report and stores them
   as PDF/A-3 associated files. The CLI detects attachments that already match and
   does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
@@ -151,7 +153,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-cad`
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
-- `anytopdf-plugin-whisper`
+- `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`
@@ -227,10 +229,14 @@ file names and queue-relative paths only.
 
 ## Remote printing
 
-`anytopdf-print` sits in front of the print helper and never parses print data.
-It terminates TLS (rustls), drops peers outside the CIDR allowlist before the
-handshake, checks HTTP Basic credentials against Argon2id hashes on the first
-request, then splices the connection to the helper on loopback. A guard refuses
+`anytopdf-print` sits in front of the print helper and never parses document
+data. It terminates TLS (rustls), drops peers outside the CIDR allowlist before
+the handshake, checks HTTP Basic credentials against Argon2id hashes, and
+forwards each HTTP request to the helper on loopback with the IPP
+`requesting-user-name` replaced by the signed-in user; a receipts log records
+the peer address the helper never sees. The helper passes job details to
+`convert` as `ANYTOPDF_PRINT_*` variables, which become `print.*` source
+metadata (manifest and provenance page, dropped by `share`). A guard refuses
 non-loopback listeners without users and an allowlist. The same DNS-SD
 description feeds the unicast zone snippet and the mDNS advertisement. Jobs
 still enter the pipeline through the helper and the normal importers.

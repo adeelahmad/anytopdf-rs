@@ -39,7 +39,7 @@ fn convert_pdfa(dir: &Path, font: &Path, name: &str) -> (PathBuf, Output) {
 }
 
 #[test]
-fn pdfa_renderer_writes_reproducible_pdfa3_with_one_set_of_attachments() {
+fn pdfa_renderer_writes_reproducible_tagged_pdfa3_with_one_set_of_attachments() {
     let dir = tempfile::tempdir().unwrap();
     let font = fixture_font(dir.path());
     let (pdf, out) = convert_pdfa(dir.path(), &font, "a.pdf");
@@ -51,8 +51,13 @@ fn pdfa_renderer_writes_reproducible_pdfa3_with_one_set_of_attachments() {
     let bytes = fs::read(&pdf).unwrap();
     let text = String::from_utf8_lossy(&bytes);
     assert!(
-        text.contains("<pdfaid:part>3</pdfaid:part>"),
-        "no PDF/A-3 XMP"
+        text.contains("<pdfaid:part>3</pdfaid:part>")
+            && text.contains("<pdfaid:conformance>A</pdfaid:conformance>"),
+        "no PDF/A-3a XMP"
+    );
+    assert!(
+        text.contains("/StructTreeRoot"),
+        "PDF/A-3a output is not tagged"
     );
     // The CLI must keep the renderer's associated files instead of adding its own copies.
     let specs = regex::Regex::new(r"/Type\s*/Filespec\b").unwrap();
