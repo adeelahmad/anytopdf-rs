@@ -50,52 +50,11 @@ fn repeated_conversion_dumps_identical_ids_and_digest() {
     assert_eq!(a["sources"][0]["size"], 17);
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = !0u32;
-    for byte in bytes {
-        crc ^= *byte as u32;
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (!(crc & 1)).wrapping_add(1));
-        }
-    }
-    !crc
-}
-
-fn png_chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
-    out.extend((data.len() as u32).to_be_bytes());
-    let mut body = kind.to_vec();
-    body.extend(data);
-    out.extend(&body);
-    out.extend(crc32(&body).to_be_bytes());
-}
-
-/// A width x height 8-bit grayscale PNG using stored deflate blocks.
-fn write_png(path: &Path, width: u32, height: u32) {
-    let mut raw = Vec::new();
-    for _ in 0..height {
-        raw.push(0);
-        raw.extend(std::iter::repeat_n(128u8, width as usize));
-    }
-    let (mut a, mut b) = (1u32, 0u32);
-    for byte in &raw {
-        a = (a + *byte as u32) % 65521;
-        b = (b + a) % 65521;
-    }
-    let mut z = vec![0x78, 0x01, 0x01];
-    z.extend((raw.len() as u16).to_le_bytes());
-    z.extend((!(raw.len() as u16)).to_le_bytes());
-    z.extend(&raw);
-    z.extend(((b << 16) | a).to_be_bytes());
-    let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
-    let mut ihdr = Vec::new();
-    ihdr.extend(width.to_be_bytes());
-    ihdr.extend(height.to_be_bytes());
-    ihdr.extend([8, 0, 0, 0, 0]);
-    png_chunk(&mut png, b"IHDR", &ihdr);
-    png_chunk(&mut png, b"IDAT", &z);
-    png_chunk(&mut png, b"IEND", &[]);
-    fs::write(path, png).unwrap();
-}
+#[path = "common/png.rs"]
+mod png;
+#[path = "common/png_gray.rs"]
+mod png_gray;
+use png_gray::write_png;
 
 #[test]
 fn graph_dump_units_carry_kind_appropriate_anchors() {
@@ -140,4 +99,20 @@ fn convert_all(inputs: &[&Path], dir: &Path) -> serde_json::Value {
         String::from_utf8_lossy(&result.stderr)
     );
     serde_json::from_slice(&fs::read(json).unwrap()).unwrap()
+}
+
+#[test]
+fn gray_png_fixture_bytes_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.png"), dir.path().join("b.png"));
+    write_png(&a, 8, 8);
+    write_png(&b, 4, 3);
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&a).unwrap()),
+        "f78c6580bef3099c7bd64109a30e919326cf8112b31a280e2d4ff667d5883b9b"
+    );
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&b).unwrap()),
+        "e8c313359eeaf147a590d309f68468e4d504c80fc1613a5d4483ad46300db5d8"
+    );
 }

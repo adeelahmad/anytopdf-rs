@@ -1,6 +1,5 @@
 use std::{
     fs,
-    path::Path,
     process::{Command, Output},
 };
 
@@ -14,48 +13,11 @@ fn run(args: &[&std::ffi::OsStr]) -> Output {
     command().arg("convert").args(args).output().unwrap()
 }
 
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc = !0u32;
-    for byte in data {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            crc = if crc & 1 == 1 {
-                (crc >> 1) ^ 0xEDB8_8320
-            } else {
-                crc >> 1
-            };
-        }
-    }
-    !crc
-}
-
-fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
-    out.extend((data.len() as u32).to_be_bytes());
-    let mut body = kind.to_vec();
-    body.extend(data);
-    out.extend(&body);
-    out.extend(crc32(&body).to_be_bytes());
-}
-
-/// 4x3 8-bit grayscale PNG using a stored (uncompressed) deflate block.
-fn write_png(path: &Path) {
-    let raw: Vec<u8> = (0..3).flat_map(|_| [0u8, 10, 100, 200, 250]).collect();
-    let (mut a, mut b) = (1u32, 0u32);
-    for byte in &raw {
-        a = (a + u32::from(*byte)) % 65521;
-        b = (b + a) % 65521;
-    }
-    let mut z = vec![0x78, 0x01, 0x01];
-    z.extend((raw.len() as u16).to_le_bytes());
-    z.extend((!(raw.len() as u16)).to_le_bytes());
-    z.extend(&raw);
-    z.extend(((b << 16) | a).to_be_bytes());
-    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
-    chunk(&mut png, b"IHDR", &[0, 0, 0, 4, 0, 0, 0, 3, 8, 0, 0, 0, 0]);
-    chunk(&mut png, b"IDAT", &z);
-    chunk(&mut png, b"IEND", &[]);
-    fs::write(path, png).unwrap();
-}
+#[path = "common/png.rs"]
+mod png;
+#[path = "common/png_ramp.rs"]
+mod png_ramp;
+use png_ramp::write_gray_ramp_png;
 
 #[test]
 fn successful_conversion_exits_0() {
@@ -119,7 +81,7 @@ fn unavailable_explicit_ocr_provider_exits_4() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("pixel.png");
     let output = dir.path().join("out.pdf");
-    write_png(&source);
+    write_gray_ramp_png(&source);
     let result = run(&[
         source.as_ref(),
         "--ocr".as_ref(),
@@ -180,4 +142,15 @@ fn render_failure_exits_6_without_publishing() {
         String::from_utf8_lossy(&result.stderr)
     );
     assert!(!output.exists());
+}
+
+#[test]
+fn gray_ramp_png_fixture_bytes_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ramp.png");
+    write_gray_ramp_png(&path);
+    assert_eq!(
+        anytopdf_core::sha256_hex(&fs::read(&path).unwrap()),
+        "bd6a4c5dc04a58bb63fd728dc2d41498fa4dfa2fd4c612ea1a39efc27be2e041"
+    );
 }
