@@ -65,7 +65,10 @@ The helper (`helpers/anytopdf-printer`, PR #14) listens on loopback in plaintext
 - `convert` turns `ANYTOPDF_PRINT_JOB_ID/JOB_NAME/USER/FORMAT` into `print.*` source metadata, which the manifest carries and the provenance page shows as "Print job", "Printed by" and "Print format". The `share` profile drops them.
 - `doctor` lists `remote-front`, `anytopdf-printer` and `tailscale` under "Printing" (`printing` in `--json`).
 
+## End-to-end test
+
+`helpers/anytopdf-printer/remote-smoke.sh` (`make printer-remote-smoke`, run by the Linux "Print server" CI job) starts the real helper and the front, checks that an unauthenticated Print-Job gets 401, prints a page over TLS as `adeel` while the client claims `mallory`, and checks `ANYTOPDF_PRINT_USER=adeel`, `print.user` in the PDF's manifest and the receipt's peer address.
+
 ## Remaining follow-ups
 
-- End-to-end test through the real PAPPL helper once it is on main (Linux CI job).
 - Older iOS releases that browse only `_ipp._tcp` will not see an `_ipps`-only advertisement.

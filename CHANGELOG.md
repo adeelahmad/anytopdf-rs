@@ -11,6 +11,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `job.failed`) signed with HMAC-SHA256 and retried from a durable outbox; new
   `anytopdf.job/1` and `anytopdf.webhook/1` schemas. Other commands are unchanged
   and open no sockets.
+- `anytopdf queue serve` accepts authenticated HTTP uploads as queue jobs and serves
+  their status and PDFs: loopback by default, TLS required off loopback, a bearer
+  token from `ANYTOPDF_QUEUE_TOKEN`, and `--max-upload-mb` (default 100).
 - `extract` exits 3 (input) when a version-matched manifest or chunks file
   does not match its schema, naming the document and the first failing JSON path;
   other `schema_version` values still warn and exit 0.
@@ -43,6 +46,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Importers can expand containers through `Importer::import_with_members`; nesting stops
   at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
+- PWG Raster and Apple Raster (URF) print jobs import one page per unit and keep their
+  paper size through the `visual.dpi` unit value; the optional `anytopdf-printer` PAPPL
+  helper turns IPP print jobs into searchable PDFs.
 - Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
 - The graph dump no longer contains workspace paths.
 - Diagnostics use typed codes (for example `plugin.warning`).
@@ -70,6 +76,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   algorithm and shaped, and characters fall back to further fonts (`ANYTOPDF_FONT`
   may list several). The hidden layer uses fill opacity 0 instead of text rendering
   mode 3. `extract` now reads compressed attachments.
+- `--renderer pdfa` is the default; `--renderer pdf` keeps the printpdf output. When
+  `ANYTOPDF_FONT` is unset, `pdfa` embeds a bundled DejaVu Sans (Bitstream Vera
+  licence, `crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt`).
 - The Rust toolchain is 1.92.0.
 
 ## 0.1.0

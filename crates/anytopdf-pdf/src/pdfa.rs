@@ -5,7 +5,7 @@
 //! (one section per unit, figures with alternate text, paragraphs per source line) and
 //! bookmarks per source, and the manifest and chunks are PDF/A-3 associated files.
 use crate::attachments::{CHUNKS_FILE, MANIFEST_FILE};
-use crate::fonts::{find_fallback_fonts, find_system_font};
+use crate::fonts::{configured_font, find_fallback_fonts};
 use crate::layout::{
     SEARCH_X_MM, TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM,
     TEXT_ROWS_PER_PAGE, TEXT_WRAP_EMS, annotation_line, is_searchable_content, search_rows,
@@ -41,6 +41,7 @@ const LANGUAGE: &str = "und";
 /// Renders the graph as a tagged PDF/A-3a document (registered as `pdfa`).
 pub struct PdfARenderer {
     pub dpi: f32,
+    /// The primary font; `None` uses the bundled DejaVu Sans.
     pub unicode_font: Option<PathBuf>,
     /// Fonts used, in order, for characters `unicode_font` lacks.
     pub fallback_fonts: Vec<PathBuf>,
@@ -50,7 +51,7 @@ impl Default for PdfARenderer {
     fn default() -> Self {
         Self {
             dpi: 144.0,
-            unicode_font: find_system_font(),
+            unicode_font: configured_font(),
             fallback_fonts: find_fallback_fonts(),
         }
     }
@@ -152,11 +153,13 @@ impl Renderer for PdfARenderer {
         if !self.dpi.is_finite() || self.dpi <= 0.0 {
             bail!("PDF DPI must be finite and positive");
         }
-        let font_path = self.unicode_font.as_ref().ok_or_else(|| {
-            anyhow!("PDF/A output must embed its font; set ANYTOPDF_FONT to a TTF font")
-        })?;
         let mut warnings = Vec::new();
-        let font = FontSet::load(font_path, &self.fallback_fonts, graph, &mut warnings)?;
+        let font = FontSet::load(
+            self.unicode_font.as_deref(),
+            &self.fallback_fonts,
+            graph,
+            &mut warnings,
+        )?;
         let missing: std::collections::BTreeSet<char> = graph
             .units
             .iter()
@@ -209,7 +212,12 @@ impl Renderer for PdfARenderer {
             let mut section = TagGroup::new(Tag::Section);
             if let Some(visual) = &unit.visual_path {
                 match load_image(visual) {
-                    Ok(image) => builder.visual_page(&mut section, unit, image, self.dpi),
+                    Ok(image) => builder.visual_page(
+                        &mut section,
+                        unit,
+                        image,
+                        crate::layout::unit_dpi(unit, self.dpi),
+                    ),
                     Err(e) => {
                         warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }
