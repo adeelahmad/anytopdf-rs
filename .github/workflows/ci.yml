@@ -58,3 +58,20 @@ jobs:
         env:
           SMOKE_FLAGS: ${{ runner.os == 'Linux' && '--require-poppler' || '' }}
         run: make ci PYTHON=python
+
+  printer:
+    name: Print server (Linux)
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: printer
+      - name: Install PAPPL and PDF inspection tools
+        run: sudo apt-get update && sudo apt-get install -y libpappl-dev pkg-config poppler-utils
+      - name: Build and print a test page
+        run: make printer-smoke PYTHON=python3 WARNINGS="-Wall -Wextra -Wno-unused-parameter -Werror"

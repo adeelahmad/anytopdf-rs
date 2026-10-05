@@ -94,6 +94,17 @@ For visual pages:
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
 
+## Print jobs
+
+PWG Raster and Apple Raster (URF) are importers like any other: each page becomes
+a visual unit with a `frame` anchor and a `visual.dpi` metadata value, and the
+renderer sizes that page from its resolution so a 300 dpi Letter job yields a
+Letter page. The optional `anytopdf-printer` helper (C, on PAPPL) is a separate
+process: it accepts IPP jobs, spools them as PWG Raster and runs
+`anytopdf convert`. It is not linked into the Rust binary (see
+`docs/spikes/pappl.md`), so default builds and Windows are unaffected, and other
+front ends such as remote printing can feed the same importer.
+
 ## Extension strategy
 
 ### Built-ins

@@ -221,8 +221,15 @@ impl SearchablePdfRenderer {
         let dimensions = ::image::ImageReader::open(visual)?
             .with_guessed_format()?
             .into_dimensions()?;
-        let page_w_mm = dimensions.0 as f32 / self.dpi * 25.4;
-        let page_h_mm = dimensions.1 as f32 / self.dpi * 25.4;
+        // Print-job pages carry their own resolution; other visuals use the default.
+        let dpi = unit
+            .metadata
+            .get("visual.dpi")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(self.dpi);
+        let page_w_mm = dimensions.0 as f32 / dpi * 25.4;
+        let page_h_mm = dimensions.1 as f32 / dpi * 25.4;
 
         let image_id = XObjectId(format!("Img{}", doc.resources.xobjects.map.len()));
         doc.resources
@@ -232,7 +239,7 @@ impl SearchablePdfRenderer {
         let mut ops = vec![Op::UseXobject {
             id: image_id,
             transform: XObjectTransform {
-                dpi: Some(self.dpi),
+                dpi: Some(dpi),
                 ..Default::default()
             },
         }];
@@ -530,6 +537,40 @@ pub(crate) mod tests {
             }
             assert!(!item.contains(&path_str), "hidden item {item:?} has path");
         }
+    }
+
+    #[test]
+    fn visual_dpi_metadata_sets_the_physical_page_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let visual = dir.path().join("page.png");
+        ::image::GrayImage::new(2550, 3300).save(&visual).unwrap();
+        let source = SourceRecord::new(visual.clone());
+        let page_pt = |dpi: Option<&str>| {
+            let mut unit = Unit::visual(source.id, visual.clone());
+            if let Some(dpi) = dpi {
+                unit.metadata.insert("visual.dpi".into(), dpi.into());
+            }
+            let page = renderer()
+                .visual_page(
+                    &mut PdfDocument::new("t"),
+                    &DocumentGraph::default(),
+                    &unit,
+                    &visual,
+                    &helvetica(),
+                    &mut Vec::new(),
+                )
+                .unwrap();
+            (
+                page.media_box.width.0.round(),
+                page.media_box.height.0.round(),
+            )
+        };
+        // 300 dpi US Letter is 8.5 x 11 inches.
+        assert_eq!(page_pt(Some("300")), (612.0, 792.0));
+        // Missing or invalid values fall back to the renderer default.
+        assert_eq!(page_pt(None), (1275.0, 1650.0));
+        assert_eq!(page_pt(Some("0")), (1275.0, 1650.0));
+        assert_eq!(page_pt(Some("abc")), (1275.0, 1650.0));
     }
 
     #[test]

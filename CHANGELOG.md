@@ -18,6 +18,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Sources carry content-derived IDs, SHA-256 and size.
 - Multi-frame TIFF and GIF inputs import every frame as a page with a `frame` region anchor; `--max-image-frames N` caps the count (0 = unlimited) and warns `input.frames-not-imported`.
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
+- PWG Raster and Apple Raster (URF) print jobs import one page per unit and keep their
+  paper size through the `visual.dpi` unit value; the optional `anytopdf-printer` PAPPL
+  helper turns IPP print jobs into searchable PDFs.
 - Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
 - The graph dump no longer contains workspace paths.
 - Diagnostics use typed codes (for example `plugin.warning`).
