@@ -4,6 +4,10 @@ use std::{
     process::{Command, Output},
 };
 
+#[path = "common/output.rs"]
+mod output;
+use output::stderr;
+
 fn run(dir: &Path, names: &[&str], extra: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
     command
@@ -15,10 +19,6 @@ fn run(dir: &Path, names: &[&str], extra: &[&str]) -> Output {
         command.arg(dir.join(name));
     }
     command.args(extra).output().unwrap()
-}
-
-fn stderr(result: &Output) -> String {
-    String::from_utf8_lossy(&result.stderr).into_owned()
 }
 
 fn mixed_batch(dir: &Path) {

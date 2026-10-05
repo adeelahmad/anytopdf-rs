@@ -1,10 +1,8 @@
-use std::{fs, process::Command};
+use std::fs;
 
-fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
-    command.arg("--no-plugins").env("PATH", "");
-    command
-}
+#[path = "common/process.rs"]
+mod process;
+use process::command;
 
 #[test]
 fn converts_text_and_writes_graph() {

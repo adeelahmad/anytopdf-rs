@@ -1,13 +1,8 @@
-use std::{
-    fs,
-    process::{Command, Output},
-};
+use std::{fs, process::Output};
 
-fn command() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
-    command.arg("--no-plugins").env("PATH", "");
-    command
-}
+#[path = "common/process.rs"]
+mod process;
+use process::command;
 
 fn run(args: &[&std::ffi::OsStr]) -> Output {
     command().arg("convert").args(args).output().unwrap()

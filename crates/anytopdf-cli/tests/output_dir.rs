@@ -1,4 +1,8 @@
 use anytopdf_pdf::read_embedded_files;
+
+#[path = "common/output.rs"]
+mod output;
+use output::stderr;
 use serde_json::Value;
 use std::{
     fs,
@@ -23,10 +27,6 @@ fn run(cwd: &Path, args: &[&Path], extra: &[&str]) -> Output {
         .args(extra)
         .output()
         .unwrap()
-}
-
-fn stderr(out: &Output) -> String {
-    String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
 fn manifest(pdf: &Path) -> Value {
