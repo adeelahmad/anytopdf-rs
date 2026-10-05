@@ -1,11 +1,12 @@
 //! File-backed conversion queue: a watched inbox, job records moved between state
 //! directories by atomic renames, and a durable outbox of signed webhooks.
 
+mod serve;
 mod time;
 mod webhook;
 mod worker;
 
-use crate::cli::{Cli, Commands, QueueCommand};
+use crate::cli::{Cli, Commands, QueueCommand, QueueServeArgs};
 use crate::exit::{CliError, ExitClass, fail, tag};
 use anyhow::{Context, Result};
 use anytopdf_core::atomic_write;
@@ -60,6 +61,8 @@ impl JobState {
 pub(crate) enum Origin {
     Inbox,
     Cli,
+    Http,
+    Imap,
 }
 
 /// One conversion job (`anytopdf.job/1`). Optional fields are omitted, never null.
@@ -229,6 +232,22 @@ impl Queue {
         Ok(paths.iter().filter_map(|p| read_job(p).ok()).collect())
     }
 
+    /// The record for `id` in whichever state it is in.
+    pub(crate) fn find(&self, id: &str) -> Result<Option<Job>> {
+        // A job can move between state directories while we look; retry once.
+        for _ in 0..2 {
+            for state in JobState::ALL {
+                let path = self.job_path(state, id);
+                if path.is_file()
+                    && let Ok(job) = read_job(&path)
+                {
+                    return Ok(Some(job));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Return running jobs whose lease expired (their worker died) to the queue.
     pub(crate) fn requeue_expired(&self, now: u64) -> Result<Vec<Job>> {
         let mut requeued = Vec::new();
@@ -344,12 +363,60 @@ pub(crate) fn run(command: QueueCommand, global_args: Vec<String>) -> Result<(),
                 hooks,
             })?)
         }
+        QueueCommand::Serve(args) => serve_command(args),
         QueueCommand::Status { queue } => Ok(status(&queue)?),
         QueueCommand::Secret => {
             println!("{}", new_secret());
             Ok(())
         }
     }
+}
+
+fn serve_command(args: QueueServeArgs) -> Result<(), CliError> {
+    check_convert_args(&args.convert)?;
+    let token = std::env::var("ANYTOPDF_QUEUE_TOKEN").unwrap_or_default();
+    if token.trim().len() < serve::MIN_TOKEN_LEN {
+        return Err(fail(
+            ExitClass::Usage,
+            format!(
+                "queue serve requires ANYTOPDF_QUEUE_TOKEN of at least {} characters (create one with `anytopdf queue secret`)",
+                serve::MIN_TOKEN_LEN
+            ),
+        ));
+    }
+    if let Err(problem) =
+        serve::check_exposure(args.listen, args.tls_cert.is_some(), args.allow_public_bind)
+    {
+        return Err(fail(
+            ExitClass::Usage,
+            format!("refusing to start the upload server: {problem}"),
+        ));
+    }
+    let tls = match (&args.tls_cert, &args.tls_key) {
+        (Some(cert), Some(key)) => {
+            Some(tag(ExitClass::Input, anytopdf_print::load_tls(cert, key))?)
+        }
+        _ => None,
+    };
+    let queue = tag(ExitClass::Usage, Queue::open(&args.queue))?;
+    let listener = tag(ExitClass::Provider, serve::bind(args.listen))?;
+    let scheme = if tls.is_some() { "https" } else { "http" };
+    eprintln!(
+        "queue serve: listening on {scheme}://{}/v1/jobs",
+        listener.local_addr()?
+    );
+    Ok(serve::serve(
+        listener,
+        serve::ServeConfig {
+            queue,
+            token: token.trim().as_bytes().to_vec(),
+            max_upload: args.max_upload_mb.saturating_mul(1024 * 1024),
+            convert_args: args.convert,
+            tls,
+            max_connections: usize::from(args.max_connections),
+            quiet: args.quiet,
+        },
+    )?)
 }
 
 fn add(queue: &Path, inputs: &[PathBuf], convert: Vec<String>) -> Result<(), CliError> {

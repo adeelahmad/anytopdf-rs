@@ -94,6 +94,8 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           NO_DEFAULT_FEATURES: ${{ matrix.no_default_features }}
+          # Targets built without default features still ship the IMAP watcher.
+          FEATURES: imap
           SMOKE_FLAGS: ${{ runner.os == 'Linux' && '--require-poppler' || '' }}
           CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
@@ -223,7 +225,10 @@ jobs:
             test -n "$archive" || { echo "missing $target archive" >&2; exit 1; }
             (cd archives && sha256sum --check --strict "$(basename "$archive").sha256")
             mkdir -p "dist/docker/$arch"
-            tar -xzf "$archive" -C "dist/docker/$arch" --strip-components=1 --wildcards '*/anytopdf'
+            tar -xzf "$archive" -C "dist/docker/$arch" --strip-components=1 --wildcards \
+              '*/anytopdf' '*/plugins/anytopdf-plugin-*'
+            mv "dist/docker/$arch"/plugins/* "dist/docker/$arch/"
+            rmdir "dist/docker/$arch/plugins"
           done
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3

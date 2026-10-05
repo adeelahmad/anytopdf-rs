@@ -59,8 +59,10 @@ fn single_frame_png_manifest_matches_the_2f6f36e_golden() {
     assert_eq!(extract.status.code(), Some(0));
     let extracted: Value = serde_json::from_slice(&extract.stdout).unwrap();
     let manifest = &extracted["manifest"];
-    let golden: Value =
+    let mut golden: Value =
         serde_json::from_str(include_str!("golden/single_frame_png_manifest.json")).unwrap();
+    // The golden pins the manifest shape, not the release it was recorded on.
+    golden["generator"]["version"] = env!("CARGO_PKG_VERSION").into();
     assert_eq!(manifest, &golden);
     assert!(
         !has_frame_key(&manifest["units"]),

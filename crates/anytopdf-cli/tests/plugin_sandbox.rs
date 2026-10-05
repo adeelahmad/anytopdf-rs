@@ -51,8 +51,11 @@ fn strict_sandbox_runs_plugin_but_blocks_writes_outside_workspace() {
     fs::create_dir(&plugins).unwrap();
     let plugin = plugins.join("anytopdf-plugin-sandboxed");
     let escape = outside.path().join("escaped");
+    // Copy through `cp` so no concurrently forked test inherits a writable
+    // descriptor on the executable (ETXTBSY), as `external.rs` tests do.
+    let staged = dir.path().join("plugin.sh");
     fs::write(
-        &plugin,
+        &staged,
         format!(
             r#"#!/bin/sh
 if [ "$1" = --anytopdf-manifest ]; then
@@ -66,6 +69,12 @@ printf '%s' '{{"protocol":1,"ok":true,"units":[{{"kind":"text","visible_text":"i
         ),
     )
     .unwrap();
+    let copied = std::process::Command::new("cp")
+        .arg(&staged)
+        .arg(&plugin)
+        .status()
+        .unwrap();
+    assert!(copied.success());
     fs::set_permissions(&plugin, fs::Permissions::from_mode(0o755)).unwrap();
     let source = dir.path().join("input.boxed");
     fs::write(&source, "input").unwrap();

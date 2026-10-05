@@ -8,7 +8,8 @@ use std::io::Read;
 pub struct EmailImporter;
 
 const EMAIL_SNIFF: ProbeScore = ProbeScore(250);
-const SNIFF_BYTES: u64 = 4 * 1024;
+/// Server-fetched messages can carry long `Received:` chains before `From:`.
+const SNIFF_BYTES: u64 = 64 * 1024;
 
 fn is_mbox(prefix: &[u8]) -> bool {
     prefix.starts_with(b"From ")
@@ -38,7 +39,7 @@ fn looks_like_email(prefix: &[u8]) -> bool {
         }
         match name.to_ascii_lowercase().as_str() {
             "from" => from = true,
-            "subject" | "date" | "message-id" | "received" | "to" => other = true,
+            "subject" | "date" | "message-id" | "received" | "to" | "mime-version" => other = true,
             _ => {}
         }
     }
@@ -169,12 +170,22 @@ impl Importer for EmailImporter {
             let dir = member_dir(ctx, "email")?;
             let mut files = Vec::new();
             for (i, attachment) in email.attachments.iter().enumerate() {
-                let path = write_member(&dir, i, &attachment.filename, &attachment.data)?;
                 let label = if several {
                     format!("{label} / {}", attachment.filename)
                 } else {
                     attachment.filename.clone()
                 };
+                if let Err(e) = members.charge(attachment.data.len() as u64) {
+                    warnings.push(
+                        Diagnostic::new(
+                            DiagnosticCode::MembersNotImported,
+                            format!("{name}: {label} was not imported: {e:#}"),
+                        )
+                        .to_string(),
+                    );
+                    continue;
+                }
+                let path = write_member(&dir, i, &attachment.filename, &attachment.data)?;
                 files.push(MemberFile { label, path });
             }
             let (member_units, member_warnings) = import_members(ctx, members, &source, files);
@@ -332,8 +343,16 @@ Content-Type: multipart/mixed; boundary=b{level}\r\n\r\n\
             "Inbox",
             b"From a@example.com Mon Oct  5 09:00:00 2026\nFrom: a@example.com\nDate: x\n\nbody\n",
         );
+        let mut long = String::new();
+        for i in 0..200 {
+            long.push_str(&format!(
+                "Received: from relay{i}.example.com by mx.example.com\r\n"
+            ));
+        }
+        long.push_str("MIME-Version: 1.0\r\nFrom: a@example.com\r\n\r\nbody\r\n");
+        let imap = write(dir.path(), "INBOX-1700000000-42.eml.part", long.as_bytes());
         let prose = write(dir.path(), "letter", b"From: the desk of Ada\nDear Bob,\n");
-        for source in [&eml, &mbox] {
+        for source in [&eml, &mbox, &imap] {
             assert_eq!(
                 registry.importer_for(source).unwrap().descriptor().name,
                 "email",

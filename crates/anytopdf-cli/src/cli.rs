@@ -72,6 +72,12 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Watch a mail source and convert each new message into its own PDF.
+    #[cfg_attr(not(feature = "imap"), command(hide = true))]
+    Watch {
+        #[command(subcommand)]
+        source: WatchSource,
+    },
     /// Detect the format and importer for an input without converting it.
     Probe {
         /// File to inspect.
@@ -206,6 +212,8 @@ pub(crate) enum QueueCommand {
     },
     /// Convert queued jobs and files dropped into the inbox, delivering webhooks.
     Work(QueueWorkArgs),
+    /// Accept authenticated HTTP uploads as jobs (loopback unless TLS is set).
+    Serve(QueueServeArgs),
     /// List the jobs and webhook deliveries in a queue directory.
     Status {
         /// Queue directory.
@@ -213,6 +221,36 @@ pub(crate) enum QueueCommand {
     },
     /// Print a new webhook signing secret for ANYTOPDF_WEBHOOK_SECRET.
     Secret,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct QueueServeArgs {
+    /// Queue directory (created if missing).
+    pub(crate) queue: PathBuf,
+    /// Address to listen on; anything but loopback needs --tls-cert and --tls-key.
+    #[arg(long, default_value = "127.0.0.1:8640")]
+    pub(crate) listen: std::net::SocketAddr,
+    /// PEM certificate chain for HTTPS.
+    #[arg(long, requires = "tls_key")]
+    pub(crate) tls_cert: Option<PathBuf>,
+    /// PEM private key for --tls-cert.
+    #[arg(long, requires = "tls_cert")]
+    pub(crate) tls_key: Option<PathBuf>,
+    /// Accept listening on every interface (0.0.0.0 or ::).
+    #[arg(long)]
+    pub(crate) allow_public_bind: bool,
+    /// Largest accepted upload, in MiB.
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=65_536))]
+    pub(crate) max_upload_mb: u64,
+    /// Maximum simultaneous client connections.
+    #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u16).range(1..))]
+    pub(crate) max_connections: u16,
+    /// Suppress the server log on stderr.
+    #[arg(short, long)]
+    pub(crate) quiet: bool,
+    /// Convert options for uploaded files after `--`, for example `-- --profile share`.
+    #[arg(last = true)]
+    pub(crate) convert: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -259,8 +297,8 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) fail_fast: bool,
 
-    /// Renderer plugin that writes the output: `pdf` or `pdfa` (tagged PDF/A-3a).
-    #[arg(long, default_value = "pdf")]
+    /// Renderer plugin that writes the output: `pdfa` (tagged PDF/A-3a) or `pdf` (printpdf).
+    #[arg(long, default_value = "pdfa")]
     pub(crate) renderer: String,
 
     /// Output PDF path.
@@ -344,4 +382,129 @@ pub(crate) struct ConvertArgs {
     /// Emit one JSON document on stdout.
     #[arg(long)]
     pub(crate) json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum WatchSource {
+    /// Fetch new messages from an IMAP mailbox and convert each one.
+    ///
+    /// Each message is saved as a raw `.eml` file and converted by `anytopdf convert`
+    /// into `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`, or queued as a job with
+    /// --queue; arguments after `--` are passed to convert. Secrets come from
+    /// ANYTOPDF_IMAP_PASSWORD, ANYTOPDF_IMAP_OAUTH_TOKEN or a file, never from the
+    /// command line.
+    Imap(Box<ImapArgs>),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ImapArgs {
+    /// IMAP server host name.
+    #[arg(long, env = "ANYTOPDF_IMAP_HOST")]
+    pub(crate) host: String,
+
+    /// Server port (default 993 for implicit TLS, 143 otherwise).
+    #[arg(long, env = "ANYTOPDF_IMAP_PORT")]
+    pub(crate) port: Option<u16>,
+
+    /// Connection security: implicit TLS, STARTTLS, or none (loopback hosts only).
+    #[arg(long, env = "ANYTOPDF_IMAP_TLS", default_value = "implicit", value_parser = ["implicit", "starttls", "none"])]
+    pub(crate) tls: String,
+
+    /// Login user name.
+    #[arg(long, env = "ANYTOPDF_IMAP_USER")]
+    pub(crate) user: String,
+
+    /// Read the password from this file instead of ANYTOPDF_IMAP_PASSWORD.
+    #[arg(long, env = "ANYTOPDF_IMAP_PASSWORD_FILE")]
+    pub(crate) password_file: Option<PathBuf>,
+
+    /// Login method: IMAP LOGIN with a password, or SASL XOAUTH2 (Gmail,
+    /// Microsoft 365) with an access token.
+    #[arg(long, env = "ANYTOPDF_IMAP_AUTH", default_value = "login", value_parser = ["login", "xoauth2"])]
+    pub(crate) auth: String,
+
+    /// With --auth xoauth2: read the access token from this file on every connection
+    /// instead of ANYTOPDF_IMAP_OAUTH_TOKEN, so a token refresher can update it.
+    #[arg(long, env = "ANYTOPDF_IMAP_OAUTH_TOKEN_FILE")]
+    pub(crate) oauth_token_file: Option<PathBuf>,
+
+    /// Only convert mail from this address or domain (repeatable), e.g.
+    /// scanner@example.com or example.com. Other mail is skipped and left in place.
+    #[arg(long)]
+    pub(crate) allow_from: Vec<String>,
+
+    /// Also require dmarc=pass in the Authentication-Results header added by this
+    /// receiving server, e.g. mx.google.com or outlook.com.
+    #[arg(long, value_name = "AUTHSERV_ID")]
+    pub(crate) require_dmarc: Option<String>,
+
+    /// Mailbox to watch.
+    #[arg(long, env = "ANYTOPDF_IMAP_MAILBOX", default_value = "INBOX")]
+    pub(crate) mailbox: String,
+
+    /// Extra IMAP SEARCH criteria, e.g. 'FROM "scanner@example.com"'.
+    #[arg(long)]
+    pub(crate) search: Option<String>,
+
+    /// PEM file of additional trusted CA certificates (for self-signed servers).
+    #[arg(long)]
+    pub(crate) ca_file: Option<PathBuf>,
+
+    /// Directory that receives one PDF per message.
+    #[arg(long, required_unless_present = "queue")]
+    pub(crate) output_dir: Option<PathBuf>,
+
+    /// Hand each message to this `anytopdf queue` directory instead of converting it
+    /// here; run `anytopdf queue work` on it to convert.
+    #[arg(long, conflicts_with = "output_dir")]
+    pub(crate) queue: Option<PathBuf>,
+
+    /// Directory for watcher progress, spooled and failed messages
+    /// (default: <output-dir or queue>/.anytopdf-imap). Use one per mailbox.
+    #[arg(long)]
+    pub(crate) state_dir: Option<PathBuf>,
+
+    /// On first run, also convert messages already in the mailbox.
+    #[arg(long)]
+    pub(crate) backfill: bool,
+
+    /// Check the mailbox once and exit instead of watching.
+    #[arg(long)]
+    pub(crate) once: bool,
+
+    /// Seconds between checks (also the IDLE refresh interval).
+    #[arg(long, default_value = "60", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) poll_interval: u64,
+
+    /// Skip messages larger than this many bytes.
+    #[arg(long, default_value_t = 50 * 1024 * 1024)]
+    pub(crate) max_message_bytes: u64,
+
+    /// Conversion attempts before a message is moved to <state-dir>/failed.
+    #[arg(long, default_value = "3", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) max_attempts: u32,
+
+    /// Maximum seconds for one message conversion.
+    #[arg(long, default_value = "600", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) convert_timeout: u64,
+
+    /// Set the \Seen flag on converted messages.
+    #[arg(long)]
+    pub(crate) mark_seen: bool,
+
+    /// Move converted messages to this mailbox.
+    #[arg(long)]
+    pub(crate) move_to: Option<String>,
+
+    /// Keep converted messages' .eml files in <state-dir>/spool.
+    #[arg(long)]
+    pub(crate) keep_eml: bool,
+
+    /// Suppress per-message progress on stderr.
+    #[arg(short, long)]
+    pub(crate) quiet: bool,
+
+    /// Options passed to each `anytopdf convert` run (after `--`).
+    #[arg(last = true)]
+    pub(crate) convert_args: Vec<std::ffi::OsString>,
 }

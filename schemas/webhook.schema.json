@@ -39,6 +39,7 @@
         },
         "state": {
           "enum": [
+            "queued",
             "running",
             "succeeded",
             "failed"
@@ -47,7 +48,8 @@
         "origin": {
           "enum": [
             "inbox",
-            "cli"
+            "cli",
+            "http"
           ]
         },
         "inputs": {

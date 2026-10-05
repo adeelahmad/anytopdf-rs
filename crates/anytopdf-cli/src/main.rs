@@ -12,9 +12,10 @@ mod naming;
 mod print;
 mod publish;
 mod queue;
+mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
 use exit::{CliError, ExitClass};
@@ -86,6 +87,12 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Probe { input, .. } => {
             check_sandbox(&policy)?;
             probe(&input, &policy)
+        }
+        Commands::Watch {
+            source: WatchSource::Imap(args),
+        } => {
+            check_sandbox(&policy)?;
+            watch::watch_imap(*args, &policy)
         }
         Commands::Queue { command } => queue::run(command, forwarded.0),
         Commands::Mcp => Ok(mcp::serve(forwarded)?),

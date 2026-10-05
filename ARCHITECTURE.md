@@ -76,7 +76,10 @@ source and tagged with `container.member`, so the source list, `--output-dir`
 grouping and manifest still describe the inputs the user named. Members must
 resolve inside the workspace, nesting stops at `MAX_MEMBER_DEPTH`, and a member
 that cannot be imported is an `input.members-not-imported` warning, not a failed
-input. Runtime plugins keep the plain `import` path.
+input. Every top-level input carries one extraction budget
+(`MAX_MEMBERS_PER_INPUT`, `MAX_MEMBER_BYTES_PER_INPUT`) that extractors draw on
+through `MemberImporter::charge`, so nested archives cannot multiply it.
+Runtime plugins keep the plain `import` path.
 
 ### Source enrichment
 
@@ -101,22 +104,34 @@ The renderer sees only the normalized graph.
 For visual pages:
 1. paint the original/derived image;
 2. map OCR regions to PDF coordinates;
-3. write OCR with text rendering mode 3;
+3. write OCR as invisible text;
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
 
 Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 `provenance.rs`) and therefore produce the same pages and `unit_pages`:
 
-- `pdf` (default): printpdf. The CLI adds the manifest and chunks afterwards with
-  lopdf.
-- `pdfa`: krilla 0.8, tagged PDF/A-3a validated by krilla at write time, with a
-  structure tree, bookmarks, bidi reordering, rustybuzz shaping and per-character
-  font fallback (`pdfa_text.rs`). It builds the
-  manifest and chunks itself from the graph and its own render report and stores them
-  as PDF/A-3 associated files. The CLI detects attachments that already match and
+- `pdfa` (default): krilla 0.8, tagged PDF/A-3a validated by krilla at write time,
+  with a structure tree, bookmarks, bidi reordering, rustybuzz shaping and
+  per-character font fallback (`pdfa_text.rs`). Its primary font is the bundled
+  DejaVu Sans (`fonts/`) unless `ANYTOPDF_FONT` names one. It builds the manifest
+  and chunks itself from the graph and its own render report and stores them as
+  PDF/A-3 associated files. The CLI detects attachments that already match and
   does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
   uses a fill opacity of 0.
+- `pdf`: printpdf, with text rendering mode 3. The CLI adds the manifest and chunks
+  afterwards with lopdf.
+
+## Print jobs
+
+PWG Raster and Apple Raster (URF) are importers like any other: each page becomes
+a visual unit with a `frame` anchor and a `visual.dpi` metadata value, and the
+renderer sizes that page from its resolution so a 300 dpi Letter job yields a
+Letter page. The optional `anytopdf-printer` helper (C, on PAPPL) is a separate
+process: it accepts IPP jobs, spools them as PWG Raster and runs
+`anytopdf convert`. It is not linked into the Rust binary (see
+`docs/spikes/pappl.md`), so default builds and Windows are unaffected, and other
+front ends such as remote printing can feed the same importer.
 
 ## Extension strategy
 
@@ -150,7 +165,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-cad`
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
-- `anytopdf-plugin-whisper`
+- `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`
@@ -182,6 +197,17 @@ copying derived assets. Runtime plugin policy and timeouts are documented in
 `PLUGIN_PROTOCOL.md`. OS-level sandboxing is opt-in through `--plugin-sandbox`
 (`src/sandbox.rs` in core, `docs/design/plugin-sandbox.md`); by default plugins run
 unconfined.
+
+## Intake: mail watcher
+
+`crates/anytopdf-imap` is an intake channel, not a pipeline stage. It watches one
+mailbox, spools each new message as a raw `.eml` file and hands it to a
+`MessageSink`. The CLI's sink (feature `imap`, `anytopdf watch imap`) runs
+`anytopdf convert` in a child process per message, so a crash or hang on one
+message cannot stop the watcher. A job-queue sink can replace it without
+changing the watcher. The watcher does no MIME parsing: format knowledge stays
+in whichever importer claims RFC 822 input. Progress is a JSON state file keyed by
+UIDVALIDITY and written atomically after every message.
 
 ## Diagnostics
 
@@ -219,7 +245,9 @@ plugin cannot take the worker down. The queue is a directory: job records
 (`anytopdf.job/1`) change state by atomic rename between `jobs/pending`, `running`,
 `done` and `failed`, which lets several workers share it without locks, and a
 running job carries a lease after which another worker requeues it. The watched
-inbox is the only intake channel so far; it holds no network listener.
+inbox needs no listener. `queue serve` is the opt-in HTTP intake: it only writes
+uploads into job work directories and enqueues them, binds loopback unless TLS is
+configured, and checks a bearer token on every request.
 
 Webhook messages (`anytopdf.webhook/1`) are written to `webhooks/pending/` before
 they are sent, signed per Standard Webhooks with HMAC-SHA256, and retried with

@@ -702,11 +702,17 @@ mod tests {
 #[cfg(all(test, unix))]
 mod process_tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use std::{os::unix::fs::PermissionsExt, process::Command};
 
     fn script(directory: &Path, body: &str) -> PathBuf {
         let path = directory.join("anytopdf-plugin-test");
-        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        // Copy through `cp` so this multi-threaded test process never holds a writable
+        // descriptor on the executable: a test forking concurrently would inherit it,
+        // and running the script would then fail with ETXTBSY ("Text file busy").
+        let staged = directory.join("anytopdf-plugin-test.sh");
+        fs::write(&staged, format!("#!/bin/sh\n{body}\n")).unwrap();
+        let copied = Command::new("cp").arg(&staged).arg(&path).status().unwrap();
+        assert!(copied.success(), "cp failed: {copied}");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         path
     }

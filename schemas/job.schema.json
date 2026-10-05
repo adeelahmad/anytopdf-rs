@@ -32,7 +32,9 @@
     "origin": {
       "enum": [
         "inbox",
-        "cli"
+        "cli",
+        "http",
+        "imap"
       ]
     },
     "inputs": {

@@ -217,7 +217,7 @@ fn convert_to_pdf(soffice: &Path, input: &Path, root: &Path) -> Result<PathBuf> 
     Ok(pdf)
 }
 
-fn rasterize(pdftoppm: &Path, pdf: &Path, dir: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn rasterize(pdftoppm: &Path, pdf: &Path, dir: &Path) -> Result<Vec<PathBuf>> {
     fs::create_dir_all(dir)?;
     let output = Command::new(pdftoppm)
         .args(["-r", &RASTER_DPI.to_string(), "-png"])
@@ -250,7 +250,7 @@ pub(crate) struct TextLine {
     pub region: Region,
 }
 
-fn page_text(pdftotext: &Path, pdf: &Path, root: &Path) -> Result<Vec<Vec<TextLine>>> {
+pub(crate) fn page_text(pdftotext: &Path, pdf: &Path, root: &Path) -> Result<Vec<Vec<TextLine>>> {
     let html = root.join("text.html");
     let output = Command::new(pdftotext)
         .args(["-bbox-layout", "-enc", "UTF-8"])
@@ -316,7 +316,7 @@ pub(crate) fn parse_bbox_layout(html: &str) -> Result<Vec<Vec<TextLine>>> {
     Ok(pages)
 }
 
-fn line_annotation(line: &TextLine) -> Annotation {
+pub(crate) fn line_annotation(line: &TextLine) -> Annotation {
     let mut annotation = Annotation::text(AnnotationKind::Ocr, TEXT_PROVIDER, line.text.clone());
     annotation.region = Some(line.region);
     annotation.confidence = Some(1.0);
@@ -437,12 +437,32 @@ mod tests {
         );
     }
 
+    /// True only when this host can really convert a document. LibreOffice
+    /// can be installed without its Writer component, which fails every
+    /// conversion, so presence alone is not enough. Setting
+    /// `ANYTOPDF_REQUIRE_OFFICE` turns a host that cannot convert into a
+    /// failure instead of a skip (Linux CI sets it).
+    fn office_converts() -> bool {
+        let converts = soffice_path().is_some_and(|soffice| {
+            if which::which("pdftoppm").is_err() || which::which("pdftotext").is_err() {
+                return false;
+            }
+            let dir = tempfile::tempdir().unwrap();
+            let probe = dir.path().join("probe.txt");
+            fs::write(&probe, "probe").unwrap();
+            convert_to_pdf(&soffice, &probe, dir.path()).is_ok()
+        });
+        let required = std::env::var_os("ANYTOPDF_REQUIRE_OFFICE").is_some_and(|v| !v.is_empty());
+        assert!(
+            converts || !required,
+            "ANYTOPDF_REQUIRE_OFFICE is set but LibreOffice and Poppler cannot convert a document here"
+        );
+        converts
+    }
+
     #[test]
     fn rtf_pages_carry_positioned_native_text_when_libreoffice_is_installed() {
-        if soffice_path().is_none()
-            || which::which("pdftoppm").is_err()
-            || which::which("pdftotext").is_err()
-        {
+        if !office_converts() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
