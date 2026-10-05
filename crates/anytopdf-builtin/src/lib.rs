@@ -55,6 +55,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_importer(Arc::new(importers::TextImporter));
     registry.register_importer(Arc::new(importers::HtmlImporter));
     registry.register_importer(Arc::new(importers::EmailImporter));
+    registry.register_importer(Arc::new(importers::ArchiveImporter));
     registry.register_importer(Arc::new(importers::SubtitleImporter));
     registry.register_importer(Arc::new(importers::VideoImporter::new(
         opts.video_interval,

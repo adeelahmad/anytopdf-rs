@@ -76,7 +76,10 @@ source and tagged with `container.member`, so the source list, `--output-dir`
 grouping and manifest still describe the inputs the user named. Members must
 resolve inside the workspace, nesting stops at `MAX_MEMBER_DEPTH`, and a member
 that cannot be imported is an `input.members-not-imported` warning, not a failed
-input. Runtime plugins keep the plain `import` path.
+input. Every top-level input carries one extraction budget
+(`MAX_MEMBERS_PER_INPUT`, `MAX_MEMBER_BYTES_PER_INPUT`) that extractors draw on
+through `MemberImporter::charge`, so nested archives cannot multiply it.
+Runtime plugins keep the plain `import` path.
 
 ### Source enrichment
 
