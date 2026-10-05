@@ -458,7 +458,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] PDF input (keep the text layer, OCR only textless pages)
 - [ ] HTML and URL snapshot
 - [ ] EML and mbox
-- [ ] Archives (zip, tar)
+- [x] Archives (zip, tar)
 - [ ] HEIC
 - [ ] Office documents (structure first, LibreOffice when present)
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin

@@ -56,7 +56,7 @@
 
 anytopdf is meant for one person converting their own media and documents into a searchable, self-describing PDF on their own machine *(documented, README intro "a pluggable media/document ingestion engine")*. Typical uses are archiving a folder of photos, recordings and notes, and producing an "evidence file" that agents can index *(documented, README "Roadmap" "anytopdf is meant to produce an evidence file")*.
 
-The deployment context is a CLI run by a local user, with the user's permissions. There is no long-running service. The webhook, IMAP, job-queue and printer intake channels are unshipped roadmap items *(documented, README "Roadmap" "Intake channels", all unchecked)*. Since this revision, the job queue with signed webhooks, the remote print front and the MCP server have shipped; see §1.16 "Shipped since this revision". They are not yet modeled.
+The deployment context is a CLI run by a local user, with the user's permissions. There is no long-running service. The webhook, IMAP, job-queue and printer intake channels are unshipped roadmap items *(documented, README "Roadmap" "Intake channels", all unchecked)*. Since this revision, the job queue with signed webhooks and an HTTP upload listener, the remote print front and the MCP server have shipped; see §1.16 "Shipped since this revision". They are not yet modeled.
 
 Roles:
 
@@ -446,9 +446,10 @@ Plugin authors:
 These merged on `main` on 2026-10-05 and change the model; each needs a revision before reports against it can be closed. Until then, route reports that depend on them to `MODEL-GAP`.
 
 - **Job queue and webhooks** (`anytopdf queue`). New surface: an inbox folder watcher that claims any file dropped into `QUEUE/inbox/` and converts it with the worker's options, so whoever can write to the inbox is an input author; job records shared by several workers through atomic renames; one child `anytopdf convert` per job with a `--job-timeout`; and outbound HTTP to each `--webhook` URL, signed with HMAC-SHA256 under `ANYTOPDF_WEBHOOK_SECRET` and retried from a durable outbox. Payloads carry file names and queue-relative paths only. Nothing listens on a port *(documented, README "Job queue and webhooks")*.
-- **Remote print front** (`anytopdf print remote`). The first network listener: TLS (`ipps://`), a peer allowlist, user passwords, and multicast DNS advertising *(documented, README "Remote printing", `docs/design/remote-printing.md`)*.
+- **Queue HTTP upload** (`anytopdf queue serve`). An inbound listener on `127.0.0.1:8640` by default. Every request needs `Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN` (at least 16 characters); any other address needs TLS, and `0.0.0.0` or `::` also needs `--allow-public-bind`. Uploads are capped by `--max-upload-mb` (default 100) and must send `Content-Length`. Clients can upload, poll job status and download the PDF but cannot set conversion options, so a token holder is an input author *(documented, README "Job queue and webhooks")*.
+- **Remote print front** (`anytopdf print remote`). A network listener: TLS (`ipps://`), a peer allowlist, user passwords, and multicast DNS advertising *(documented, README "Remote printing", `docs/design/remote-printing.md`)*.
 - **MCP server** (`anytopdf mcp`). JSON-RPC over stdio that re-runs the CLI with the caller's arguments and the user's permissions *(documented, README "MCP server")*.
-- **New importers and renderer.** HTML, email with attachments imported as nested members (depth 4), Office documents through LibreOffice and Poppler, and the krilla PDF/A-3b renderer, whose hidden layer uses fill opacity 0 rather than text rendering mode 3 (P8) *(documented, CHANGELOG "0.2.0")*.
+- **New importers and renderer.** HTML, email with attachments imported as nested members (depth 4), zip and tar archives extracted into the workspace with traversal and size, entry-count and compression-ratio caps (a partial answer to D4 for archives), Office documents through LibreOffice and Poppler, and the krilla PDF/A-3b renderer, whose hidden layer uses fill opacity 0 rather than text rendering mode 3 (P8) *(documented, CHANGELOG "0.2.0")*.
 
 ## 1.17 Triage dispositions
 
