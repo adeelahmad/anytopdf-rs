@@ -133,6 +133,7 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - cli: accept authenticated HTTP uploads into the job queue (#20) (16cfa75c)
 - print: add IPP print server helper and print-raster importer (#14) (af6b0379)
 - cli: make the tagged PDF/A-3a renderer the default (#21) (5839b22f)
+- builtin: import HEIC/HEIF/AVIF photos and existing PDFs (#23) (3787e375)
 
 #### Fixes
 
