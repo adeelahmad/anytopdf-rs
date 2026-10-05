@@ -87,6 +87,8 @@ Importers:
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - archives (`.zip`, `.tar`, `.tar.gz`/`.tgz`): an index page plus every member through its own importer, with zip-bomb and path-traversal limits
 - SRT / VTT captions
+- Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
+  LibreOffice and Poppler
 
 Enrichment:
 - ExifTool metadata
@@ -128,7 +130,14 @@ FFmpeg, ExifTool and Tesseract are described in
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF and Office importers are future work.
+a supplied transcript or a plugin. PDF importers are future work.
+
+Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
+their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
+Each page is rendered as an image; with Poppler's `pdftotext` the document's own
+text is placed invisibly over it and OCR is skipped for those pages. Without
+`pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
+a private LibreOffice profile, so the original file is never opened in place.
 
 ## CLI
 
@@ -194,6 +203,30 @@ on stderr) but still exits 0. A version-matched manifest or chunks file that
 does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
+
+### Remote printing
+
+The print helper listens on localhost only. `anytopdf print remote` lets phones and
+laptops on your Tailscale or WireGuard network print to it: it accepts TLS
+connections (`ipps://`), admits only allowlisted peers, asks for a print user's
+password, then passes the job to the helper.
+
+```bash
+tailscale cert printer.tailnet-name.ts.net
+echo 'a long password' | anytopdf print passwd adeel --users ~/.anytopdf/print-users.json
+anytopdf print remote --listen 100.101.102.103:8631 --allow-tailnet \
+  --tls-cert printer.tailnet-name.ts.net.crt --tls-key printer.tailnet-name.ts.net.key \
+  --users ~/.anytopdf/print-users.json
+```
+
+It refuses a non-loopback listener without users and an allowlist, and
+`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. Discovery:
+`anytopdf print advertise` announces the printer over multicast DNS on the local
+network (IPP Everywhere `_ipps._tcp` with the AirPrint `_universal` subtype);
+multicast does not cross a VPN, so `anytopdf print dns-sd --domain home.example
+--host printer.home.example` prints unicast DNS-SD records to add to your own DNS
+for remote Apple clients, and `anytopdf print url` prints the `ipps://` URL to add
+the printer by hand on Windows and Android. See `docs/design/remote-printing.md`.
 
 ### MCP server
 
