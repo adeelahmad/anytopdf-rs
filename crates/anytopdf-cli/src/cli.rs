@@ -193,6 +193,8 @@ pub(crate) enum QueueCommand {
     },
     /// Convert queued jobs and files dropped into the inbox, delivering webhooks.
     Work(QueueWorkArgs),
+    /// Accept authenticated HTTP uploads as jobs (loopback unless TLS is set).
+    Serve(QueueServeArgs),
     /// List the jobs and webhook deliveries in a queue directory.
     Status {
         /// Queue directory.
@@ -200,6 +202,36 @@ pub(crate) enum QueueCommand {
     },
     /// Print a new webhook signing secret for ANYTOPDF_WEBHOOK_SECRET.
     Secret,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct QueueServeArgs {
+    /// Queue directory (created if missing).
+    pub(crate) queue: PathBuf,
+    /// Address to listen on; anything but loopback needs --tls-cert and --tls-key.
+    #[arg(long, default_value = "127.0.0.1:8640")]
+    pub(crate) listen: std::net::SocketAddr,
+    /// PEM certificate chain for HTTPS.
+    #[arg(long, requires = "tls_key")]
+    pub(crate) tls_cert: Option<PathBuf>,
+    /// PEM private key for --tls-cert.
+    #[arg(long, requires = "tls_cert")]
+    pub(crate) tls_key: Option<PathBuf>,
+    /// Accept listening on every interface (0.0.0.0 or ::).
+    #[arg(long)]
+    pub(crate) allow_public_bind: bool,
+    /// Largest accepted upload, in MiB.
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=65_536))]
+    pub(crate) max_upload_mb: u64,
+    /// Maximum simultaneous client connections.
+    #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u16).range(1..))]
+    pub(crate) max_connections: u16,
+    /// Suppress the server log on stderr.
+    #[arg(short, long)]
+    pub(crate) quiet: bool,
+    /// Convert options for uploaded files after `--`, for example `-- --profile share`.
+    #[arg(last = true)]
+    pub(crate) convert: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
