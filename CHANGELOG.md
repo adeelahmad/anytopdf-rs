@@ -6,6 +6,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `--plugin-sandbox off|contain|strict` (default `off`) confines runtime plugins.
+  `contain` kills every process a plugin starts when its call ends or times out;
+  `strict` also limits writes to the job workspace and blocks sockets (Landlock and
+  seccomp on Linux, `sandbox-exec` on macOS) and exits 2 where it cannot be enforced.
+  `--plugin-sandbox-allow-read PATH` adds readable paths under `strict`.
 - `extract` exits 3 (input) when a version-matched manifest or chunks file
   does not match its schema, naming the document and the first failing JSON path;
   other `schema_version` values still warn and exit 0.

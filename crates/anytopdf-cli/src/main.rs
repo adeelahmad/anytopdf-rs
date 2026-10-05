@@ -8,7 +8,7 @@ mod exit;
 mod extract;
 mod naming;
 mod publish;
-use anytopdf_core::RuntimePluginPolicy;
+use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
 use cli::{Cli, Commands};
 use commands::{doctor, plugins, probe};
@@ -49,11 +49,18 @@ fn run(cli: Cli) -> Result<(), CliError> {
         allow_capabilities: (!cli.allow_plugin_kind.is_empty())
             .then(|| cli.allow_plugin_kind.into_iter().collect()),
         deny_capabilities: cli.deny_plugin_kind.into_iter().collect(),
+        sandbox: SandboxPolicy {
+            mode: cli.plugin_sandbox,
+            allow_read: cli.plugin_sandbox_allow_read,
+        },
     };
     match cli.command {
         Commands::Convert(args) => convert(*args, &policy),
         Commands::Doctor { json } => Ok(doctor(json)?),
-        Commands::Plugins { json } => Ok(plugins(&policy, json)?),
+        Commands::Plugins { json } => {
+            check_sandbox(&policy)?;
+            Ok(plugins(&policy, json)?)
+        }
         Commands::Extract { pdf, .. } => {
             let doc = extract::extract(&pdf)?;
             println!("{}", serde_json::to_string_pretty(&doc)?);
@@ -66,8 +73,19 @@ fn run(cli: Cli) -> Result<(), CliError> {
             );
             Ok(())
         }
-        Commands::Probe { input, .. } => probe(&input, &policy),
+        Commands::Probe { input, .. } => {
+            check_sandbox(&policy)?;
+            probe(&input, &policy)
+        }
     }
+}
+
+/// Refuses a sandbox level the platform cannot enforce before any plugin runs.
+fn check_sandbox(policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+    if policy.enabled {
+        exit::tag(ExitClass::Usage, validate_sandbox_policy(&policy.sandbox))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
