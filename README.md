@@ -84,6 +84,7 @@ Importers:
 - audio container placeholder units
 - text / Markdown
 - HTML pages (readable text, title and image alt text; no network fetches)
+- email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - SRT / VTT captions
 
 Enrichment:
@@ -190,6 +191,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
+- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
