@@ -35,6 +35,10 @@ model §1.11). The security-critical ones are:
 - **P7** With `--profile share`, absolute local paths are removed from the
   manifest, chunks, `--dump-graph`, `--json`, events, the summary and
   diagnostics, and metadata is cut to an allow-list.
+- **P21** With `--plugin-sandbox strict` on Linux or macOS, a runtime plugin
+  writes only inside the job workspace, makes no network connection and reads
+  only the paths the sandbox allows; under `contain` or `strict`, every process
+  it starts ends with its call. The threat model lists the platform caveats.
 
 Correctness properties are also tracked there, including plugin response
 validation (P4), subprocess timeouts and 16 MiB capture caps (P5), the
@@ -48,7 +52,7 @@ someone reading outputs shared under `--profile share`.
 ### Not yet modeled
 
 The job queue, its signed webhooks and its HTTP upload listener (`anytopdf queue`,
-`anytopdf queue serve`), the remote print front (`anytopdf print remote`), the MCP
+`anytopdf queue serve`), the IMAP watcher (`anytopdf watch imap`), the remote print front (`anytopdf print remote`), the MCP
 server (`anytopdf mcp`), the PAPPL printer helper and the HTML, email, Office,
 archive, PDF and HEIC importers shipped after this threat model was written. Reports
 against them are welcome and are triaged by the maintainer directly until the
@@ -59,10 +63,11 @@ model is revised (threat model §1.16).
 These close by design (threat model §1.3, §1.10, §1.12):
 
 - **Plugin code.** An installed plugin is trusted native code running as you.
-  There is no OS sandbox, network isolation or CPU/memory/disk quota for plugins
-  or providers. `--allow-plugin-kind`/`--deny-plugin-kind` filter registration,
-  not execution; only `--no-plugins` stops plugins running. Processes a timed-out
-  plugin spawns are not guaranteed to stop.
+  By default (`--plugin-sandbox off`) there is no OS sandbox or network
+  isolation for plugins, and processes a timed-out plugin spawns are not
+  guaranteed to stop. There is no CPU/memory/disk quota at any level, and
+  external providers are never sandboxed. `--allow-plugin-kind`/`--deny-plugin-kind`
+  filter registration, not execution; only `--no-plugins` stops plugins running.
 - **Resource exhaustion from input size or shape.** There are no default size,
   pixel, page, frame or decompression-bomb limits for `convert` or `extract`
   inputs (a subprocess outliving its timeout is still a bug). The exception is
@@ -92,6 +97,8 @@ From the threat model's downstream responsibilities (§1.13):
 
 - Install only trusted plugins, keep `PATH` and `ANYTOPDF_PLUGIN_PATH`
   directories writable only by trusted users, and use `--no-plugins` otherwise.
+  If plugins must run on untrusted input, use `--plugin-sandbox strict` on Linux
+  and macOS, or `contain` on Windows.
 - Convert untrusted media inside a sandbox or container with resource limits,
   and set `--max-image-frames` and `--max-video-frames` to non-zero values.
 - Use `--profile share` before giving outputs to someone else, and review the

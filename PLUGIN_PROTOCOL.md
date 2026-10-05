@@ -189,9 +189,10 @@ Design notes: `docs/design/plugin-sandbox.md`.
 - `convert --renderer runtime:NAME`: select a registered runtime PDF renderer.
 
 Capability filters control registration, not executable permissions: manifest
-commands still run during discovery. Plugins remain trusted native processes,
-without filesystem/network isolation or hard CPU/memory quotas. A timeout kills
-the direct child; independently spawned descendants are not guaranteed to stop.
+commands still run during discovery. With the default `--plugin-sandbox off`,
+plugins remain trusted native processes, without filesystem/network isolation or
+hard CPU/memory quotas, and a timeout kills only the direct child; independently
+spawned descendants are not guaranteed to stop.
 Captured output and response JSON are limited to 16 MiB each. Optional plugin
 failures become warnings; failed enrichers roll back graph mutations.
 
