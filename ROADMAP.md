@@ -63,7 +63,7 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] archive importer (zip, tar, tar.gz) with path-traversal and zip-bomb limits
 - [x] Whisper transcription runtime plugin
 - [x] `anytopdf print remote`: TLS print front for Tailscale/WireGuard with user passwords, a peer allowlist and DNS-SD discovery
-- [x] PDF/A-3b renderer through krilla (`--renderer pdfa`), manifest and chunks as associated files
+- [x] krilla renderer, now the default: tagged PDF/A-3a with bookmarks, bidi shaping and font fallback, manifest and chunks as associated files
 - [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a container image
 - [x] Rust toolchain 1.92.0
@@ -76,7 +76,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 2. IMAP mail watcher: in progress.
 3. PAPPL print server (IPP Everywhere / AirPrint / Mopria helper process): in progress.
 4. Remote printing: done; signed-in user stamps and print receipts in progress.
-5. New renderer and PDF/A-3: PDF/A-3b done; tagged PDF/A-3a, bookmarks and bidi shaping in progress; parley layout and `pdfa` as the default still open.
+5. New renderer and PDF/A-3: done. Tagged PDF/A-3a through krilla is the default renderer, with bookmarks, bidi shaping, font fallback and a bundled DejaVu Sans font; `--renderer pdf` keeps printpdf.
 6. More inputs: HTML, email and zip/tar archives done; PDF and HEIC/HEIF/AVIF in progress.
 7. Office documents and Whisper transcription: done (Whisper as a runtime plugin).
 8. Distribution and an MCP server: MCP server and package manifests done; published tap and bucket, winget, `curl | sh`, npx/uvx wrappers, signing and notarization still open.
