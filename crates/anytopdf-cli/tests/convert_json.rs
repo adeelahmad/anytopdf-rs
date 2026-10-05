@@ -1,58 +1,21 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, Output},
 };
 
-use anytopdf_core::schema;
 use anytopdf_pdf::read_embedded_files;
 use serde_json::{Value, json};
 
-fn load_schema(name: &str) -> Value {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root
-        .ancestors()
-        .map(|dir| dir.join("schemas").join(format!("{name}.schema.json")))
-        .find(|candidate| candidate.is_file());
-    match path {
-        Some(path) => serde_json::from_slice(&fs::read(path).unwrap()).unwrap(),
-        None => Value::Null,
-    }
-}
-
-fn validation_errors(instance: &Value) -> Vec<String> {
-    let schema = load_schema("convert");
-    assert!(
-        schema.is_object(),
-        "schemas/convert.schema.json must exist and be a JSON object"
-    );
-    schema::validate(&schema, instance)
-        .into_iter()
-        .map(|error| format!("{}: {}", error.path, error.message))
-        .collect()
-}
-
-fn assert_valid(instance: &Value) {
-    let errors = validation_errors(instance);
-    assert!(errors.is_empty(), "convert schema errors: {errors:?}");
-}
-
-fn single_document(output: &Output) -> Value {
-    let documents: Vec<Value> = serde_json::Deserializer::from_slice(&output.stdout)
-        .into_iter::<Value>()
-        .map(|item| {
-            item.unwrap_or_else(|e| {
-                panic!(
-                    "stdout must be JSON only ({e}): {:?} / stderr: {}",
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                )
-            })
-        })
-        .collect();
-    assert_eq!(documents.len(), 1, "stdout must hold exactly one document");
-    documents.into_iter().next().unwrap()
-}
+#[path = "common/schema_assert.rs"]
+mod schema_assert;
+#[path = "common/schema.rs"]
+mod schema_files;
+#[path = "common/stdout_json.rs"]
+mod stdout_json;
+use schema_assert::assert_valid;
+use schema_files::validation_errors;
+use stdout_json::single_document;
 
 fn run(dir: &Path, inputs: &[&str], extra: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_anytopdf"))
@@ -103,8 +66,8 @@ fn convert_json_success_payload_validates() {
         !stdout.contains("Wrote"),
         "stdout must be JSON only: {stdout}"
     );
-    let payload = single_document(&result);
-    assert_valid(&payload);
+    let payload = single_document(&result.stdout);
+    assert_valid("convert", &payload);
     assert_eq!(payload["schema_version"], "anytopdf.convert/1");
     assert_eq!(payload["status"], "ok");
     assert_eq!(payload["exit_code"], 0);
@@ -136,8 +99,8 @@ fn convert_json_partial_payload_lists_skipped_inputs_with_codes() {
         &["-o", pdf.to_str().unwrap()],
     );
     assert_eq!(result.status.code(), Some(0));
-    let payload = single_document(&result);
-    assert_valid(&payload);
+    let payload = single_document(&result.stdout);
+    assert_valid("convert", &payload);
     assert_eq!(payload["status"], "partial");
     assert_eq!(payload["exit_code"], 0);
     assert_eq!(
@@ -159,8 +122,8 @@ fn convert_json_partial_payload_lists_skipped_inputs_with_codes() {
         &["--fail-fast", "-o", ff_pdf.to_str().unwrap()],
     );
     assert_eq!(result.status.code(), Some(7));
-    let payload = single_document(&result);
-    assert_valid(&payload);
+    let payload = single_document(&result.stdout);
+    assert_valid("convert", &payload);
     assert_eq!(payload["status"], "failed");
     assert_eq!(payload["exit_code"], 7);
     assert_eq!(payload["outputs"], json!([]));
@@ -177,8 +140,8 @@ fn convert_json_strict_failure_still_emits_one_document() {
         &["--strict", "-o", pdf.to_str().unwrap()],
     );
     assert_eq!(result.status.code(), Some(5));
-    let payload = single_document(&result);
-    assert_valid(&payload);
+    let payload = single_document(&result.stdout);
+    assert_valid("convert", &payload);
     assert_eq!(payload["status"], "failed");
     assert_eq!(payload["exit_code"], 5);
     assert_eq!(payload["outputs"], json!([]));
@@ -201,8 +164,8 @@ fn convert_json_share_profile_reports_base_names_only() {
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    let payload = single_document(&result);
-    assert_valid(&payload);
+    let payload = single_document(&result.stdout);
+    assert_valid("convert", &payload);
     assert_eq!(payload["summary"]["converted"][0]["input"], "notes.txt");
     let raw = tmp.path().to_string_lossy().to_string();
     let canonical = fs::canonicalize(tmp.path())
@@ -233,11 +196,17 @@ fn mutated_convert_payload_is_rejected() {
         },
         "diagnostics": []
     });
-    assert_valid(&valid);
+    assert_valid("convert", &valid);
     let mut bad_status = valid.clone();
     bad_status["status"] = json!("maybe");
-    assert!(!validation_errors(&bad_status).is_empty(), "status maybe");
+    assert!(
+        !validation_errors("convert", &bad_status).is_empty(),
+        "status maybe"
+    );
     let mut no_summary = valid.clone();
     no_summary.as_object_mut().unwrap().remove("summary");
-    assert!(!validation_errors(&no_summary).is_empty(), "no summary");
+    assert!(
+        !validation_errors("convert", &no_summary).is_empty(),
+        "no summary"
+    );
 }

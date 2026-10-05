@@ -1,7 +1,10 @@
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
-use anytopdf_core::schema;
 use serde_json::{Value, json};
+
+#[path = "common/schema.rs"]
+mod schema_files;
+use schema_files::{load_schema, validation_errors};
 
 const CATALOG: [&str; 11] = [
     "run.started",
@@ -32,10 +35,6 @@ fn schema_text() -> String {
     fs::read_to_string(path).unwrap()
 }
 
-fn load_schema() -> Value {
-    serde_json::from_str(&schema_text()).expect("events schema must be JSON")
-}
-
 fn resolve<'a>(root: &'a Value, node: &'a Value) -> &'a Value {
     match node.get("$ref").and_then(Value::as_str) {
         Some(reference) => root
@@ -56,17 +55,10 @@ fn has_closed_object(node: &Value) -> bool {
     }
 }
 
-fn errors(instance: &Value) -> Vec<String> {
-    schema::validate(&load_schema(), instance)
-        .into_iter()
-        .map(|error| format!("{}: {}", error.path, error.message))
-        .collect()
-}
-
 #[test]
 fn events_schema_is_v1_with_one_branch_per_event() {
     let text = schema_text();
-    let root = load_schema();
+    let root = load_schema("events");
     assert_eq!(
         root["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
@@ -155,7 +147,7 @@ fn catalog_samples_validate_and_mutations_are_rejected() {
         ),
     ];
     for sample in &samples {
-        let found = errors(sample);
+        let found = validation_errors("events", sample);
         assert!(found.is_empty(), "{sample} rejected: {found:?}");
     }
 
@@ -183,6 +175,9 @@ fn catalog_samples_validate_and_mutations_are_rejected() {
         ("bad stage", bad_stage),
         ("skipped without code", no_code),
     ] {
-        assert!(!errors(&mutated).is_empty(), "{label} must be rejected");
+        assert!(
+            !validation_errors("events", &mutated).is_empty(),
+            "{label} must be rejected"
+        );
     }
 }
