@@ -19,7 +19,7 @@ use krilla::color::rgb;
 use krilla::configure::{Archival, ConfigurationBuilder};
 use krilla::destination::XyzDestination;
 use krilla::embed::{AssociationKind, EmbeddedFile, MimeType};
-use krilla::geom::{Point, Size};
+use krilla::geom::{Point, Size, Transform};
 use krilla::image::Image;
 use krilla::metadata::{DateTime, Metadata};
 use krilla::num::NormalizedF32;
@@ -318,6 +318,16 @@ fn source_outline(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>)
     outline
 }
 
+/// Horizontal scale that fits a word of `natural` width into an OCR box `box_w`
+/// wide, bounded so a degenerate box cannot collapse or smear the text.
+fn ocr_stretch(box_w: f32, natural: f32) -> f32 {
+    if box_w > 0.0 && natural > 0.0 {
+        (box_w / natural).clamp(0.25, 4.0)
+    } else {
+        1.0
+    }
+}
+
 /// Draw `text` as one tagged span and return its identifier, or `None` for blank text.
 fn span(
     surface: &mut Surface,
@@ -386,7 +396,20 @@ impl Builder<'_> {
                 let baseline_y = (page_h_mm - y_top - box_h * 0.85).max(0.5);
                 let font_pt = ((box_h / 25.4) * 72.0 * 0.78).clamp(3.0, 72.0);
                 let at = Point::from_xy(x * PT_PER_MM, (page_h_mm - baseline_y) * PT_PER_MM);
+                // Stretch the word to its OCR box so selection and search highlights
+                // cover the word in the image, not the bundled font's natural width.
+                let box_w = page_w_mm * r.width * PT_PER_MM;
+                let stretch = ocr_stretch(box_w, font.width(&annotation.text) * font_pt);
+                surface.push_transform(&Transform::from_row(
+                    stretch,
+                    0.0,
+                    0.0,
+                    1.0,
+                    at.x * (1.0 - stretch),
+                    0.0,
+                ));
                 ocr.extend(span(&mut surface, font, at, font_pt, &annotation.text));
+                surface.pop();
             }
         }
 

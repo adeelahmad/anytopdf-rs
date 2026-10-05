@@ -1,0 +1,50 @@
+name: Bug report
+description: Something converted wrongly, crashed or failed.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. A small sample file that reproduces the problem helps most.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected and what you got instead.
+      placeholder: |
+        anytopdf scan.jpg -o scan.pdf
+        Expected the receipt total to be searchable; pdftotext finds nothing.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Command output
+      description: The full stderr, or `--events` output. Remove anything private.
+      render: shell
+  - type: textarea
+    id: doctor
+    attributes:
+      label: anytopdf doctor
+      description: Output of `anytopdf --version` and `anytopdf doctor`.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install anytopdf?
+      options:
+        - install.sh
+        - Homebrew
+        - Scoop
+        - cargo binstall / cargo install
+        - Docker image
+        - Release archive
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample file
+      description: Attach a file that reproduces the problem, or describe it if it cannot be shared.

@@ -1,0 +1,32 @@
+name: Feature or format request
+description: A new input format, enricher, output option or integration.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The files you have and what you want to find in the PDF afterwards.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: A flag, an importer, a plugin, an integration. Mention existing tools that already do it.
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Built-in or plugin?
+      description: Heavy dependencies and models usually fit best as an `anytopdf-plugin-*` executable.
+      options:
+        - Not sure
+        - Built-in
+        - Runtime plugin
+        - I would write the plugin myself
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Contributing
+      options:
+        - label: I would like to open a pull request for this.

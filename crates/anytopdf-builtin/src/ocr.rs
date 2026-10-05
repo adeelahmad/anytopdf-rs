@@ -150,7 +150,7 @@ fn tesseract_ocr(path: &Path, lang: &str) -> Result<Vec<Annotation>> {
         .bounded_output(std::time::Duration::from_secs(180))
         .context("run tesseract")?;
     if !out.status.success() {
-        bail!("{}", String::from_utf8_lossy(&out.stderr));
+        bail!("{}", stderr_summary(&out.stderr));
     }
 
     let tsv = String::from_utf8(out.stdout).context("Tesseract returned non-UTF-8 TSV")?;
@@ -294,7 +294,7 @@ print(json.dumps(out, ensure_ascii=False))
         .bounded_output(std::time::Duration::from_secs(180))
         .context("run docTR")?;
     if !out.status.success() {
-        bail!("{}", String::from_utf8_lossy(&out.stderr));
+        bail!("{}", stderr_summary(&out.stderr));
     }
 
     let values: Vec<Value> = serde_json::from_slice(&out.stdout)?;
@@ -415,6 +415,16 @@ fn vision_ocr(path: &Path, lang: &str) -> Result<Vec<Annotation>> {
     Ok(out)
 }
 
+/// The last non-empty stderr line: a Python traceback's exception or a CLI's
+/// final error, so one notice line stays readable.
+fn stderr_summary(stderr: &[u8]) -> String {
+    String::from_utf8_lossy(stderr)
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty())
+        .map_or_else(|| "exited with no error output".to_string(), str::to_string)
+}
+
 fn fallback_notice(provider: OcrMode, errors: &[String]) -> String {
     Diagnostic::new(
         DiagnosticCode::OcrFallback,
@@ -429,6 +439,16 @@ fn fallback_notice(provider: OcrMode, errors: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stderr_summary_keeps_only_the_final_error_line() {
+        let traceback = b"Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\nModuleNotFoundError: No module named 'doctr'\n\n";
+        assert_eq!(
+            stderr_summary(traceback),
+            "ModuleNotFoundError: No module named 'doctr'"
+        );
+        assert_eq!(stderr_summary(b"  \n"), "exited with no error output");
+    }
 
     #[test]
     fn auto_fallback_notice_is_informational() {

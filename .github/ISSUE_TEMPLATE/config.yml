@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/adeelahmad/anytopdf-rs/discussions
+    about: Ask how to do something or share what you built with anytopdf.
+  - name: Security vulnerability
+    url: https://github.com/adeelahmad/anytopdf-rs/security/advisories/new
+    about: Report vulnerabilities privately, as described in SECURITY.md.

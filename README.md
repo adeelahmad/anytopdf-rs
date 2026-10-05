@@ -1,4 +1,136 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.png">
+    <img alt="anytopdf: turn anything into a searchable PDF" src="docs/brand/banner-light.png" width="100%">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/adeelahmad/anytopdf-rs/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/adeelahmad/anytopdf-rs/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/adeelahmad/anytopdf-rs/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/adeelahmad/anytopdf-rs?sort=semver"></a>
+  <a href="#license"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue"></a>
+  <img alt="Rust 1.92" src="https://img.shields.io/badge/rust-1.92-orange?logo=rust">
+  <img alt="macOS, Linux, Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey">
+  <a href="#mcp-server"><img alt="MCP server" src="https://img.shields.io/badge/MCP-server-8A2BE2"></a>
+</p>
+
 # anytopdf
+
+**Turn photos, scans, video, audio, email, Office files and archives into one
+searchable PDF, offline, with a single binary.**
+
+```console
+$ anytopdf receipt.jpg meeting.mp4 inbox.mbox -o evidence.pdf
+```
+
+Every page looks like the original. Underneath, an invisible text layer carries
+the OCR, transcripts, captions and timestamps, so Ctrl+F, Spotlight, `pdftotext`
+and your RAG pipeline all find the words. A manifest with SHA-256 hashes and
+per-page chunks is embedded in the PDF, which makes the file its own index.
+
+<p align="center">
+  <img alt="A phone photo of a receipt becomes a PDF in which a search for 'total' highlights the words on the page" src="docs/demo/before-after.png" width="100%">
+</p>
+
+<p align="center">
+  <img alt="Terminal: anytopdf converts receipt.jpg, pdftotext finds TOTAL GBP 128.40, anytopdf extract prints the source hash" src="docs/demo/demo.gif" width="80%">
+</p>
+
+<sub>Both images come from a real run of the release binary
+(`python3 docs/demo/record.py`); nothing is mocked.</sub>
+
+## What it does
+
+| | |
+| --- | --- |
+| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
+| **Finds the words** | OCR through Apple Vision, docTR or Tesseract, kept word-aligned under the image; speech to text through the bundled Whisper plugin; video keyframes chosen by interval and scene change |
+| **Writes a real archive file** | Tagged PDF/A-3a with bookmarks, Arabic/Hebrew/CJK shaping, byte-reproducible output, and a provenance page |
+| **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes and page maps; `anytopdf extract --json` reads them back |
+| **Plugs into agents** | `anytopdf mcp` is a Model Context Protocol server: `claude mcp add anytopdf -- anytopdf mcp` |
+| **Runs unattended** | Folder-backed job queue, HTTP upload intake, signed webhooks, an IMAP mailbox watcher, and an optional IPP printer helper that phones and laptops can print to |
+| **Extends without forks** | Any `anytopdf-plugin-*` executable on `PATH`, in any language, speaks a versioned JSON protocol; an opt-in sandbox confines it |
+
+Nothing leaves your machine: no cloud OCR, no telemetry, and no network access
+unless you turn on an intake channel (queue server, webhooks, IMAP or the printer).
+
+## Install
+
+| Platform | Command |
+| --- | --- |
+| macOS, Linux | `curl -fsSL https://raw.githubusercontent.com/adeelahmad/anytopdf-rs/main/install.sh \| sh` |
+| Homebrew | `brew tap adeelahmad/anytopdf https://github.com/adeelahmad/anytopdf-rs && brew install adeelahmad/anytopdf/anytopdf` |
+| Windows (Scoop) | `scoop bucket add anytopdf https://github.com/adeelahmad/anytopdf-rs; scoop install anytopdf/anytopdf` |
+| cargo-binstall | `cargo binstall --git https://github.com/adeelahmad/anytopdf-rs anytopdf` |
+| Docker | `docker run --rm -v "$PWD:/work" ghcr.io/adeelahmad/anytopdf-rs photo.jpg -o photo.pdf` |
+| From source | `cargo install --locked --git https://github.com/adeelahmad/anytopdf-rs anytopdf` |
+
+Or download an archive for your platform from
+[Releases](https://github.com/adeelahmad/anytopdf-rs/releases/latest). The
+installer verifies the release's SHA-256 checksum before it installs anything.
+Text and image conversion need nothing else; run `anytopdf doctor` to see which
+optional providers (FFmpeg, Tesseract, ExifTool, Poppler, LibreOffice) it found.
+Every channel is described in [docs/distribution.md](docs/distribution.md).
+
+## Quick start
+
+Install as above, or unpack the archive for your operating system and run `./anytopdf` (Windows:
+`anytopdf.exe`). The executable needs no Rust or Python installation for text and
+image conversion; provider-specific dependencies are listed below.
+
+```bash
+./anytopdf --version
+./anytopdf notes.txt photo.jpg -o out.pdf
+./anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
+./anytopdf doctor
+```
+
+Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
+use native Apple Vision on macOS or install Tesseract. Audio transcription requires
+a supplied transcript or a plugin.
+
+Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
+their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
+Each page is rendered as an image; with Poppler's `pdftotext` the document's own
+text is placed invisibly over it and OCR is skipped for those pages. Without
+`pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
+a private LibreOffice profile, so the original file is never opened in place.
+
+### Whisper transcription
+
+`anytopdf-plugin-whisper` transcribes audio and video sources that have no
+sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
+one of these engines, adding a visible, timed transcript page whose segments are
+searchable `transcript` annotations:
+
+- whisper.cpp (`whisper-cli`) with `ANYTOPDF_WHISPER_MODEL` set to a ggml model
+  file, for example `ggml-base.en.bin`;
+- `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
+  `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
+
+Release archives ship the plugin in a `plugins/` folder beside `anytopdf`, and
+Homebrew installs it under `$(brew --prefix anytopdf)/libexec/plugins`. It stays
+off until `ANYTOPDF_PLUGIN_PATH` names that folder, so media conversions without
+a Whisper engine do not warn. The container image has a `WHISPER=cpp` build that
+includes whisper.cpp and enables it (see [docs/distribution.md](docs/distribution.md)).
+From source:
+
+```bash
+cargo build --release -p anytopdf-plugin-whisper
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
+anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
+```
+
+`ANYTOPDF_WHISPER_ENGINE` (`auto`, `whisper.cpp`, `openai-whisper`),
+`ANYTOPDF_WHISPER_BIN` (an engine executable not on `PATH`) and
+`ANYTOPDF_WHISPER_LANGUAGE` (default: detect) override the defaults. One plugin
+invocation transcribes every media source in the job, so raise
+`--plugin-timeout` (default 60 seconds) for long recordings. A missing engine,
+missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
+the PDF is still written.
+
+## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
 is a searchable, RAG-friendly PDF.
@@ -134,79 +266,6 @@ ANYTOPDF_BIN=target/release/anytopdf \
 
 The helper only spools pages; `anytopdf convert` does the work, so a saved
 `job.pwg` or `job.urf` print job converts the same way on any platform.
-
-## Quick start
-
-Unpack the archive for your operating system and run `./anytopdf` (Windows:
-`anytopdf.exe`). The executable needs no Rust or Python installation for text and
-image conversion; provider-specific dependencies are listed below.
-
-```bash
-./anytopdf --version
-./anytopdf notes.txt photo.jpg -o out.pdf
-./anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
-./anytopdf doctor
-```
-
-Or install with a package manager:
-
-```bash
-brew tap adeelahmad/anytopdf https://github.com/adeelahmad/anytopdf-rs
-brew install adeelahmad/anytopdf/anytopdf
-```
-
-```powershell
-scoop bucket add anytopdf https://github.com/adeelahmad/anytopdf-rs
-scoop install anytopdf/anytopdf
-```
-
-cargo-binstall, `cargo install` and a container image with FFmpeg, ExifTool and
-Tesseract are described in [docs/distribution.md](docs/distribution.md).
-
-Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
-use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin.
-
-Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
-their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
-Each page is rendered as an image; with Poppler's `pdftotext` the document's own
-text is placed invisibly over it and OCR is skipped for those pages. Without
-`pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
-a private LibreOffice profile, so the original file is never opened in place.
-
-### Whisper transcription
-
-`anytopdf-plugin-whisper` transcribes audio and video sources that have no
-sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
-one of these engines, adding a visible, timed transcript page whose segments are
-searchable `transcript` annotations:
-
-- whisper.cpp (`whisper-cli`) with `ANYTOPDF_WHISPER_MODEL` set to a ggml model
-  file, for example `ggml-base.en.bin`;
-- `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
-  `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
-
-Release archives ship the plugin in a `plugins/` folder beside `anytopdf`, and
-Homebrew installs it under `$(brew --prefix anytopdf)/libexec/plugins`. It stays
-off until `ANYTOPDF_PLUGIN_PATH` names that folder, so media conversions without
-a Whisper engine do not warn. The container image has a `WHISPER=cpp` build that
-includes whisper.cpp and enables it (see [docs/distribution.md](docs/distribution.md)).
-From source:
-
-```bash
-cargo build --release -p anytopdf-plugin-whisper
-export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
-export ANYTOPDF_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
-anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
-```
-
-`ANYTOPDF_WHISPER_ENGINE` (`auto`, `whisper.cpp`, `openai-whisper`),
-`ANYTOPDF_WHISPER_BIN` (an engine executable not on `PATH`) and
-`ANYTOPDF_WHISPER_LANGUAGE` (default: detect) override the defaults. One plugin
-invocation transcribes every media source in the job, so raise
-`--plugin-timeout` (default 60 seconds) for long recordings. A missing engine,
-missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
-the PDF is still written.
 
 ## CLI
 
@@ -563,7 +622,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
 - [x] Published Homebrew tap and Scoop bucket (`Formula/` and `bucket/` in this repository)
-- [ ] winget, `curl | sh`, and npx/uvx wrappers
+- [x] `curl | sh` installer (`install.sh`, checksum-verified)
+- [ ] winget and npx/uvx wrappers
 - [ ] Signing and notarization
 - [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`
@@ -778,3 +838,16 @@ runs the checks, packages five native targets, verifies the exact archive/checks
 inventory and publishes a GitHub Release using that changelog section. Manual
 release runs upload workflow artifacts only. See `RELEASING.md` for the release
 procedure and validation evidence. All builds use direct shell commands.
+
+## Contributing
+
+Bug reports, importers and plugins are welcome. [CONTRIBUTING.md](CONTRIBUTING.md)
+covers the local checks and commit conventions, and
+[PLUGIN_PROTOCOL.md](PLUGIN_PROTOCOL.md) is the place to start for a new format.
+Report security issues privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option. The bundled DejaVu Sans font ships
+under its own [license](crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt).
