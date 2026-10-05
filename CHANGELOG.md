@@ -6,6 +6,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf queue` (`add`, `work`, `status`, `secret`) adds a folder-backed job queue
+  with a watched inbox and Standard Webhooks (`job.received`, `job.completed`,
+  `job.failed`) signed with HMAC-SHA256 and retried from a durable outbox; new
+  `anytopdf.job/1` and `anytopdf.webhook/1` schemas. Other commands are unchanged
+  and open no sockets.
+- `anytopdf queue serve` accepts authenticated HTTP uploads as queue jobs and serves
+  their status and PDFs: loopback by default, TLS required off loopback, a bearer
+  token from `ANYTOPDF_QUEUE_TOKEN`, and `--max-upload-mb` (default 100).
 - `extract` exits 3 (input) when a version-matched manifest or chunks file
   does not match its schema, naming the document and the first failing JSON path;
   other `schema_version` values still warn and exit 0.
@@ -23,9 +31,17 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
   written into the job workspace under sanitized names and imported by whichever importer
   matches; ones that cannot be imported warn `input.members-not-imported`.
+- Zip, tar and gzipped tar archives import as an index page plus each member through its
+  own importer. Extraction is bounded (512 MiB per member, 1 GiB per archive, 10,000
+  entries, 200:1 zip ratio, 2 GiB and 10,000 members per input across nesting); names
+  are reduced to one safe component and links are skipped. Zip-based documents (OOXML,
+  ODF, EPUB, JAR/APK) are not treated as archives.
 - Importers can expand containers through `Importer::import_with_members`; nesting stops
   at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
+- PWG Raster and Apple Raster (URF) print jobs import one page per unit and keep their
+  paper size through the `visual.dpi` unit value; the optional `anytopdf-printer` PAPPL
+  helper turns IPP print jobs into searchable PDFs.
 - Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
 - The graph dump no longer contains workspace paths.
 - Diagnostics use typed codes (for example `plugin.warning`).
@@ -39,8 +55,24 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Input fidelity: video frames are validated, file types are sniffed, lossy decoding is
   reported, and `--transcript` supplies audio transcripts.
 - `--output-dir` selects the batch output directory.
+- Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) import through
+  headless LibreOffice and Poppler: one page image per page, with the document's
+  positioned text from `pdftotext` and no OCR on those pages. `doctor` reports
+  `soffice`, `pdftoppm` and `pdftotext`.
+- The `anytopdf-plugin-whisper` runtime plugin transcribes audio and video with
+  whisper.cpp or an OpenAI-compatible Whisper CLI into timed transcript pages.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
+- `--renderer pdfa` writes tagged PDF/A-3a through krilla: embedded fonts, XMP
+  metadata, an sRGB output intent, a structure tree, bookmarks per source, and the
+  manifest and chunks as associated files. Lines are reordered with the bidi
+  algorithm and shaped, and characters fall back to further fonts (`ANYTOPDF_FONT`
+  may list several). The hidden layer uses fill opacity 0 instead of text rendering
+  mode 3. `extract` now reads compressed attachments.
+- `--renderer pdfa` is the default; `--renderer pdf` keeps the printpdf output. When
+  `ANYTOPDF_FONT` is unset, `pdfa` embeds a bundled DejaVu Sans (Bitstream Vera
+  licence, `crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt`).
+- The Rust toolchain is 1.92.0.
 
 ## 0.1.0
 

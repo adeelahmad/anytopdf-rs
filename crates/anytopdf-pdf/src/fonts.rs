@@ -51,9 +51,18 @@ pub(crate) fn subset_document_font(bytes: &[u8], graph: &DocumentGraph) -> Resul
     .map_err(|e| anyhow::anyhow!("subset document font: {e:?}"))
 }
 
+/// DejaVu Sans, the PDF/A renderer's font when `ANYTOPDF_FONT` is unset, so its output
+/// does not depend on the host's fonts. Licence: `fonts/LICENSE-DejaVu.txt`.
+pub(crate) const BUNDLED_FONT: &[u8] = include_bytes!("../fonts/DejaVuSans.ttf");
+
+/// The first `ANYTOPDF_FONT` entry, if any.
+pub(crate) fn configured_font() -> Option<PathBuf> {
+    env_fonts().into_iter().next()
+}
+
 pub(crate) fn find_system_font() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("ANYTOPDF_FONT") {
-        return Some(path.into());
+    if let Some(path) = configured_font() {
+        return Some(path);
     }
     [
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
@@ -66,6 +75,51 @@ pub(crate) fn find_system_font() -> Option<PathBuf> {
     .into_iter()
     .map(PathBuf::from)
     .find(|p| p.exists())
+}
+
+/// `ANYTOPDF_FONT`, which may list several fonts separated like `PATH`.
+fn env_fonts() -> Vec<PathBuf> {
+    std::env::var_os("ANYTOPDF_FONT")
+        .map(|v| {
+            std::env::split_paths(&v)
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Fonts tried, in order, for characters the primary font lacks: the rest of
+/// `ANYTOPDF_FONT`, then common system fonts for Arabic, Hebrew and CJK scripts.
+pub(crate) fn find_fallback_fonts() -> Vec<PathBuf> {
+    let mut fonts: Vec<PathBuf> = env_fonts().into_iter().skip(1).collect();
+    fonts.extend(
+        [
+            // macOS
+            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            // Linux
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansHebrew-Regular.ttf",
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf",
+            // Windows
+            r"C:\Windows\Fonts\segoeui.ttf",
+            r"C:\Windows\Fonts\msyh.ttc",
+            r"C:\Windows\Fonts\YuGothR.ttc",
+            r"C:\Windows\Fonts\malgun.ttf",
+            r"C:\Windows\Fonts\arial.ttf",
+        ]
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|p| p.exists()),
+    );
+    fonts
 }
 
 #[cfg(test)]

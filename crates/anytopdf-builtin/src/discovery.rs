@@ -66,10 +66,10 @@ fn push_if_match(
     let canonical = path
         .canonicalize()
         .with_context(|| format!("canonicalize {}", path.display()))?;
-    if let Some(filter) = &opts.filter {
-        if !filter.is_match(&canonical.to_string_lossy()) {
-            return Ok(());
-        }
+    if let Some(filter) = &opts.filter
+        && !filter.is_match(&canonical.to_string_lossy())
+    {
+        return Ok(());
     }
     if seen.insert(canonical.clone()) {
         out.push(canonical);

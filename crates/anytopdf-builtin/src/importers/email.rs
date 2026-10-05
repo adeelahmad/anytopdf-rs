@@ -169,12 +169,22 @@ impl Importer for EmailImporter {
             let dir = member_dir(ctx, "email")?;
             let mut files = Vec::new();
             for (i, attachment) in email.attachments.iter().enumerate() {
-                let path = write_member(&dir, i, &attachment.filename, &attachment.data)?;
                 let label = if several {
                     format!("{label} / {}", attachment.filename)
                 } else {
                     attachment.filename.clone()
                 };
+                if let Err(e) = members.charge(attachment.data.len() as u64) {
+                    warnings.push(
+                        Diagnostic::new(
+                            DiagnosticCode::MembersNotImported,
+                            format!("{name}: {label} was not imported: {e:#}"),
+                        )
+                        .to_string(),
+                    );
+                    continue;
+                }
+                let path = write_member(&dir, i, &attachment.filename, &attachment.data)?;
                 files.push(MemberFile { label, path });
             }
             let (member_units, member_warnings) = import_members(ctx, members, &source, files);

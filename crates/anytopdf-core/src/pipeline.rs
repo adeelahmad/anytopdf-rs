@@ -3,6 +3,7 @@ use crate::{
     PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord, Stage,
 };
 use anyhow::{Context, Result};
+use std::cell::Cell;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -14,12 +15,46 @@ pub struct Pipeline {
 /// are not expanded further.
 pub const MAX_MEMBER_DEPTH: usize = 4;
 
+/// Members extracted for one top-level input, across all nesting levels.
+pub const MAX_MEMBERS_PER_INPUT: u64 = 10_000;
+
+/// Bytes extracted into the workspace for one top-level input, across all
+/// nesting levels.
+pub const MAX_MEMBER_BYTES_PER_INPUT: u64 = 2 * 1024 * 1024 * 1024;
+
+#[derive(Default)]
+struct MemberBudget {
+    files: Cell<u64>,
+    bytes: Cell<u64>,
+}
+
 struct RegistryMembers<'a> {
     registry: &'a Registry,
     depth: usize,
+    budget: &'a MemberBudget,
 }
 
 impl MemberImporter for RegistryMembers<'_> {
+    fn remaining_bytes(&self) -> u64 {
+        MAX_MEMBER_BYTES_PER_INPUT.saturating_sub(self.budget.bytes.get())
+    }
+
+    fn charge(&self, bytes: u64) -> Result<()> {
+        let files = self.budget.files.get() + 1;
+        let total = self.budget.bytes.get().saturating_add(bytes);
+        anyhow::ensure!(
+            files <= MAX_MEMBERS_PER_INPUT,
+            "more than {MAX_MEMBERS_PER_INPUT} members extracted from one input"
+        );
+        anyhow::ensure!(
+            total <= MAX_MEMBER_BYTES_PER_INPUT,
+            "members extracted from one input exceed {MAX_MEMBER_BYTES_PER_INPUT} bytes"
+        );
+        self.budget.files.set(files);
+        self.budget.bytes.set(total);
+        Ok(())
+    }
+
     fn import_member(&self, ctx: &JobContext, path: &Path) -> Result<ImportOutcome> {
         anyhow::ensure!(
             self.depth < MAX_MEMBER_DEPTH,
@@ -41,6 +76,7 @@ impl MemberImporter for RegistryMembers<'_> {
         let nested = RegistryMembers {
             registry: self.registry,
             depth: self.depth + 1,
+            budget: self.budget,
         };
         importer
             .import_with_members(ctx, source, &nested)
@@ -163,9 +199,11 @@ impl Pipeline {
                 }
             };
 
+            let budget = MemberBudget::default();
             let members = RegistryMembers {
                 registry: &self.registry,
                 depth: 0,
+                budget: &budget,
             };
             match importer.import_with_members(&ctx, source.clone(), &members) {
                 Ok(outcome) => {
@@ -656,5 +694,72 @@ mod tests {
         let failures = enrichment_failures(false);
         assert_eq!(failures.len(), 1);
         assert!(!failures[0].provider_exhausted);
+    }
+
+    /// Expands into members according to the input text: `outside` asks for a
+    /// file outside the workspace, `budget` charges past the per-input limits.
+    struct ProbeContainer;
+    impl Plugin for ProbeContainer {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl Importer for ProbeContainer {
+        fn probe(&self, _: &SourceRecord) -> ProbeScore {
+            ProbeScore::CERTAIN
+        }
+        fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome> {
+            self.import_with_members(ctx, source, &NoMembers)
+        }
+        fn import_with_members(
+            &self,
+            ctx: &JobContext,
+            source: SourceRecord,
+            members: &dyn MemberImporter,
+        ) -> Result<ImportOutcome> {
+            let mode = std::fs::read_to_string(&source.path)?;
+            let mut warnings = Vec::new();
+            if mode == "outside" {
+                let err = members.import_member(ctx, &source.path).unwrap_err();
+                warnings.push(format!("{err:#}"));
+            } else {
+                for _ in 0..MAX_MEMBERS_PER_INPUT {
+                    members.charge(0)?;
+                }
+                warnings.push(format!("{:#}", members.charge(0).unwrap_err()));
+                members.charge(u64::MAX).unwrap_err();
+            }
+            Ok(ImportOutcome {
+                units: vec![Unit::text(source.id, mode)],
+                source,
+                warnings,
+            })
+        }
+    }
+
+    #[test]
+    fn members_must_live_in_the_workspace_and_respect_the_input_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(ProbeContainer));
+        let pipeline = Pipeline::new(registry);
+        let outside = dir.path().join("a");
+        let budget = dir.path().join("b");
+        std::fs::write(&outside, "outside").unwrap();
+        std::fs::write(&budget, "budget").unwrap();
+        let run = pipeline.ingest(&[outside, budget], true).unwrap();
+        let messages: Vec<&str> = run.warnings.iter().map(|d| d.message.as_str()).collect();
+        assert_eq!(messages.len(), 2, "{messages:?}");
+        assert!(
+            messages[0].contains("not a file inside the job workspace"),
+            "{}",
+            messages[0]
+        );
+        assert!(
+            messages[1].contains("more than 10000 members"),
+            "{}",
+            messages[1]
+        );
+        assert_eq!(run.graph.units.len(), 2);
     }
 }

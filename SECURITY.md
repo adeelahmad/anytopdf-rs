@@ -45,6 +45,14 @@ In-scope adversaries are the author of an input file, the author of a PDF passed
 to `extract`, the author of a plugin's response JSON (the response only), and
 someone reading outputs shared under `--profile share`.
 
+### Not yet modeled
+
+The job queue, its signed webhooks and its HTTP upload listener (`anytopdf queue`,
+`anytopdf queue serve`), the remote print front (`anytopdf print remote`), the MCP
+server (`anytopdf mcp`) and the HTML, email, Office and archive importers shipped after this threat model was written. Reports
+against them are welcome and are triaged by the maintainer directly until the
+model is revised (threat model §1.16).
+
 ## Out of scope
 
 These close by design (threat model §1.3, §1.10, §1.12):
@@ -55,8 +63,11 @@ These close by design (threat model §1.3, §1.10, §1.12):
   not execution; only `--no-plugins` stops plugins running. Processes a timed-out
   plugin spawns are not guaranteed to stop.
 - **Resource exhaustion from input size or shape.** There are no default size,
-  pixel, page, frame, depth or decompression-bomb limits for `convert` or
-  `extract` inputs (a subprocess outliving its timeout is still a bug).
+  pixel, page, frame or decompression-bomb limits for `convert` or `extract`
+  inputs (a subprocess outliving its timeout is still a bug). The exception is
+  container extraction: archive and email members are capped per member, per
+  archive, per input and by nesting depth and zip compression ratio, and an
+  extraction escaping the job workspace is in scope.
 - **Privacy under the default `archive` profile**, and personal data in text
   content under `share`. `share` redacts paths and metadata; it is not
   anonymization.
@@ -65,8 +76,8 @@ These close by design (threat model §1.3, §1.10, §1.12):
 - **Terminal escapes** in human stderr lines (JSON and NDJSON are escaped).
 - **Symlinked caption sidecars**, which are followed. The operator controls the
   input directory layout.
-- **Hostile multi-user or service deployment.** Network intake channels are not
-  shipped.
+- **Hostile multi-user or service deployment.** anytopdf has no tenant
+  isolation.
 - **The operator and the local environment**: flags, `PATH`,
   `ANYTOPDF_PLUGIN_PATH`, `ANYTOPDF_FONT`, `TMPDIR`.
 - **External providers' own bugs** (FFmpeg, ffprobe, ExifTool, Tesseract, docTR,

@@ -284,10 +284,10 @@ fn descriptor(plugin: &RuntimePlugin, cap: &RuntimeCapability) -> PluginDescript
 }
 
 fn match_source(cap: &RuntimeCapability, source: &SourceRecord) -> ProbeScore {
-    if let Some(mime) = source.detected_type.as_deref() {
-        if cap.mime_types.iter().any(|m| mime_match(m, mime)) {
-            return ProbeScore::MIME;
-        }
+    if let Some(mime) = source.detected_type.as_deref()
+        && cap.mime_types.iter().any(|m| mime_match(m, mime))
+    {
+        return ProbeScore::MIME;
     }
     let ext = source
         .path
@@ -666,7 +666,13 @@ mod process_tests {
 
     fn script(directory: &Path, body: &str) -> PathBuf {
         let path = directory.join("anytopdf-plugin-test");
-        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        // Copy through `cp` so this multi-threaded test process never holds a writable
+        // descriptor on the executable: a test forking concurrently would inherit it,
+        // and running the script would then fail with ETXTBSY ("Text file busy").
+        let staged = directory.join("anytopdf-plugin-test.sh");
+        fs::write(&staged, format!("#!/bin/sh\n{body}\n")).unwrap();
+        let copied = Command::new("cp").arg(&staged).arg(&path).status().unwrap();
+        assert!(copied.success(), "cp failed: {copied}");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
         path
     }

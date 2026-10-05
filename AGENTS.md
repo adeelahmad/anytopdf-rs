@@ -8,6 +8,7 @@ This Rust workspace converts media and documents into searchable PDFs:
 - `crates/anytopdf-builtin/`: importers, OCR, captions, metadata, and media discovery.
 - `crates/anytopdf-pdf/`: PDF rendering from the normalized graph.
 - `crates/anytopdf-cli/`: the `anytopdf` executable and CLI arguments.
+- `crates/anytopdf-plugin-whisper/`: Whisper speech-to-text runtime plugin.
 - `examples/anytopdf-plugin-example.py`: runtime plugin example.
 - `scripts/verify.sh`: local checks; `.github/workflows/release.yml`: release builds.
 
@@ -15,7 +16,7 @@ No dedicated test or asset directories currently exist. Consult `ARCHITECTURE.md
 
 ## Build, Test, and Development Commands
 
-Use the Rust 1.88.0 toolchain pinned in `rust-toolchain.toml` (edition 2024).
+Use the Rust 1.92.0 toolchain pinned in `rust-toolchain.toml` (edition 2024).
 
 - `cargo build --release`: build `target/release/anytopdf`.
 - `cargo run -p anytopdf -- doctor`: inspect optional runtime providers.

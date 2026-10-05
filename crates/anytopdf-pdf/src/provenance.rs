@@ -1,4 +1,6 @@
-use crate::layout::wrap_text;
+use crate::layout::{
+    TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, text_page_chunks,
+};
 use anytopdf_core::*;
 use printpdf::*;
 use std::collections::BTreeMap;
@@ -53,6 +55,7 @@ pub(crate) fn provenance_lines(
         if let Some(ty) = &source.detected_type {
             lines.push(format!("Type: {ty}"));
         }
+        lines.extend(print_job_lines(&source.metadata));
         let (mut first, mut last) = (usize::MAX, 0);
         for range in graph
             .units
@@ -70,24 +73,34 @@ pub(crate) fn provenance_lines(
     lines
 }
 
+/// Receipt lines for a source that arrived as a print job.
+fn print_job_lines(metadata: &anytopdf_core::Metadata) -> Vec<String> {
+    let Some(id) = metadata.get("print.job-id") else {
+        return Vec::new();
+    };
+    let mut job = format!("Print job: {id}");
+    if let Some(name) = metadata.get("print.job-name") {
+        job.push_str(&format!(" \"{name}\""));
+    }
+    let mut lines = vec![job];
+    if let Some(user) = metadata.get("print.user") {
+        lines.push(format!("Printed by: {user}"));
+    }
+    if let Some(format) = metadata.get("print.format") {
+        lines.push(format!("Print format: {format}"));
+    }
+    lines
+}
+
 pub(crate) fn provenance_pages(
     graph: &DocumentGraph,
     unit_pages: &BTreeMap<Uuid, PageRange>,
     font: &PdfFontHandle,
     measure: &impl Fn(char) -> f32,
 ) -> Vec<PdfPage> {
-    let page_w = 210.0f32;
-    let page_h = 297.0f32;
-    let margin = 15.0f32;
-    let font_pt = 10.0f32;
-    let rows = (((page_h - margin * 2.0) / 4.5) as usize).max(1);
-    let wrapped = wrap_text(
-        &provenance_lines(graph, unit_pages).join("\n"),
-        (page_w - margin * 2.0) / 25.4 * 72.0 / font_pt,
-        measure,
-    );
-    wrapped
-        .chunks(rows)
+    let (page_w, page_h, margin) = (TEXT_PAGE_W_MM, TEXT_PAGE_H_MM, TEXT_MARGIN_MM);
+    text_page_chunks(&provenance_lines(graph, unit_pages).join("\n"), measure)
+        .into_iter()
         .map(|chunk| {
             let mut ops = vec![
                 Op::StartTextSection,
@@ -96,9 +109,11 @@ pub(crate) fn provenance_pages(
                 },
                 Op::SetFont {
                     font: font.clone(),
-                    size: Pt(font_pt),
+                    size: Pt(TEXT_FONT_PT),
                 },
-                Op::SetLineHeight { lh: Pt(13.0) },
+                Op::SetLineHeight {
+                    lh: Pt(TEXT_LINE_PT),
+                },
                 Op::SetTextCursor {
                     pos: Point::new(Mm(margin), Mm(page_h - margin)),
                 },
@@ -156,6 +171,31 @@ pub(crate) mod tests {
             (ub.id, PageRange { first: 2, last: 3 }),
         ]);
         (graph, map)
+    }
+
+    #[test]
+    fn print_job_sources_show_their_receipt() {
+        let (mut graph, map) = prov_graph();
+        for (k, v) in [
+            ("print.job-id", "12"),
+            ("print.job-name", "Receipt"),
+            ("print.user", "adeel"),
+            ("print.format", "image/pwg-raster"),
+        ] {
+            graph.sources[1].metadata.insert(k.into(), v.into());
+        }
+        let lines = provenance_lines(&graph, &map);
+        let at = lines.iter().position(|l| l == "Source: scan.png").unwrap();
+        assert_eq!(
+            &lines[at + 4..at + 7],
+            [
+                "Print job: 12 \"Receipt\"",
+                "Printed by: adeel",
+                "Print format: image/pwg-raster"
+            ]
+        );
+        let notes = lines.iter().position(|l| l == "Source: notes.txt").unwrap();
+        assert!(!lines[notes..at].iter().any(|l| l.starts_with("Print")));
     }
 
     #[test]

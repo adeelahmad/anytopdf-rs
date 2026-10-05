@@ -1,6 +1,10 @@
 use anyhow::{Context, Result};
 use lopdf::{Dictionary, Document, Object, Stream, dictionary};
 
+/// Attachment names shared by every renderer and by `extract`.
+pub const MANIFEST_FILE: &str = "anytopdf-manifest.json";
+pub const CHUNKS_FILE: &str = "anytopdf-chunks.json";
+
 pub struct EmbeddedFile {
     pub name: String,
     pub mime_type: String,
@@ -71,7 +75,14 @@ pub fn read_embedded_files(pdf: &[u8]) -> Result<Vec<EmbeddedFile>> {
         out.push(EmbeddedFile {
             name: String::from_utf8_lossy(name.as_str()?).into_owned(),
             mime_type: String::from_utf8_lossy(mime).into_owned(),
-            bytes: stream.content.clone(),
+            // Other writers (pdfa among them) compress attachments.
+            bytes: if stream.dict.has(b"Filter") {
+                stream
+                    .decompressed_content()
+                    .context("decode embedded file")?
+            } else {
+                stream.content.clone()
+            },
         });
     }
     Ok(out)

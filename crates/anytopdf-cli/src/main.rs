@@ -9,7 +9,9 @@ mod exit;
 mod extract;
 mod mcp;
 mod naming;
+mod print;
 mod publish;
+mod queue;
 mod watch;
 use anytopdf_core::RuntimePluginPolicy;
 use clap::Parser;
@@ -79,7 +81,9 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Watch {
             source: WatchSource::Imap(args),
         } => watch::watch_imap(*args, &policy),
+        Commands::Queue { command } => queue::run(command, forwarded.0),
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
+        Commands::Print(command) => print::print(command),
     }
 }
 

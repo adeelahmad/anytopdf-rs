@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.92.0
         with:
           targets: ${{ matrix.target }}
       - uses: actions/setup-python@v5
@@ -223,7 +223,10 @@ jobs:
             test -n "$archive" || { echo "missing $target archive" >&2; exit 1; }
             (cd archives && sha256sum --check --strict "$(basename "$archive").sha256")
             mkdir -p "dist/docker/$arch"
-            tar -xzf "$archive" -C "dist/docker/$arch" --strip-components=1 --wildcards '*/anytopdf'
+            tar -xzf "$archive" -C "dist/docker/$arch" --strip-components=1 --wildcards \
+              '*/anytopdf' '*/plugins/anytopdf-plugin-*'
+            mv "dist/docker/$arch"/plugins/* "dist/docker/$arch/"
+            rmdir "dist/docker/$arch/plugins"
           done
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3

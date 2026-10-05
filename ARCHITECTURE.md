@@ -76,7 +76,10 @@ source and tagged with `container.member`, so the source list, `--output-dir`
 grouping and manifest still describe the inputs the user named. Members must
 resolve inside the workspace, nesting stops at `MAX_MEMBER_DEPTH`, and a member
 that cannot be imported is an `input.members-not-imported` warning, not a failed
-input. Runtime plugins keep the plain `import` path.
+input. Every top-level input carries one extraction budget
+(`MAX_MEMBERS_PER_INPUT`, `MAX_MEMBER_BYTES_PER_INPUT`) that extractors draw on
+through `MemberImporter::charge`, so nested archives cannot multiply it.
+Runtime plugins keep the plain `import` path.
 
 ### Source enrichment
 
@@ -101,9 +104,34 @@ The renderer sees only the normalized graph.
 For visual pages:
 1. paint the original/derived image;
 2. map OCR regions to PDF coordinates;
-3. write OCR with text rendering mode 3;
+3. write OCR as invisible text;
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
+
+Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
+`provenance.rs`) and therefore produce the same pages and `unit_pages`:
+
+- `pdfa` (default): krilla 0.8, tagged PDF/A-3a validated by krilla at write time,
+  with a structure tree, bookmarks, bidi reordering, rustybuzz shaping and
+  per-character font fallback (`pdfa_text.rs`). Its primary font is the bundled
+  DejaVu Sans (`fonts/`) unless `ANYTOPDF_FONT` names one. It builds the manifest
+  and chunks itself from the graph and its own render report and stores them as
+  PDF/A-3 associated files. The CLI detects attachments that already match and
+  does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
+  uses a fill opacity of 0.
+- `pdf`: printpdf, with text rendering mode 3. The CLI adds the manifest and chunks
+  afterwards with lopdf.
+
+## Print jobs
+
+PWG Raster and Apple Raster (URF) are importers like any other: each page becomes
+a visual unit with a `frame` anchor and a `visual.dpi` metadata value, and the
+renderer sizes that page from its resolution so a 300 dpi Letter job yields a
+Letter page. The optional `anytopdf-printer` helper (C, on PAPPL) is a separate
+process: it accepts IPP jobs, spools them as PWG Raster and runs
+`anytopdf convert`. It is not linked into the Rust binary (see
+`docs/spikes/pappl.md`), so default builds and Windows are unaffected, and other
+front ends such as remote printing can feed the same importer.
 
 ## Extension strategy
 
@@ -137,7 +165,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-cad`
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
-- `anytopdf-plugin-whisper`
+- `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`
@@ -205,3 +233,35 @@ command recovers them.
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
 `capabilities` command reports which importers, enrichers, renderers, providers and runtime
 plugins this environment supports (`--json` gives the static contract).
+
+## Job queue and webhooks
+
+`anytopdf queue` sits outside the pipeline: it never calls the pipeline in-process.
+Each job runs the same `convert` command as a child process with `--events --json`,
+so exit codes, NDJSON events and schemas are unchanged and a crashing conversion or
+plugin cannot take the worker down. The queue is a directory: job records
+(`anytopdf.job/1`) change state by atomic rename between `jobs/pending`, `running`,
+`done` and `failed`, which lets several workers share it without locks, and a
+running job carries a lease after which another worker requeues it. The watched
+inbox needs no listener. `queue serve` is the opt-in HTTP intake: it only writes
+uploads into job work directories and enqueues them, binds loopback unless TLS is
+configured, and checks a bearer token on every request.
+
+Webhook messages (`anytopdf.webhook/1`) are written to `webhooks/pending/` before
+they are sent, signed per Standard Webhooks with HMAC-SHA256, and retried with
+backoff, giving at-least-once delivery that survives a worker restart. Payloads use
+file names and queue-relative paths only.
+
+## Remote printing
+
+`anytopdf-print` sits in front of the print helper and never parses document
+data. It terminates TLS (rustls), drops peers outside the CIDR allowlist before
+the handshake, checks HTTP Basic credentials against Argon2id hashes, and
+forwards each HTTP request to the helper on loopback with the IPP
+`requesting-user-name` replaced by the signed-in user; a receipts log records
+the peer address the helper never sees. The helper passes job details to
+`convert` as `ANYTOPDF_PRINT_*` variables, which become `print.*` source
+metadata (manifest and provenance page, dropped by `share`). A guard refuses
+non-loopback listeners without users and an allowlist. The same DNS-SD
+description feeds the unicast zone snippet and the mDNS advertisement. Jobs
+still enter the pipeline through the helper and the normal importers.

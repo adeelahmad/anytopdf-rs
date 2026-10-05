@@ -6,12 +6,16 @@ use std::collections::BTreeMap;
 mod attachments;
 mod fonts;
 mod layout;
+mod pdfa;
+mod pdfa_text;
 mod provenance;
-pub use attachments::{EmbeddedFile, embed_files, read_embedded_files};
+pub use attachments::{CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, embed_files, read_embedded_files};
 use fonts::{find_system_font, subset_document_font};
 use layout::{
-    annotation_line, hidden_text_ops, is_searchable_content, search_layer, time_line, wrap_text,
+    TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, annotation_line,
+    hidden_text_ops, is_searchable_content, search_layer, text_page_chunks, time_line,
 };
+pub use pdfa::PdfARenderer;
 use provenance::provenance_pages;
 use std::{
     fs,
@@ -221,8 +225,9 @@ impl SearchablePdfRenderer {
         let dimensions = ::image::ImageReader::open(visual)?
             .with_guessed_format()?
             .into_dimensions()?;
-        let page_w_mm = dimensions.0 as f32 / self.dpi * 25.4;
-        let page_h_mm = dimensions.1 as f32 / self.dpi * 25.4;
+        let dpi = layout::unit_dpi(unit, self.dpi);
+        let page_w_mm = dimensions.0 as f32 / dpi * 25.4;
+        let page_h_mm = dimensions.1 as f32 / dpi * 25.4;
 
         let image_id = XObjectId(format!("Img{}", doc.resources.xobjects.map.len()));
         doc.resources
@@ -232,7 +237,7 @@ impl SearchablePdfRenderer {
         let mut ops = vec![Op::UseXobject {
             id: image_id,
             transform: XObjectTransform {
-                dpi: Some(self.dpi),
+                dpi: Some(dpi),
                 ..Default::default()
             },
         }];
@@ -289,20 +294,10 @@ impl SearchablePdfRenderer {
         font: &PdfFontHandle,
         measure: &impl Fn(char) -> f32,
     ) -> Vec<PdfPage> {
-        let page_w = 210.0f32;
-        let page_h = 297.0f32;
-        let margin = 15.0f32;
-        let font_pt = 10.0f32;
-        let line_mm = 4.5f32;
-        let rows = ((page_h - margin * 2.0) / line_mm) as usize;
-        let wrapped = wrap_text(
-            text,
-            (page_w - margin * 2.0) / 25.4 * 72.0 / font_pt,
-            measure,
-        );
+        let (page_w, page_h, margin) = (TEXT_PAGE_W_MM, TEXT_PAGE_H_MM, TEXT_MARGIN_MM);
         let mut pages = Vec::new();
 
-        for (page_index, chunk) in wrapped.chunks(rows.max(1)).enumerate() {
+        for (page_index, chunk) in text_page_chunks(text, measure).iter().enumerate() {
             let first_page = page_index == 0;
             let mut ops = vec![
                 Op::StartTextSection,
@@ -311,9 +306,11 @@ impl SearchablePdfRenderer {
                 },
                 Op::SetFont {
                     font: font.clone(),
-                    size: Pt(font_pt),
+                    size: Pt(TEXT_FONT_PT),
                 },
-                Op::SetLineHeight { lh: Pt(13.0) },
+                Op::SetLineHeight {
+                    lh: Pt(TEXT_LINE_PT),
+                },
                 Op::SetTextCursor {
                     pos: Point::new(Mm(margin), Mm(page_h - margin)),
                 },
@@ -530,6 +527,40 @@ pub(crate) mod tests {
             }
             assert!(!item.contains(&path_str), "hidden item {item:?} has path");
         }
+    }
+
+    #[test]
+    fn visual_dpi_metadata_sets_the_physical_page_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let visual = dir.path().join("page.png");
+        ::image::GrayImage::new(2550, 3300).save(&visual).unwrap();
+        let source = SourceRecord::new(visual.clone());
+        let page_pt = |dpi: Option<&str>| {
+            let mut unit = Unit::visual(source.id, visual.clone());
+            if let Some(dpi) = dpi {
+                unit.metadata.insert("visual.dpi".into(), dpi.into());
+            }
+            let page = renderer()
+                .visual_page(
+                    &mut PdfDocument::new("t"),
+                    &DocumentGraph::default(),
+                    &unit,
+                    &visual,
+                    &helvetica(),
+                    &mut Vec::new(),
+                )
+                .unwrap();
+            (
+                page.media_box.width.0.round(),
+                page.media_box.height.0.round(),
+            )
+        };
+        // 300 dpi US Letter is 8.5 x 11 inches.
+        assert_eq!(page_pt(Some("300")), (612.0, 792.0));
+        // Missing or invalid values fall back to the renderer default.
+        assert_eq!(page_pt(None), (1275.0, 1650.0));
+        assert_eq!(page_pt(Some("0")), (1275.0, 1650.0));
+        assert_eq!(page_pt(Some("abc")), (1275.0, 1650.0));
     }
 
     #[test]

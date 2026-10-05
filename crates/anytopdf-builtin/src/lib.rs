@@ -52,9 +52,13 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_importer(Arc::new(importers::ImageImporter::new(
         opts.max_image_frames,
     )));
+    registry.register_importer(Arc::new(importers::RasterImporter::new(
+        opts.max_image_frames,
+    )));
     registry.register_importer(Arc::new(importers::TextImporter));
     registry.register_importer(Arc::new(importers::HtmlImporter));
     registry.register_importer(Arc::new(importers::EmailImporter));
+    registry.register_importer(Arc::new(importers::ArchiveImporter));
     registry.register_importer(Arc::new(importers::SubtitleImporter));
     registry.register_importer(Arc::new(importers::VideoImporter::new(
         opts.video_interval,
@@ -63,6 +67,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_video_frames,
     )));
     registry.register_importer(Arc::new(importers::AudioImporter));
+    registry.register_importer(Arc::new(importers::OfficeImporter));
 
     registry.register_unit_enricher(Arc::new(ocr::OcrEnricher::new(opts.ocr, opts.ocr_language)));
     registry.register_graph_enricher(Arc::new(captions::CaptionEnricher::new(

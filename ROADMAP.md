@@ -4,7 +4,7 @@ Checked items describe implemented code on `main`, not release certification. Se
 `RELEASING.md` for validation evidence and release procedures, `CHANGELOG.md` for
 per-release behaviour changes, and the README roadmap for the feature-level view.
 
-Status: sprint 4 closed on 2026-10-05. Everything below "Backlog" is not started.
+Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" merged the same day.
 
 ## 0.1 — architecture + searchable media core
 - [x] staged registry
@@ -53,24 +53,40 @@ Status: sprint 4 closed on 2026-10-05. Everything below "Backlog" is not started
 - [x] NDJSON `--events` progress stream
 - [x] sprint 4 cleanup: shared test helpers, portable census paths on Windows
 
-## Backlog (not started)
+## After sprint 4 — intake, more inputs and outputs (merged 2026-10-05)
+- [x] HTML importer: readable text, title and alt text, no network fetches
+- [x] email importer (`.eml`, `.mbox`): one text page per message; attachments imported by their own importers, nested at most 4 deep
+- [x] Office importer (Word, Excel, PowerPoint, OpenDocument, RTF) through headless LibreOffice and Poppler
+- [x] `capabilities` table of available, partial and missing capabilities with hints
+- [x] `anytopdf queue`: folder-backed job queue with a watched inbox and signed Standard Webhooks (`job.received`, `job.completed`, `job.failed`) retried from a durable outbox
+- [x] `anytopdf queue serve`: HTTP upload intake with a bearer token, localhost by default, TLS for any other address, 100 MB default upload cap
+- [x] archive importer (zip, tar, tar.gz) with path-traversal and zip-bomb limits
+- [x] Whisper transcription runtime plugin
+- [x] `anytopdf print remote`: TLS print front for Tailscale/WireGuard with user passwords, a peer allowlist and DNS-SD discovery
+- [x] krilla renderer, now the default: tagged PDF/A-3a with bookmarks, bidi shaping and font fallback, manifest and chunks as associated files
+- [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
+- [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a container image
+- [x] Rust toolchain 1.92.0
 
-Priority order as of sprint 4 sign-off.
+## Backlog
 
-1. Webhooks and a shared job queue (watched folder, HTTP upload)
-2. IMAP mail watcher
-3. PAPPL print server (IPP Everywhere / AirPrint / Mopria helper process)
-4. Remote printing (Tailscale / WireGuard)
-5. New renderer (krilla / Typst) and PDF/A-3
-6. More inputs: PDF, HTML, email, archives, HEIC
-7. Office documents and Whisper transcription
-8. Distribution (Homebrew, winget, scoop, binstall, signing) and an MCP server
+Priority order as of sprint 4 sign-off, with status on `main`.
+
+1. Webhooks and a job queue: done, including the HTTP upload input.
+2. IMAP mail watcher: in progress.
+3. PAPPL print server (IPP Everywhere / AirPrint / Mopria helper process): in progress.
+4. Remote printing: done; signed-in user stamps and print receipts in progress.
+5. New renderer and PDF/A-3: done. Tagged PDF/A-3a through krilla is the default renderer, with bookmarks, bidi shaping, font fallback and a bundled DejaVu Sans font; `--renderer pdf` keeps printpdf.
+6. More inputs: HTML, email and zip/tar archives done; PDF and HEIC/HEIF/AVIF in progress.
+7. Office documents and Whisper transcription: done (Whisper as a runtime plugin).
+8. Distribution and an MCP server: MCP server and package manifests done; published tap and bucket, winget, `curl | sh`, npx/uvx wrappers, signing and notarization still open.
 
 ## Security
 - [x] `SECURITY.md` with private reporting through GitHub, and the threat model in `docs/threat-model/`
-- [ ] OS sandbox, descendant process containment, and hard CPU/memory/disk quotas for runtime plugins
+- [ ] OS sandbox and descendant process containment for runtime plugins (in progress), then hard CPU/memory/disk quotas
 - [ ] untrusted-input handling for intake channels (no network, size/page caps, zip-bomb rejection)
-- [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17)
+- [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, remote print front, MCP server, new importers)
+- [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
 
 ## Later media semantics
 - [ ] neutral face detection: presence/count/bounds

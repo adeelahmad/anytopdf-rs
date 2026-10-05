@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/job/v1",
+  "title": "anytopdf queue job record (QUEUE/jobs/<state>/<id>.json)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "state",
+    "origin",
+    "inputs",
+    "convert_args",
+    "cwd",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "anytopdf.job/1"
+    },
+    "id": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "running",
+        "succeeded",
+        "failed"
+      ]
+    },
+    "origin": {
+      "enum": [
+        "inbox",
+        "cli",
+        "http"
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      }
+    },
+    "convert_args": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "cwd": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "started_at": {
+      "type": "string"
+    },
+    "lease_expires_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "finished_at": {
+      "type": "string"
+    },
+    "output": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "partial",
+        "failed"
+      ]
+    },
+    "exit_code": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "pages": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "error": {
+      "type": "string"
+    }
+  }
+}
