@@ -28,6 +28,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
   written into the job workspace under sanitized names and imported by whichever importer
   matches; ones that cannot be imported warn `input.members-not-imported`.
+- PDF inputs import page by page. With Poppler, `pdftoppm` renders each page and the
+  PDF's text layer (`pdftotext -bbox` word boxes, else the built-in extractor) becomes the
+  page's searchable annotations; OCR now skips units that already carry OCR-kind text.
+  Without Poppler, page text becomes text pages and `provider.missing` is reported.
 - HEIC/HEIF/AVIF photos import as image pages (OCR included) when `sips` (macOS),
   `heif-convert` (libheif) or ImageMagick is installed; otherwise they fail with a message
   naming those tools.

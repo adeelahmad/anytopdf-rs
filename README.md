@@ -80,6 +80,7 @@ and register itself as an importer without modifying the core binary.
 
 Importers:
 - raster images
+- existing PDFs: pages rendered by Poppler `pdftoppm` with their own text layer kept (OCR only for textless pages); text only without Poppler
 - HEIC/HEIF/AVIF photos, converted by `sips` (macOS), `heif-convert` (libheif) or ImageMagick
 - video through FFmpeg
 - audio container placeholder units
@@ -131,7 +132,7 @@ FFmpeg, ExifTool and Tesseract are described in
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF importers are future work.
+a supplied transcript or a plugin.
 
 Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
 their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
@@ -350,7 +351,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Arabic, Hebrew and CJK shaping
 
 ### Input formats
-- [ ] PDF input (keep the text layer, OCR only textless pages)
+- [x] PDF input: Poppler renders each page and `pdftotext -bbox` word boxes become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
 - [ ] URL snapshot
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
