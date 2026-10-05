@@ -475,7 +475,7 @@ mod platform {
 
     pub(super) fn profile(rules: &Rules, home: Option<PathBuf>) -> String {
         let mut profile = String::from(
-            "(version 1)\n(allow default)\n(deny network*)\n(deny file-write*)\n\
+            "(version 1)\n(allow default)\n(deny network*)\n(deny system-socket)\n(deny file-write*)\n\
              (allow file-write* (literal \"/dev/null\"))\n",
         );
         for path in &rules.write {
@@ -514,6 +514,7 @@ mod platform {
             assert!(text.contains("(allow file-write* (subpath \"/private/var/ws\"))"));
             assert!(text.contains("(subpath \"/opt/plug\\\"in\")"));
             assert!(text.contains("(deny network*)"));
+            assert!(text.contains("(deny system-socket)"));
         }
     }
 }
@@ -755,7 +756,8 @@ mod unix_tests {
         }
         let tcp = std::net::TcpListener::bind("127.0.0.1:0").is_ok();
         let unix = std::os::unix::net::UnixDatagram::unbound().is_ok();
-        std::process::exit(if tcp || unix { 10 } else { 11 });
+        // 20 when both are denied; +1 if TCP bind worked, +2 if a Unix socket opened.
+        std::process::exit(20 + i32::from(tcp) + 2 * i32::from(unix));
     }
 
     #[test]
@@ -774,7 +776,7 @@ mod unix_tests {
             .unwrap();
         assert_eq!(
             out.status.code(),
-            Some(11),
+            Some(20),
             "{}{}",
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
