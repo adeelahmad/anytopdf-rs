@@ -103,6 +103,23 @@ class DistributionTests(unittest.TestCase):
                 self.assertIn("distribution:", result.stderr)
                 self.assertFalse((self.root / "out").exists())
 
+    def test_committed_formula_and_manifest_are_rendered_unchanged(self):
+        formula = (ROOT / "Formula/anytopdf.rb").read_text(encoding="utf-8")
+        manifest_text = (ROOT / "bucket/anytopdf.json").read_text(encoding="utf-8")
+        manifest = json.loads(manifest_text)
+        version = re.search(r'^  version "([^"]+)"$', formula, re.MULTILINE)[1]
+        self.assertEqual(manifest["version"], version)
+        pinned = re.findall(r'url "[^"]+/([^"/]+)"\n\s+sha256 "([0-9a-f]{64})"', formula)
+        pinned += [(entry["url"].rsplit("/", 1)[1], entry["hash"])
+                   for entry in manifest["architecture"].values()]
+        self.assertEqual(len(pinned), len(TARGETS))
+        result = self.render("".join(f"{digest}  {name}\n" for name, digest in pinned),
+                             "--version", version)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "out/anytopdf.rb").read_text(encoding="utf-8"), formula)
+        self.assertEqual((self.root / "out/anytopdf.json").read_text(encoding="utf-8"),
+                         manifest_text)
+
     def test_invalid_version_and_repository_are_rejected(self):
         for extra in (("--version", "1.2"), ("--repository", "not a repo")):
             with self.subTest(argument=extra[0]):
