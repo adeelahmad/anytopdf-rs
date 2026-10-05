@@ -437,12 +437,32 @@ mod tests {
         );
     }
 
+    /// True only when this host can really convert a document. LibreOffice
+    /// can be installed without its Writer component, which fails every
+    /// conversion, so presence alone is not enough. Setting
+    /// `ANYTOPDF_REQUIRE_OFFICE` turns a host that cannot convert into a
+    /// failure instead of a skip (Linux CI sets it).
+    fn office_converts() -> bool {
+        let converts = soffice_path().is_some_and(|soffice| {
+            if which::which("pdftoppm").is_err() || which::which("pdftotext").is_err() {
+                return false;
+            }
+            let dir = tempfile::tempdir().unwrap();
+            let probe = dir.path().join("probe.txt");
+            fs::write(&probe, "probe").unwrap();
+            convert_to_pdf(&soffice, &probe, dir.path()).is_ok()
+        });
+        let required = std::env::var_os("ANYTOPDF_REQUIRE_OFFICE").is_some_and(|v| !v.is_empty());
+        assert!(
+            converts || !required,
+            "ANYTOPDF_REQUIRE_OFFICE is set but LibreOffice and Poppler cannot convert a document here"
+        );
+        converts
+    }
+
     #[test]
     fn rtf_pages_carry_positioned_native_text_when_libreoffice_is_installed() {
-        if soffice_path().is_none()
-            || which::which("pdftoppm").is_err()
-            || which::which("pdftotext").is_err()
-        {
+        if !office_converts() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();

@@ -5,6 +5,7 @@ members = [
   "crates/anytopdf-builtin",
   "crates/anytopdf-pdf",
   "crates/anytopdf-cli",
+  "crates/anytopdf-plugin-whisper",
   "crates/anytopdf-print",
 ]
 
