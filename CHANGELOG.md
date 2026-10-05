@@ -25,6 +25,8 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Exit codes 0-7 classify failures; batch conversion tolerates failures unless `--fail-fast`.
 - `convert` is implicit, `-o` may appear anywhere, and default output naming is derived from the input.
 - `--json` output with published schemas, and a `capabilities` command.
+- `capabilities` without `--json` prints a table of available, partial and missing
+  capabilities in this environment with hints to enable them; use `--json` for the JSON document.
 - The PDF embeds a manifest and chunks; `extract` recovers attachments.
 - Input fidelity: video frames are validated, file types are sniffed, lossy decoding is
   reported, and `--transcript` supplies audio transcripts.
