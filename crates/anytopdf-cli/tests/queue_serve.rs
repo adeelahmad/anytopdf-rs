@@ -115,7 +115,11 @@ fn uploads_become_jobs_whose_status_and_pdf_can_be_fetched() {
     )
     .unwrap();
     let input = PathBuf::from(record["inputs"][0].as_str().unwrap());
-    assert!(input.starts_with(dir.join("q/work").join(&id).join("input")));
+    // Compare the tail only: the server sees the canonical cwd (/private/var on macOS).
+    let tail: PathBuf = ["q", "work", id.as_str(), "input", "notes.txt"]
+        .iter()
+        .collect();
+    assert!(input.ends_with(&tail), "{}", input.display());
     assert_eq!(record["convert_args"], serde_json::json!(["--ocr", "off"]));
 
     let get = |path: &str| {
