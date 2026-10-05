@@ -84,6 +84,8 @@ Importers:
 - audio container placeholder units
 - text / Markdown
 - SRT / VTT captions
+- Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
+  LibreOffice and Poppler
 
 Enrichment:
 - ExifTool metadata
@@ -120,7 +122,14 @@ image conversion; provider-specific dependencies are listed below.
 
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF/Office/HTML importers are future work.
+a supplied transcript or a plugin. PDF/HTML importers are future work.
+
+Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
+their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
+Each page is rendered as an image; with Poppler's `pdftotext` the document's own
+text is placed invisibly over it and OCR is skipped for those pages. Without
+`pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
+a private LibreOffice profile, so the original file is never opened in place.
 
 ## CLI
 
