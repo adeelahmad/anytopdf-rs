@@ -6,6 +6,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
+  selection highlights cover the word in the image instead of the font's natural width.
+- An OCR provider that fails during `--ocr auto` fallback is reported by its last error
+  line (for docTR, `ModuleNotFoundError: No module named 'doctr'`) instead of a full
+  Python traceback.
+- `install.sh` installs the latest release on macOS and Linux
+  (`curl -fsSL https://raw.githubusercontent.com/adeelahmad/anytopdf-rs/main/install.sh | sh`),
+  verifying the archive's SHA-256 checksum first.
 - `--plugin-sandbox off|contain|strict` (default `off`) confines runtime plugins.
   `contain` kills every process a plugin starts when its call ends or times out;
   `strict` also limits writes to the job workspace and blocks network access (Landlock and
