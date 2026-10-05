@@ -49,7 +49,8 @@ someone reading outputs shared under `--profile share`.
 
 The job queue, its signed webhooks and its HTTP upload listener (`anytopdf queue`,
 `anytopdf queue serve`), the remote print front (`anytopdf print remote`), the MCP
-server (`anytopdf mcp`) and the HTML, email, Office and archive importers shipped after this threat model was written. Reports
+server (`anytopdf mcp`), the PAPPL printer helper and the HTML, email, Office,
+archive, PDF and HEIC importers shipped after this threat model was written. Reports
 against them are welcome and are triaged by the maintainer directly until the
 model is revised (threat model §1.16).
 
