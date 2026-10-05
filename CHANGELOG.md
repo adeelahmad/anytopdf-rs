@@ -39,6 +39,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Importers can expand containers through `Importer::import_with_members`; nesting stops
   at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
+- PWG Raster and Apple Raster (URF) print jobs import one page per unit and keep their
+  paper size through the `visual.dpi` unit value; the optional `anytopdf-printer` PAPPL
+  helper turns IPP print jobs into searchable PDFs.
 - Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
 - The graph dump no longer contains workspace paths.
 - Diagnostics use typed codes (for example `plugin.warning`).

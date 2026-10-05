@@ -80,6 +80,7 @@ and register itself as an importer without modifying the core binary.
 
 Importers:
 - raster images
+- PWG Raster and Apple Raster (URF) print jobs
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
@@ -114,6 +115,22 @@ External plugins are the intended route for model-heavy enrichers such as:
 - speech-to-text engines
 - format-specific decoders
 - proprietary document systems
+
+## Printing to anytopdf
+
+`helpers/anytopdf-printer` is an optional IPP Everywhere printer built on
+[PAPPL](https://www.msweet.org/pappl/) for Linux and macOS. Anything that can print
+(macOS, iOS, Windows, Android, CUPS) can print to it, and every job becomes a
+searchable PDF in an output folder. It listens on localhost unless told otherwise:
+
+```bash
+make printer
+ANYTOPDF_BIN=target/release/anytopdf \
+  helpers/anytopdf-printer/anytopdf-printer server -o output-directory=$HOME/Printed
+```
+
+The helper only spools pages; `anytopdf convert` does the work, so a saved
+`job.pwg` or `job.urf` print job converts the same way on any platform.
 
 ## Quick start
 
@@ -453,7 +470,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Printing
 - [x] Spike: PAPPL printer feasibility
-- [ ] Network printer via IPP Everywhere, AirPrint and Mopria, built on PAPPL as an optional helper process
+- [x] Network printer via IPP Everywhere, built on PAPPL as an optional helper process ([`helpers/anytopdf-printer`](helpers/anytopdf-printer/README.md)); PWG Raster and Apple Raster print jobs keep their paper size
+- [ ] AirPrint and Mopria certification
 - [ ] IPP over TLS with a password, localhost by default, print receipts on the provenance page
 - [ ] Remote printing over Tailscale or WireGuard with DNS-based discovery
 - [ ] Microsoft Universal Print investigation

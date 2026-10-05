@@ -136,6 +136,16 @@ pub(crate) fn wrap_text(text: &str, width: f32, measure: &impl Fn(char) -> f32) 
     lines
 }
 
+/// Resolution of a visual unit: print-job pages carry their own in
+/// `visual.dpi`; other visuals use the renderer default.
+pub(crate) fn unit_dpi(unit: &anytopdf_core::Unit, default: f32) -> f32 {
+    unit.metadata
+        .get("visual.dpi")
+        .and_then(|v| v.parse::<f32>().ok())
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(default)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -20,7 +20,7 @@ TARGET_FLAGS = $(if $(strip $(TARGET)),--target "$(TARGET)",)
 FEATURE_FLAGS = $(if $(filter 1,$(NO_DEFAULT_FEATURES)),--no-default-features,) $(if $(strip $(FEATURES)),--features "$(FEATURES)",)
 BINARY ?= $(CARGO_TARGET_DIR)/$(if $(strip $(TARGET)),$(TARGET)/,)release/anytopdf$(if $(findstring windows,$(PACKAGE_TARGET)),.exe,)
 
-.PHONY: all deps providers release-deps release-plan release-resume commit-check help build build-release release fmt fmt-check check lint test test-no-default test-python verify smoke ci package doctor clean
+.PHONY: all deps providers release-deps release-plan release-resume commit-check help build build-release release fmt fmt-check check lint test test-no-default test-python verify smoke ci package doctor clean printer printer-smoke
 
 all: build-release
 
@@ -56,6 +56,8 @@ help:
 	  'make ci              Verify, then build and smoke-test the release' \
 	  'make package         Build, smoke-test, and archive with SHA-256' \
 	  'make doctor          Inspect optional runtime providers' \
+	  'make printer         Build the optional PAPPL print-server helper' \
+	  'make printer-smoke   Print a test page through the helper' \
 	  'make clean           Remove Cargo build outputs (keeps dist/)' \
 	  '' \
 	  'Build/package options: TARGET=<triple> NO_DEFAULT_FEATURES=1 FEATURES=<list>' \
@@ -104,6 +106,13 @@ package: smoke
 
 doctor: | deps
 	$(CARGO) run --locked -p anytopdf -- doctor
+
+# The print-server helper is C on PAPPL and stays out of the Cargo workspace.
+printer:
+	$(MAKE) -C helpers/anytopdf-printer
+
+printer-smoke: build-release printer
+	PYTHON="$(PYTHON)" bash helpers/anytopdf-printer/smoke.sh helpers/anytopdf-printer/anytopdf-printer "$(BINARY)"
 
 clean:
 	$(CARGO) clean

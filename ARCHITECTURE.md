@@ -121,6 +121,17 @@ Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
   does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
   uses a fill opacity of 0.
 
+## Print jobs
+
+PWG Raster and Apple Raster (URF) are importers like any other: each page becomes
+a visual unit with a `frame` anchor and a `visual.dpi` metadata value, and the
+renderer sizes that page from its resolution so a 300 dpi Letter job yields a
+Letter page. The optional `anytopdf-printer` helper (C, on PAPPL) is a separate
+process: it accepts IPP jobs, spools them as PWG Raster and runs
+`anytopdf convert`. It is not linked into the Rust binary (see
+`docs/spikes/pappl.md`), so default builds and Windows are unaffected, and other
+front ends such as remote printing can feed the same importer.
+
 ## Extension strategy
 
 ### Built-ins

@@ -369,3 +369,33 @@ fn fallback_fonts_cover_characters_the_primary_font_lacks() {
         .count();
     assert_eq!(fonts, 2, "expected the primary and one fallback font");
 }
+
+#[test]
+fn visual_dpi_metadata_sets_the_physical_page_size() {
+    let dir = tempfile::tempdir().unwrap();
+    let visual = dir.path().join("page.png");
+    ::image::GrayImage::new(600, 300).save(&visual).unwrap();
+    let source = SourceRecord::new(visual.clone());
+    let mut unit = Unit::visual(source.id, visual);
+    unit.metadata.insert("visual.dpi".into(), "300".into());
+    let graph = DocumentGraph {
+        units: vec![unit],
+        sources: vec![source],
+        ..Default::default()
+    };
+    let (bytes, _) = render(dir.path(), &graph, "dpi.pdf");
+    let doc = lopdf::Document::load_mem(&bytes).unwrap();
+    let first = *doc.get_pages().values().next().unwrap();
+    let media = doc
+        .get_object(first)
+        .and_then(lopdf::Object::as_dict)
+        .and_then(|page| page.get(b"MediaBox"))
+        .and_then(lopdf::Object::as_array)
+        .unwrap();
+    let size: Vec<f32> = media[2..]
+        .iter()
+        .map(|v| v.as_float().unwrap().round())
+        .collect();
+    // 600 x 300 pixels at 300 dpi is 2 x 1 inches.
+    assert_eq!(size, [144.0, 72.0]);
+}

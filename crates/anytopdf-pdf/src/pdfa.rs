@@ -209,7 +209,12 @@ impl Renderer for PdfARenderer {
             let mut section = TagGroup::new(Tag::Section);
             if let Some(visual) = &unit.visual_path {
                 match load_image(visual) {
-                    Ok(image) => builder.visual_page(&mut section, unit, image, self.dpi),
+                    Ok(image) => builder.visual_page(
+                        &mut section,
+                        unit,
+                        image,
+                        crate::layout::unit_dpi(unit, self.dpi),
+                    ),
                     Err(e) => {
                         warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }
