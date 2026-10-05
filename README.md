@@ -460,11 +460,11 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
-- [ ] Office documents (structure first, LibreOffice when present)
+- [x] Office documents through LibreOffice and Poppler
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 
 ### Media enrichment
-- [ ] Whisper transcription (pluggable whisper.cpp)
+- [x] Whisper transcription as a runtime plugin
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
 - [ ] Barcode and QR extraction
@@ -482,8 +482,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Spike: PAPPL printer feasibility
 - [x] Network printer via IPP Everywhere, built on PAPPL as an optional helper process ([`helpers/anytopdf-printer`](helpers/anytopdf-printer/README.md)); PWG Raster and Apple Raster print jobs keep their paper size
 - [ ] AirPrint and Mopria certification
-- [ ] IPP over TLS with a password, localhost by default, print receipts on the provenance page
-- [ ] Remote printing over Tailscale or WireGuard with DNS-based discovery
+- [x] IPP over TLS with a password, localhost by default
+- [ ] Print receipts on the provenance page
+- [x] Remote printing over Tailscale or WireGuard with DNS-based discovery
 - [ ] Microsoft Universal Print investigation
 
 ### Security and plugins
