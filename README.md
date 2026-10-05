@@ -234,6 +234,30 @@ does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
+### Remote printing
+
+The print helper listens on localhost only. `anytopdf print remote` lets phones and
+laptops on your Tailscale or WireGuard network print to it: it accepts TLS
+connections (`ipps://`), admits only allowlisted peers, asks for a print user's
+password, then passes the job to the helper.
+
+```bash
+tailscale cert printer.tailnet-name.ts.net
+echo 'a long password' | anytopdf print passwd adeel --users ~/.anytopdf/print-users.json
+anytopdf print remote --listen 100.101.102.103:8631 --allow-tailnet \
+  --tls-cert printer.tailnet-name.ts.net.crt --tls-key printer.tailnet-name.ts.net.key \
+  --users ~/.anytopdf/print-users.json
+```
+
+It refuses a non-loopback listener without users and an allowlist, and
+`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. Discovery:
+`anytopdf print advertise` announces the printer over multicast DNS on the local
+network (IPP Everywhere `_ipps._tcp` with the AirPrint `_universal` subtype);
+multicast does not cross a VPN, so `anytopdf print dns-sd --domain home.example
+--host printer.home.example` prints unicast DNS-SD records to add to your own DNS
+for remote Apple clients, and `anytopdf print url` prints the `ipps://` URL to add
+the printer by hand on Windows and Android. See `docs/design/remote-printing.md`.
+
 ### MCP server
 
 `anytopdf mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
