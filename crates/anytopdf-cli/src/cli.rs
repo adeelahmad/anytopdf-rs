@@ -51,9 +51,11 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Describe exit codes, diagnostic codes, profiles, OCR modes, importers and schemas.
+    /// Show what this binary and environment support, and how to enable or add more.
+    #[command(after_long_help = crate::environment::HELP_FOOTER)]
     Capabilities {
-        /// Emit one JSON document on stdout (capabilities always does).
+        /// Emit one JSON document on stdout: exit codes, diagnostic codes, profiles,
+        /// OCR modes, importers and schema ids.
         #[arg(long)]
         json: bool,
     },
@@ -71,6 +73,8 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    Mcp,
 }
 
 #[derive(Debug, clap::Args)]

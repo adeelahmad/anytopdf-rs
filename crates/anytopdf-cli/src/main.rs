@@ -3,9 +3,11 @@ mod capabilities;
 mod cli;
 mod commands;
 mod convert;
+mod environment;
 mod events;
 mod exit;
 mod extract;
+mod mcp;
 mod naming;
 mod publish;
 mod watch;
@@ -44,6 +46,7 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<(), CliError> {
+    let forwarded = mcp::Forwarded::from_cli(&cli);
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
         timeout: Duration::from_secs(cli.plugin_timeout),
@@ -60,17 +63,23 @@ fn run(cli: Cli) -> Result<(), CliError> {
             println!("{}", serde_json::to_string_pretty(&doc)?);
             Ok(())
         }
-        Commands::Capabilities { .. } => {
+        Commands::Capabilities { json: true } => {
             println!(
                 "{}",
                 serde_json::to_string_pretty(&capabilities::capabilities()?)?
             );
             Ok(())
         }
+        Commands::Capabilities { json: false } => {
+            let probe = environment::Probe::detect(&policy);
+            print!("{}", environment::render(&environment::build(&probe)));
+            Ok(())
+        }
         Commands::Probe { input, .. } => probe(&input, &policy),
         Commands::Watch {
             source: WatchSource::Imap(args),
         } => watch::watch_imap(*args, &policy),
+        Commands::Mcp => Ok(mcp::serve(forwarded)?),
     }
 }
 

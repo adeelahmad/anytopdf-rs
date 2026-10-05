@@ -66,6 +66,17 @@ An importer emits normalized units. Examples:
 - subtitle -> text/cue units
 - text -> visible text unit
 - future `.igl` -> arbitrary page/image/text units
+- email/archive -> its own units plus the units of each member file
+
+Containers (emails, archives) implement `Importer::import_with_members`. They
+write members into the job workspace under sanitized single-component names and
+hand each path to the pipeline's `MemberImporter`, which probes it against the
+registry like a top-level input. Member units are re-parented onto the container
+source and tagged with `container.member`, so the source list, `--output-dir`
+grouping and manifest still describe the inputs the user named. Members must
+resolve inside the workspace, nesting stops at `MAX_MEMBER_DEPTH`, and a member
+that cannot be imported is an `input.members-not-imported` warning, not a failed
+input. Runtime plugins keep the plain `import` path.
 
 ### Source enrichment
 
@@ -192,4 +203,5 @@ command recovers them.
 ## CLI contract
 
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
-`capabilities` command reports available providers.
+`capabilities` command reports which importers, enrichers, renderers, providers and runtime
+plugins this environment supports (`--json` gives the static contract).

@@ -74,12 +74,24 @@ mod with_imap {
         let dir = tempfile::tempdir().unwrap();
         let out_dir = dir.path().to_str().unwrap();
         let mut first = args(&port, out_dir);
-        first.extend(["--backfill", "--", "--ocr", "off"]);
+        let graph = dir.path().join("graph.json");
+        first.extend(["--backfill", "--", "--ocr", "off", "--dump-graph"]);
+        first.push(graph.to_str().unwrap());
         let out = watch(&first, Some(PASSWORD));
         assert!(out.status.success(), "{}", stderr(&out));
         let pdf = dir.path().join("INBOX-42-3.pdf");
         assert!(std::fs::read(&pdf).unwrap().starts_with(b"%PDF-"));
         assert!(stderr(&out).contains("1 converted"), "{}", stderr(&out));
+        // The built-in email importer, not the plain-text fallback, renders the message.
+        let graph: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&graph).unwrap()).unwrap();
+        assert_eq!(graph["sources"][0]["metadata"]["email.subject"], "Invoice");
+        assert!(
+            graph["units"][0]["visible_text"]
+                .as_str()
+                .unwrap()
+                .contains("Watcher acceptance marker")
+        );
 
         let again = watch(&args(&port, out_dir), Some(PASSWORD));
         assert!(again.status.success(), "{}", stderr(&again));

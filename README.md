@@ -83,6 +83,8 @@ Importers:
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
+- HTML pages (readable text, title and image alt text; no network fetches)
+- email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - SRT / VTT captions
 
 Enrichment:
@@ -118,9 +120,13 @@ image conversion; provider-specific dependencies are listed below.
 ./anytopdf doctor
 ```
 
+Homebrew, Scoop, cargo-binstall, `cargo install` and a container image with
+FFmpeg, ExifTool and Tesseract are described in
+[docs/distribution.md](docs/distribution.md).
+
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF/Office/HTML importers are future work.
+a supplied transcript or a plugin. PDF and Office importers are future work.
 
 ## CLI
 
@@ -134,6 +140,7 @@ anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf mcp
 ```
 
 Video defaults combine interval sampling and FFmpeg scene-change sampling and
@@ -190,9 +197,9 @@ anytopdf watch imap --host imap.example.com --user scans@example.com \
   converted by a child `anytopdf convert` into
   `<output-dir>/<mailbox>-<uidvalidity>-<uid>.pdf`. Arguments after `--` go to
   convert. The child does not inherit `ANYTOPDF_IMAP_PASSWORD`.
-- Until an email importer exists, a message converts as plain text (headers and
-  raw body). An `anytopdf-plugin-*` importer for RFC 822 input takes over without
-  changes to the watcher.
+- The built-in email importer renders each message (headers, body and its
+  attachments through the normal importers); an `anytopdf-plugin-*` importer for
+  RFC 822 input can replace it without changes to the watcher.
 - Progress lives in `<state-dir>/state.json` (default
   `<output-dir>/.anytopdf-imap`), keyed by the mailbox's UIDVALIDITY. The first
   run only converts mail that arrives afterwards; `--backfill` converts existing
@@ -211,12 +218,47 @@ anytopdf watch imap --host imap.example.com --user scans@example.com \
   `_PASSWORD_FILE`. Use one `--state-dir` per mailbox and one watcher per state
   directory.
 
+### MCP server
+
+`anytopdf mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio (newline-delimited JSON-RPC 2.0) so agents can call anytopdf
+as tools:
+
+| Tool | Runs | Returns |
+| --- | --- | --- |
+| `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
+| `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
+| `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
+| `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
+
+Each call re-runs the same executable, so tools keep the CLI's validation,
+overwrite protection, profiles and exit codes. The JSON document is returned as
+both text and `structuredContent`; a non-zero exit becomes a tool result with
+`isError: true` whose text starts with the exit code and class, followed by
+stderr. Global flags given before `mcp` (`--no-plugins`, `--plugin-timeout`,
+`--allow-plugin-kind`, `--deny-plugin-kind`) apply to every call. Paths are local
+to the server and relative paths resolve against its working directory, so give
+agents absolute paths. The server reads and writes files with your permissions,
+exactly like the CLI.
+
+Register it with an MCP client, for example Claude Code:
+
+```bash
+claude mcp add anytopdf -- anytopdf --no-plugins mcp
+```
+
+or in a client's JSON configuration:
+
+```json
+{"mcpServers": {"anytopdf": {"command": "anytopdf", "args": ["mcp"]}}}
+```
+
 ## Roadmap
 
 anytopdf is meant to produce an evidence file: one PDF that is both the human
 rendition and the machine index (embedded manifest, chunks, provenance and hashes),
-works offline, and is ready for agents to read. `- [x]` is implemented on the sprint 2
-branch and `- [ ]` is planned.
+works offline, and is ready for agents to read. `- [x]` is implemented on `main`
+and `- [ ]` is planned.
 Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Searchable text and diagnostics
@@ -226,6 +268,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Provider version detection
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
+- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
+- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
@@ -294,9 +338,10 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
 - [x] Spike: slim and full build shapes
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
-- [ ] Homebrew, winget, scoop, cargo binstall, `curl | sh`, and npx/uvx wrappers
+- [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
+- [ ] Published Homebrew tap and Scoop bucket, winget, `curl | sh`, and npx/uvx wrappers
 - [ ] Signing and notarization
-- [ ] MCP server mode
+- [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`
 
 ## Dependencies
@@ -379,8 +424,11 @@ document to stdout (diagnostics go to stderr); contracts live in `schemas/`.
 `convert --json` always emits one `anytopdf.convert/1` document, including on failure
 (`status` is `ok`, `partial` when inputs were skipped but exit is 0, or `failed`; `exit_code`
 mirrors the process exit code). With `--profile share`, paths in it are base names.
-`capabilities --json` lists exit codes, diagnostic codes, profiles, OCR modes, importers and schema ids
-(`anytopdf.capabilities/1`).
+`capabilities` prints a table of what this binary and environment support: built-in
+importers, enrichers and renderers, OCR providers, external tools and runtime plugins, each
+marked available, partial or missing, followed by how to enable what is missing and how to add a
+plugin (`capabilities --help` explains the legend). `capabilities --json` lists exit codes,
+diagnostic codes, profiles, OCR modes, importers and schema ids (`anytopdf.capabilities/1`).
 
 ```bash
 anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
