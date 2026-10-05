@@ -343,8 +343,11 @@ document to stdout (diagnostics go to stderr); contracts live in `schemas/`.
 `convert --json` always emits one `anytopdf.convert/1` document, including on failure
 (`status` is `ok`, `partial` when inputs were skipped but exit is 0, or `failed`; `exit_code`
 mirrors the process exit code). With `--profile share`, paths in it are base names.
-`capabilities --json` lists exit codes, diagnostic codes, profiles, OCR modes, importers and schema ids
-(`anytopdf.capabilities/1`).
+`capabilities` prints a table of what this binary and environment support: built-in
+importers, enrichers and renderers, OCR providers, external tools and runtime plugins, each
+marked available, partial or missing, followed by how to enable what is missing and how to add a
+plugin (`capabilities --help` explains the legend). `capabilities --json` lists exit codes,
+diagnostic codes, profiles, OCR modes, importers and schema ids (`anytopdf.capabilities/1`).
 
 ```bash
 anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
