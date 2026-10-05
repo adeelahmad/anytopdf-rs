@@ -1,0 +1,1802 @@
+# threat-model.yaml — derived index; threat-model.md is canonical (prose > yaml > json).
+schema: threat-model-sidecar/v2
+project: anytopdf
+prose_version: threat-model.md@sha256:6064bb8b1c3b66b682aaa968493842e63aec877b098e3d2762343eaebd6bc8c3
+model_status: under-review
+triage_policy: strict
+confidence:
+  documented: 139
+  maintainer: 65
+  inferred: 9
+  assumption: 1
+generation:
+  model: Claude Opus 5.5
+  effort: medium
+  plugins:
+  - threat-model
+  - threat-model-recon
+  - threat-model-surface
+  - threat-model-interview
+  - threat-model-authoring
+  - threat-model-backtest
+  - threat-model-sidecar
+components:
+- name: cli-commands
+  scope: in
+  reachability_precondition: input names or contents reach naming, publishing, redaction or diagnostics; hostile flag values
+    are trusted-input
+  provenance: &id001
+    kind: maintainer
+    date: 2026-10
+- name: cli-extract
+  scope: in
+  reachability_precondition: reachable from the bytes of a PDF passed to extract or the sidecar files beside it
+  provenance: *id001
+- name: input-importers
+  scope: in
+  reachability_precondition: reachable from input bytes, file names or directory layout under a path the operator passed
+  provenance: *id001
+- name: provider-adapters
+  scope: in
+  reachability_precondition: reachable from input content seen by ExifTool, ffprobe, FFmpeg or OCR on a derived workspace
+    PNG
+  provenance: *id001
+- name: plugin-host
+  scope: in
+  reachability_precondition: 'response validation: reachable from a plugin response file; discovery needs a PATH or ANYTOPDF_PLUGIN_PATH
+    directory (excluded)'
+  provenance:
+    kind: documented
+    source: README "Plugin model" "discovered from `PATH` and directories in `ANYTOPDF_PLUGIN_PATH`"
+- name: pdf-renderer
+  scope: in
+  reachability_precondition: reachable when graph text or images derived from input reach the renderer
+  provenance: *id001
+- name: release-tooling
+  scope: out
+  reason: scripts/, Makefile and CI are build tooling, not part of the shipped binary (§1.3)
+  provenance: *id001
+- name: example-plugin
+  scope: out
+  reason: examples/anytopdf-plugin-example.py is a demonstration, not built into the binary (§1.3)
+  provenance: *id001
+- name: test-suites
+  scope: out
+  reason: 'tests/, crates/*/tests and #[cfg(test)] code are not compiled into release builds (§1.3)'
+  provenance: *id001
+- name: third-party-plugins
+  scope: out
+  reason: installed plugin executables are trusted operator-chosen code (§1.3)
+  provenance:
+    kind: documented
+    source: README "Diagnostics and strict mode" "Install only trusted plugins or use `--no-plugins`"
+host_side_effects:
+- effect: child-processes
+  stance: present
+  components:
+  - input-importers
+  - provider-adapters
+  - plugin-host
+  conditions: FFmpeg/ffprobe, ExifTool, Tesseract, Python/docTR, provider version probes and runtime plugins; argv without
+    a shell
+  provenance:
+    kind: documented
+    source: README "Optional runtime providers"
+- effect: filesystem
+  stance: present
+  components: &id002
+  - cli-commands
+  - cli-extract
+  - input-importers
+  - provider-adapters
+  - plugin-host
+  - pdf-renderer
+  conditions: reads inputs, sidecars, transcripts, fonts and extract PDFs; writes the job workspace, staged outputs and created
+    parent directories
+  provenance:
+    kind: documented
+    source: README "Writes are staged and atomically published"
+- effect: environment-reads
+  stance: present
+  components:
+  - cli-commands
+  - plugin-host
+  - pdf-renderer
+  conditions: PATH, ANYTOPDF_PLUGIN_PATH, ANYTOPDF_FONT, SOURCE_DATE_EPOCH only
+  provenance:
+    kind: documented
+    source: README "Plugin model", "Reliability and operation"
+- effect: network-sockets
+  stance: absent
+  components: *id002
+  conditions: anytopdf code opens no sockets; grep for TcpStream/UdpSocket/reqwest/ureq/hyper in crates/*/src returns 0 hits
+  provenance: *id001
+- effect: network
+  stance: conditional
+  components:
+  - provider-adapters
+  conditions: docTR may download model weights on first use
+  provenance:
+    kind: documented
+    source: README "docTR may download model weights on first use"
+- effect: x-ffmpeg-url-access
+  stance: conditional
+  components:
+  - input-importers
+  - provider-adapters
+  conditions: FFmpeg may open URLs referenced by a crafted container; anytopdf does not restrict protocols
+  provenance:
+    kind: inferred
+    question_id: Q15
+- effect: signal-handlers
+  stance: absent
+  components: *id002
+  conditions: 'no signal handlers installed (grep ctrlc/sigaction/signal_hook/SIGINT: 0 hits)'
+  provenance: *id001
+- effect: global-state
+  stance: absent
+  components: *id002
+  conditions: no set_var or set_current_dir
+  provenance: *id001
+- effect: x-stdout-stderr
+  stance: present
+  components:
+  - cli-commands
+  - cli-extract
+  conditions: stdout carries --json and extract documents; stderr carries diagnostics, summary, error lines and NDJSON events
+  provenance:
+    kind: documented
+    source: README "Reliability and operation" "diagnostics go to stderr"
+- effect: x-unsafe-code
+  stance: conditional
+  components:
+  - provider-adapters
+  conditions: one unsafe call in Apple Vision OCR, only with the apple-vision feature on macOS
+  provenance: *id001
+entry_points:
+- id: convert
+  component: cli-commands
+  parameters:
+  - name: input-paths
+    attacker_controllable: false
+    control_kinds:
+    - resource-name
+    obligation_id: choose-inputs
+    caller_must_enforce: choose which files and trees to convert
+    provenance: *id001
+  - name: input-bytes
+    attacker_controllable: true
+    control_kinds:
+    - data
+    - size
+    obligation_id: bound-input-resources
+    caller_must_enforce: bound input size yourself (D4); integrity claims are project-owned
+    provenance: *id001
+  - name: names-in-scanned-tree
+    attacker_controllable: true
+    control_kinds:
+    - resource-name
+    caller_must_enforce: none — inputs-never-overwritten
+    provenance: *id001
+  - name: transcript-files
+    attacker_controllable: false
+    control_kinds:
+    - resource-name
+    obligation_id: choose-transcripts
+    caller_must_enforce: pass only files you mean to embed
+    provenance:
+      kind: documented
+      source: README "`--transcript` is never silently ignored"
+  - name: output-destinations
+    attacker_controllable: false
+    control_kinds:
+    - resource-name
+    obligation_id: outputs-outside-inputs
+    caller_must_enforce: put outputs outside input directories
+    provenance:
+      kind: documented
+      source: README "Put outputs outside input directories"
+  - name: filter-regex
+    attacker_controllable: false
+    control_kinds:
+    - data
+    caller_must_enforce: none; linear-time regex
+    provenance: *id001
+  - name: video-numeric-flags
+    attacker_controllable: false
+    control_kinds:
+    - size
+    obligation_id: valid-numeric-flags
+    caller_must_enforce: values are range-checked; bad values exit 2
+    provenance:
+      kind: documented
+      source: README "Exit codes" "Invalid option or value"
+  - name: frame-caps
+    attacker_controllable: false
+    control_kinds:
+    - size
+    obligation_id: set-frame-caps
+    caller_must_enforce: set a non-zero cap for untrusted media
+    provenance:
+      kind: documented
+      source: README "`--max-video-frames` also bounds extracted frames per pass"
+  - name: profile-and-mode-flags
+    attacker_controllable: false
+    control_kinds:
+    - type-class
+    obligation_id: use-share-profile
+    caller_must_enforce: choose share before sharing outputs
+    provenance: *id001
+  - name: lang-ocr-renderer
+    attacker_controllable: false
+    control_kinds:
+    - type-class
+    - collaborator-implementation
+    obligation_id: trusted-renderer
+    caller_must_enforce: choose only installed, trusted runtime renderers
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "`convert --renderer runtime:NAME`"
+  - name: plugin-flags
+    attacker_controllable: false
+    control_kinds:
+    - type-class
+    - rate
+    obligation_id: no-plugins-if-untrusted
+    caller_must_enforce: use --no-plugins where installed plugins are not trusted
+    provenance: *id001
+  - name: ANYTOPDF_FONT
+    attacker_controllable: false
+    control_kinds:
+    - resource-name
+    obligation_id: trusted-font
+    caller_must_enforce: point it only at a trusted TTF file
+    provenance: *id001
+  - name: SOURCE_DATE_EPOCH
+    attacker_controllable: false
+    control_kinds:
+    - data
+    obligation_id: valid-source-date-epoch
+    caller_must_enforce: an invalid value exits 2
+    provenance:
+      kind: documented
+      source: README "an invalid value exits 2"
+- id: discover_inputs
+  component: input-importers
+  parameters:
+  - name: tree-depth-and-file-count
+    attacker_controllable: true
+    control_kinds:
+    - object-topology
+    - size
+    obligation_id: bound-scan-trees
+    caller_must_enforce: do not scan untrusted trees without resource limits (D4)
+    provenance:
+      kind: inferred
+      question_id: Q8
+- id: image-importer
+  component: input-importers
+  parameters:
+  - name: image-pixels-dimensions-frames
+    attacker_controllable: true
+    control_kinds:
+    - data
+    - size
+    obligation_id: bound-input-resources
+    caller_must_enforce: bound input size yourself (D4); integrity claims are project-owned
+    provenance:
+      kind: documented
+      source: README "Security and plugins" "size and page caps" unchecked
+- id: text-importer
+  component: input-importers
+  parameters:
+  - name: text-file
+    attacker_controllable: true
+    control_kinds:
+    - data
+    - size
+    obligation_id: bound-input-resources
+    caller_must_enforce: bound input size yourself (D4); integrity claims are project-owned
+    provenance:
+      kind: documented
+      source: README "Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)"
+- id: subtitle-importer
+  component: input-importers
+  parameters:
+  - name: cues-and-timestamps
+    attacker_controllable: true
+    control_kinds:
+    - data
+    - size
+    obligation_id: bound-input-resources
+    caller_must_enforce: bound input size yourself (D4); integrity claims are project-owned
+    provenance: *id001
+- id: video-importer
+  component: input-importers
+  parameters:
+  - name: container-streams
+    attacker_controllable: true
+    control_kinds:
+    - data
+    - size
+    obligation_id: trust-providers
+    caller_must_enforce: trust and patch FFmpeg (§1.9); bound duration yourself (D4)
+    provenance:
+      kind: documented
+      source: README "each video extraction pass 300 seconds"
+- id: caption-enricher
+  component: provider-adapters
+  parameters:
+  - name: sibling-sidecar-contents
+    attacker_controllable: true
+    control_kinds:
+    - resource-name
+    - data
+    obligation_id: control-input-symlinks
+    caller_must_enforce: control symlinks in the input tree; a symlinked sidecar is followed and its target embedded (D14)
+    provenance: *id001
+- id: metadata-enricher
+  component: provider-adapters
+  parameters:
+  - name: exiftool-ffprobe-json
+    attacker_controllable: true
+    control_kinds:
+    - serialized-state
+    obligation_id: treat-output-untrusted
+    caller_must_enforce: treat metadata and OCR text as untrusted (§1.8)
+    provenance: *id001
+- id: ocr-enricher
+  component: provider-adapters
+  parameters:
+  - name: recognized-text
+    attacker_controllable: true
+    control_kinds:
+    - data
+    obligation_id: treat-output-untrusted
+    caller_must_enforce: treat metadata and OCR text as untrusted (§1.8)
+    provenance: *id001
+- id: plugin-discovery
+  component: plugin-host
+  parameters:
+  - name: PATH-and-ANYTOPDF_PLUGIN_PATH
+    attacker_controllable: false
+    control_kinds:
+    - resource-name
+    - collaborator-implementation
+    obligation_id: trusted-plugin-dirs
+    caller_must_enforce: keep every directory on them writable only by trusted users
+    provenance:
+      kind: documented
+      source: README "Install only trusted plugins"
+  - name: plugin-executables
+    attacker_controllable: false
+    control_kinds:
+    - collaborator-implementation
+    - callback-code
+    obligation_id: install-trusted-plugins
+    caller_must_enforce: install only trusted plugins
+    provenance:
+      kind: documented
+      source: README "Install only trusted plugins or use `--no-plugins`"
+  - name: manifest-json
+    attacker_controllable: true
+    control_kinds:
+    - serialized-state
+    caller_must_enforce: none — plugin-response-validation
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "Manifest"
+- id: plugin-response
+  component: plugin-host
+  parameters:
+  - name: response-file
+    attacker_controllable: true
+    control_kinds:
+    - size
+    - serialized-state
+    caller_must_enforce: none — plugin-response-validation
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "Captured output and response JSON are limited to 16 MiB each"
+  - name: ids-and-source_id
+    attacker_controllable: true
+    control_kinds:
+    - data
+    caller_must_enforce: none — plugin-response-validation
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "Enrichment responses must preserve existing source and unit identities"
+  - name: visual_path
+    attacker_controllable: true
+    control_kinds:
+    - resource-name
+    caller_must_enforce: none — plugin-response-validation
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "The host resolves symlinks before validating the path"
+  - name: annotations-regions-times
+    attacker_controllable: true
+    control_kinds:
+    - data
+    caller_must_enforce: none — plugin-response-validation
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "Annotations must have a provider, finite coordinates"
+  - name: source-sha256-size
+    attacker_controllable: true
+    control_kinds:
+    - data
+    obligation_id: trust-plugin-digests
+    caller_must_enforce: trust installed plugins for content IDs; a supplied digest skips host hashing
+    provenance:
+      kind: inferred
+      question_id: Q13
+  - name: warnings
+    attacker_controllable: true
+    control_kinds:
+    - data
+    caller_must_enforce: none — plugin-warnings-recoded
+    provenance:
+      kind: documented
+      source: PLUGIN_PROTOCOL "reports every plugin-supplied warning string as the diagnostic code `plugin.warning`"
+- id: extract
+  component: cli-extract
+  parameters:
+  - name: pdf-and-sidecars
+    attacker_controllable: true
+    control_kinds:
+    - serialized-state
+    - object-topology
+    - size
+    obligation_id: verify-extract-output
+    caller_must_enforce: treat output as unverified (D7); bound file size yourself
+    provenance: *id001
+contract_dimensions:
+- component: cli-commands
+  dimension: numeric-domain
+  status: claimed
+  conditions: numeric flags are range-checked and bad values exit 2
+  property_id: cli-result-contract
+  provenance:
+    kind: documented
+    source: README "Exit codes"
+- component: cli-commands
+  dimension: failure-atomicity
+  status: claimed
+  conditions: 'per file: staged then renamed; cross-file atomicity is D10'
+  property_id: existing-output-not-replaced
+  provenance:
+    kind: documented
+    source: README "Writes are staged and atomically published"
+- component: cli-commands
+  dimension: recursive-cyclic-topology
+  status: not-applicable
+  conditions: the CLI handles flat lists of paths; tree walking belongs to input-importers
+  provenance: *id001
+- component: cli-commands
+  dimension: callback-execution
+  status: not-applicable
+  conditions: the CLI runs no collaborators itself
+  provenance: *id001
+- component: cli-commands
+  dimension: serialization-reconstruction
+  status: claimed
+  conditions: --json writes exactly one versioned document; --events ends with one run.finished
+  property_id: cli-result-contract
+  provenance:
+    kind: documented
+    source: README "write exactly one versioned JSON document to stdout"
+- component: cli-commands
+  dimension: reference-lifecycle
+  status: disclaimed
+  conditions: staging and workspace files can remain after an abnormal exit
+  property_id: abnormal-exit-cleanup
+  provenance:
+    kind: documented
+    source: 'README "Writes are staged and atomically published" is the only lifecycle promise; basis: absence'
+- component: cli-commands
+  dimension: concurrency-reentrancy
+  status: disclaimed
+  conditions: no coordination between concurrent runs
+  property_id: concurrent-run-coordination
+  provenance:
+    kind: documented
+    source: 'README "Reliability and operation" has no concurrency statement; basis: absence'
+- component: cli-commands
+  dimension: resource-complexity
+  status: disclaimed
+  conditions: no total page, size or memory cap
+  property_id: untrusted-input-resource-bounds
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps" unchecked
+- component: cli-extract
+  dimension: numeric-domain
+  status: claimed
+  conditions: malformed offsets, lengths or numbers end in exit 3, not a crash or wrong exit code; size exhaustion is D4
+  property_id: extract-robust-on-hostile-pdf
+  provenance: *id001
+- component: cli-extract
+  dimension: failure-atomicity
+  status: not-applicable
+  conditions: extract writes only to stdout and exits 0 or 3
+  provenance:
+    kind: documented
+    source: README "A PDF with no embedded or sidecar manifest exits 3"
+- component: cli-extract
+  dimension: recursive-cyclic-topology
+  status: unresolved
+  conditions: PDF object references resolved by lopdf with no visited-set; a crash is a bug (P17), non-termination is open
+  question_id: Q17
+  provenance:
+    kind: inferred
+    question_id: Q17
+- component: cli-extract
+  dimension: callback-execution
+  status: not-applicable
+  conditions: extract runs no plugins or providers
+  provenance: *id001
+- component: cli-extract
+  dimension: serialization-reconstruction
+  status: claimed
+  conditions: version-matched manifest or chunks file is schema-validated; other versions warn and skip validation
+  property_id: extract-schema-check
+  provenance:
+    kind: documented
+    source: README "A version-matched manifest or chunks file that does not match its schema exits 3"
+- component: cli-extract
+  dimension: reference-lifecycle
+  status: not-applicable
+  conditions: extract creates no files
+  provenance: *id001
+- component: cli-extract
+  dimension: concurrency-reentrancy
+  status: not-applicable
+  conditions: read-only and single-threaded
+  provenance: *id001
+- component: cli-extract
+  dimension: resource-complexity
+  status: disclaimed
+  conditions: the whole PDF is read into memory; no size cap
+  property_id: untrusted-input-resource-bounds
+  provenance: *id001
+- component: input-importers
+  dimension: numeric-domain
+  status: disclaimed
+  conditions: no pixel, dimension or file-size limit; frame caps only when set
+  property_id: untrusted-input-resource-bounds
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps" unchecked
+- component: input-importers
+  dimension: failure-atomicity
+  status: claimed
+  conditions: a failing input is skipped with a warning and the batch continues
+  property_id: failed-input-isolation
+  provenance:
+    kind: documented
+    source: README "Exit codes" "a failing input (corrupt, unsupported or unreadable) is skipped"
+- component: input-importers
+  dimension: recursive-cyclic-topology
+  status: unresolved
+  conditions: directory scans do not follow links; depth is unbounded
+  question_id: Q8
+  provenance:
+    kind: inferred
+    question_id: Q8
+- component: input-importers
+  dimension: callback-execution
+  status: disclaimed
+  conditions: the video importer runs FFmpeg with the user's permissions
+  property_id: os-sandbox
+  provenance:
+    kind: documented
+    source: README "These limits are safeguards, not an OS sandbox"
+- component: input-importers
+  dimension: serialization-reconstruction
+  status: unresolved
+  conditions: decoding hostile image, video and subtitle bytes; whether a panic is a bug
+  question_id: Q6
+  provenance:
+    kind: inferred
+    question_id: Q6
+- component: input-importers
+  dimension: reference-lifecycle
+  status: claimed
+  conditions: derived files live inside one job workspace
+  property_id: workspace-confinement-of-derived-files
+  provenance:
+    kind: documented
+    source: README "Design invariants" "Temporary derived artifacts live inside one job workspace"
+- component: input-importers
+  dimension: concurrency-reentrancy
+  status: not-applicable
+  conditions: importers run one at a time in one thread
+  provenance: *id001
+- component: input-importers
+  dimension: resource-complexity
+  status: disclaimed
+  conditions: memory, disk and CPU scale with input
+  property_id: untrusted-input-resource-bounds
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps" unchecked
+- component: provider-adapters
+  dimension: numeric-domain
+  status: unresolved
+  conditions: numbers parsed from tool output (TSV, JSON, pts_time)
+  question_id: Q6
+  provenance:
+    kind: inferred
+    question_id: Q6
+- component: provider-adapters
+  dimension: failure-atomicity
+  status: claimed
+  conditions: a failed enricher's changes are rolled back
+  property_id: failed-enrichment-rolls-back
+  provenance:
+    kind: documented
+    source: ARCHITECTURE "Source, graph and unit enrichers roll back their in-memory changes on failure"
+- component: provider-adapters
+  dimension: recursive-cyclic-topology
+  status: disclaimed
+  conditions: sidecars found by swapping the media extension; a symlinked sidecar is followed and its target read
+  property_id: sidecar-symlink-following
+  provenance: *id001
+- component: provider-adapters
+  dimension: callback-execution
+  status: disclaimed
+  conditions: external tools run with the user's permissions
+  property_id: os-sandbox
+  provenance:
+    kind: documented
+    source: README "These limits are safeguards, not an OS sandbox"
+- component: provider-adapters
+  dimension: serialization-reconstruction
+  status: unresolved
+  conditions: parsing ExifTool/ffprobe JSON and Tesseract TSV from hostile media
+  question_id: Q6
+  provenance:
+    kind: inferred
+    question_id: Q6
+- component: provider-adapters
+  dimension: reference-lifecycle
+  status: claimed
+  conditions: derived files live in the job workspace
+  property_id: workspace-confinement-of-derived-files
+  provenance:
+    kind: documented
+    source: README "Design invariants" "Temporary derived artifacts live inside one job workspace"
+- component: provider-adapters
+  dimension: concurrency-reentrancy
+  status: not-applicable
+  conditions: adapters run sequentially
+  provenance: *id001
+- component: provider-adapters
+  dimension: resource-complexity
+  status: claimed
+  conditions: per-call timeouts and 16 MiB output caps; total job time unbounded (D4)
+  property_id: subprocess-time-and-output-bounds
+  provenance:
+    kind: documented
+    source: README "Metadata providers have 30-second timeouts"
+- component: plugin-host
+  dimension: numeric-domain
+  status: claimed
+  conditions: finite coordinates, confidence in [0,1], ordered non-negative times
+  property_id: plugin-response-validation
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "confidence between 0 and 1 when supplied"
+- component: plugin-host
+  dimension: failure-atomicity
+  status: claimed
+  conditions: failed enrichers roll back graph changes; plugin side effects are not rolled back
+  property_id: failed-enrichment-rolls-back
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "failed enrichers roll back graph mutations"
+- component: plugin-host
+  dimension: recursive-cyclic-topology
+  status: not-applicable
+  conditions: the graph is two flat lists; duplicate and dangling IDs are rejected
+  provenance:
+    kind: documented
+    source: ARCHITECTURE "Normalized model"
+- component: plugin-host
+  dimension: callback-execution
+  status: disclaimed
+  conditions: plugins are trusted native processes with no isolation
+  property_id: os-sandbox
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "without filesystem/network isolation or hard CPU/memory quotas"
+- component: plugin-host
+  dimension: serialization-reconstruction
+  status: claimed
+  conditions: response JSON is size-capped, protocol-checked and validated
+  property_id: plugin-response-validation
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Host validation and execution policy"
+- component: plugin-host
+  dimension: reference-lifecycle
+  status: claimed
+  conditions: the workspace lives for the run; plugins may still write elsewhere (D1)
+  property_id: workspace-confinement-of-derived-files
+  provenance:
+    kind: documented
+    source: ARCHITECTURE "Temporary derived artifacts" / README "Design invariants"
+- component: plugin-host
+  dimension: concurrency-reentrancy
+  status: not-applicable
+  conditions: plugins are invoked one at a time
+  provenance: *id001
+- component: plugin-host
+  dimension: resource-complexity
+  status: claimed
+  conditions: 60 s default per invocation, 16 MiB caps; descendants not contained (D3)
+  property_id: subprocess-time-and-output-bounds
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "bound each manifest/request invocation (default 60)"
+- component: pdf-renderer
+  dimension: numeric-domain
+  status: disclaimed
+  conditions: page count and image size follow the input
+  property_id: untrusted-input-resource-bounds
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps" unchecked
+- component: pdf-renderer
+  dimension: failure-atomicity
+  status: claimed
+  conditions: a render failure publishes nothing and exits 6
+  property_id: cli-result-contract
+  provenance:
+    kind: documented
+    source: README "Exit codes" "Rendering failed; nothing was published"
+- component: pdf-renderer
+  dimension: recursive-cyclic-topology
+  status: not-applicable
+  conditions: renders a flat list of pages
+  provenance: *id001
+- component: pdf-renderer
+  dimension: callback-execution
+  status: not-applicable
+  conditions: the built-in renderer runs no collaborators; runtime renderers belong to plugin-host
+  provenance: *id001
+- component: pdf-renderer
+  dimension: serialization-reconstruction
+  status: unresolved
+  conditions: untrusted text is written into PDF strings by printpdf
+  question_id: Q11
+  provenance:
+    kind: inferred
+    question_id: Q11
+- component: pdf-renderer
+  dimension: reference-lifecycle
+  status: claimed
+  conditions: the PDF is staged in the job workspace before publishing
+  property_id: workspace-confinement-of-derived-files
+  provenance:
+    kind: documented
+    source: README "Design invariants" "Temporary derived artifacts live inside one job workspace"
+- component: pdf-renderer
+  dimension: concurrency-reentrancy
+  status: not-applicable
+  conditions: single-threaded render
+  provenance: *id001
+- component: pdf-renderer
+  dimension: resource-complexity
+  status: disclaimed
+  conditions: memory holds the whole PDF, then re-parses it to embed attachments
+  property_id: untrusted-input-resource-bounds
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps" unchecked
+outputs:
+- component: pdf-renderer
+  channel: pdf-visible-pages
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: visible-text-markup-safe
+    statement: text is safe to render as HTML or run in a shell; complex scripts render correctly
+    provenance:
+      kind: documented
+      source: README "Text/transcript units become normal visible text pages"
+  x-provenance:
+    kind: documented
+    source: README "Text/transcript units become normal visible text pages"
+- component: pdf-renderer
+  channel: pdf-invisible-text-layer
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants:
+  - id: hidden-layer-content-only-invariant
+    statement: the hidden layer holds only content annotations, never paths or metadata
+    property_id: hidden-layer-content-only
+    provenance:
+      kind: documented
+      source: README "Search model" "source paths and file metadata are never written into it"
+  downstream_must_not_assume:
+  - id: hidden-layer-pii-free
+    statement: the hidden layer is free of personal data or matches the visible page
+    provenance:
+      kind: documented
+      source: README "Search model" "The hidden layer carries content only"
+  x-provenance:
+    kind: documented
+    source: README "Search model" "The hidden layer carries content only"
+- component: pdf-renderer
+  channel: provenance-page
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: basenames-trustworthy
+    statement: source basenames are unique or trustworthy
+    provenance:
+      kind: documented
+      source: README "Provenance page as the last page"
+  x-provenance:
+    kind: documented
+    source: README "Provenance page as the last page"
+- component: pdf-renderer
+  channel: embedded-manifest-and-chunks
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: manifest-authentic-or-metadata-free
+    statement: the manifest is authentic (D7) or free of metadata (D5)
+    provenance:
+      kind: documented
+      source: README "Embedded manifest and chunks"
+  x-provenance:
+    kind: documented
+    source: README "Embedded manifest and chunks"
+- component: cli-commands
+  channel: sidecar-manifest-and-chunks-files
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: sidecars-always-present
+    statement: sidecar files exist next to every PDF
+    provenance:
+      kind: documented
+      source: README "If embedding fails, the same JSON is written beside the PDF"
+  x-provenance:
+    kind: documented
+    source: README "If embedding fails, the same JSON is written beside the PDF"
+- component: cli-commands
+  channel: json-stdout
+  taint: constrained
+  taint_provenance: *id001
+  invariants:
+  - id: one-json-document
+    statement: --json writes exactly one versioned document, including on failure
+    property_id: cli-result-contract
+    provenance:
+      kind: documented
+      source: README "write exactly one versioned JSON document to stdout"
+  downstream_must_not_assume:
+  - id: json-strings-control-free
+    statement: decoded strings are free of control characters; share hides basenames
+    provenance:
+      kind: documented
+      source: README "contracts live in `schemas/`"
+  x-provenance:
+    kind: documented
+    source: README "contracts live in `schemas/`"
+- component: cli-extract
+  channel: extract-stdout
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: extract-manifest-describes-pdf
+    statement: the manifest describes this PDF's pages; sidecar-origin documents belong to the PDF
+    provenance:
+      kind: documented
+      source: README "adds an `extract.version-mismatch` warning"
+  x-provenance:
+    kind: documented
+    source: README "adds an `extract.version-mismatch` warning"
+- component: cli-commands
+  channel: stderr-human-lines
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: stderr-terminal-safe
+    statement: text is safe for a terminal or path-free under archive
+    provenance:
+      kind: documented
+      source: README "Diagnostics and strict mode"
+  x-provenance:
+    kind: documented
+    source: README "Diagnostics and strict mode"
+- component: cli-commands
+  channel: stderr-ndjson-events
+  taint: constrained
+  taint_provenance: *id001
+  invariants:
+  - id: single-run-finished
+    statement: every run ends with exactly one run.finished event
+    property_id: cli-result-contract
+    provenance:
+      kind: documented
+      source: README "Progress events" "Every run ends with exactly one `run.finished` event"
+  downstream_must_not_assume:
+  - id: events-complete-on-closed-pipe
+    statement: the stream is complete if the reader closes stderr early
+    provenance:
+      kind: documented
+      source: README "Progress events"
+  x-provenance:
+    kind: documented
+    source: README "Progress events"
+- component: cli-commands
+  channel: dump-graph-json
+  taint: same-as-input
+  taint_provenance: *id001
+  invariants: []
+  downstream_must_not_assume:
+  - id: dump-graph-scrubbed
+    statement: the dump is portable or scrubbed
+    provenance:
+      kind: documented
+      source: README "`--dump-graph` is a diagnostic sidecar, not a portable media bundle"
+  x-provenance:
+    kind: documented
+    source: README "`--dump-graph` is a diagnostic sidecar, not a portable media bundle"
+adversaries:
+- name: input-author
+  scope: in
+  capabilities:
+  - supply-input-bytes
+  - choose-file-names
+  - supply-sibling-sidecar-contents
+  excluded_capabilities:
+  - choose-cli-flags-or-env
+  - create-symlinks-in-input-tree
+  - write-plugin-search-path-or-tmpdir
+  - install-plugins-or-providers
+  - modify-files-during-run
+  goals:
+  - overwrite-user-files
+  - leak-local-data
+  - corrupt-output
+  - resource-exhaustion
+  provenance: *id001
+- name: extract-pdf-author
+  scope: in
+  capabilities:
+  - supply-pdf-bytes
+  - place-sidecar-files
+  excluded_capabilities:
+  - choose-cli-flags-or-env
+  goals:
+  - crash
+  - wrong-exit-code
+  - corrupted-output
+  - forged-data-accepted
+  provenance: *id001
+- name: plugin-response-author
+  scope: in
+  capabilities:
+  - write-response-json
+  excluded_capabilities:
+  - act-on-host-outside-response
+  goals:
+  - inject-outside-files
+  - break-graph-identity
+  - spoof-diagnostic-codes
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Host validation and execution policy"
+- name: output-reader
+  scope: in
+  capabilities:
+  - read-shared-outputs
+  excluded_capabilities:
+  - access-host-or-workspace
+  - read-unshared-archive-outputs
+  goals:
+  - learn-local-paths
+  - learn-host-metadata
+  provenance:
+    kind: documented
+    source: README "`share` also strips local paths"
+- name: plugin-code
+  scope: out
+  capabilities:
+  - run-as-user
+  excluded_capabilities: []
+  goals: []
+  provenance:
+    kind: documented
+    source: README "plugins run with your account's permissions"
+- name: local-environment-controller
+  scope: out
+  capabilities:
+  - write-plugin-search-path
+  - set-environment
+  excluded_capabilities: []
+  goals: []
+  provenance:
+    kind: documented
+    source: README "Install only trusted plugins or use `--no-plugins`"
+- name: operator
+  scope: out
+  capabilities:
+  - choose-flags-paths-env
+  excluded_capabilities: []
+  goals: []
+  provenance: *id001
+- name: network-attacker
+  scope: out
+  capabilities: []
+  excluded_capabilities: []
+  goals: []
+  provenance: *id001
+dependency_policy:
+  zero_runtime_dependencies: false
+  provenance:
+    kind: documented
+    source: README "Keep `Cargo.lock` when building from source"
+dependencies:
+- name: image+tiff
+  relied_on_for: decode PNG/JPEG/GIF/WebP/BMP/TIFF without memory unsafety; errors on bad data
+  relied_on_properties:
+  - x-image-decode-memory-safety
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded:
+  - supply-input-bytes
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: printpdf+allsorts+ttf-parser
+  relied_on_for: write valid PDF operators and strings from arbitrary text; subset fonts
+  relied_on_properties:
+  - x-pdf-string-encoding
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded:
+  - supply-input-bytes
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: lopdf
+  relied_on_for: parse arbitrary PDF bytes in extract and embed_files without memory unsafety
+  relied_on_properties:
+  - x-pdf-parse-memory-safety
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded:
+  - supply-pdf-bytes
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: serde_json
+  relied_on_for: parse untrusted JSON with bounded nesting
+  relied_on_properties:
+  - x-json-bounded-nesting
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded:
+  - write-response-json
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: regex
+  relied_on_for: linear-time matching
+  relied_on_properties:
+  - x-linear-time-regex
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded: []
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: walkdir+tempfile+which+infer+sha2+uuid
+  relied_on_for: walking without following links; private temp files; PATH lookup; sniffing; SHA-256; UUIDs
+  relied_on_properties:
+  - x-utility-crate-contracts
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded: []
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: ffmpeg+ffprobe
+  relied_on_for: decode hostile containers and obey argv
+  relied_on_properties:
+  - x-ffmpeg-decode-safety
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded:
+  - supply-input-bytes
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: exiftool
+  relied_on_for: read metadata from hostile files
+  relied_on_properties:
+  - x-exiftool-parse-safety
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded:
+  - supply-input-bytes
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+- name: tesseract+docTR
+  relied_on_for: OCR a workspace PNG; docTR downloads weights on first use
+  relied_on_properties:
+  - x-ocr-safety
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded: []
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance:
+    kind: documented
+    source: README "docTR may download model weights on first use"
+- name: apple-vision
+  relied_on_for: OCR a PNG in process
+  relied_on_properties:
+  - x-vision-ocr-safety
+  caller_obligations_acknowledged: []
+  adversary_capabilities_forwarded: []
+  outputs_consumed: []
+  covered_here: false
+  violation_disposition: 'OUT-OF-MODEL: dependency-contract'
+  provenance: *id001
+build_policy:
+  security_relevant_flags_present: true
+  provenance:
+    kind: documented
+    source: README "Reliability and operation"
+build_flags:
+- name: apple-vision
+  default: on (macOS)
+  security_relevant: false
+  maintainer_stance: supported
+  affects_properties: []
+  provenance:
+    kind: documented
+    source: README "On macOS the `apple-vision` Cargo feature uses native Vision"
+- name: no-default-features
+  default: 'off'
+  security_relevant: false
+  maintainer_stance: supported
+  affects_properties: []
+  provenance:
+    kind: documented
+    source: README "Build" "Linux fully-static" build command
+- name: --no-plugins
+  default: off (plugins enabled)
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: no-plugin-execution-when-disabled
+    effect: preserves
+  provenance:
+    kind: documented
+    source: 'PLUGIN_PROTOCOL "`--no-plugins`: bypass runtime discovery entirely"'
+- name: --plugin-timeout
+  default: '60'
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: subprocess-time-and-output-bounds
+    effect: narrows
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "bound each manifest/request invocation (default 60)"
+- name: --profile
+  default: archive
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: share-profile-path-redaction
+    effect: voids
+  provenance:
+    kind: documented
+    source: README "`--profile archive|share` (default `archive`)"
+- name: --max-image-frames/--max-video-frames
+  default: '0'
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: frame-caps-when-set
+    effect: voids
+  provenance:
+    kind: documented
+    source: README "`--max-image-frames N` caps the count (0 = unlimited)"
+- name: --overwrite
+  default: 'off'
+  security_relevant: true
+  maintainer_stance: supported
+  affects_properties:
+  - property_id: existing-output-not-replaced
+    effect: voids
+  - property_id: inputs-never-overwritten
+    effect: preserves
+  provenance:
+    kind: documented
+    source: README "input files and explicit transcripts are protected even with that flag"
+- name: --include-hidden
+  default: 'off'
+  security_relevant: false
+  maintainer_stance: supported
+  affects_properties: []
+  provenance:
+    kind: documented
+    source: crates/anytopdf-cli/src/cli.rs include_hidden help text
+- name: --no-embedded-subtitles/--ocr off
+  default: 'off'
+  security_relevant: false
+  maintainer_stance: supported
+  affects_properties: []
+  provenance:
+    kind: documented
+    source: README "Reliability and operation"
+- name: --allow-plugin-kind/--deny-plugin-kind
+  default: all kinds
+  security_relevant: false
+  maintainer_stance: supported
+  affects_properties: []
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Capability filters control registration, not executable permissions"
+properties_claimed:
+- id: extract-robust-on-hostile-pdf
+  kind: correctness
+  components:
+  - cli-extract
+  tier: correctness-only
+  conditions: 'any PDF and sibling sidecars: one extract document with exit 0, or exit 3; non-termination on cycles is Q17;
+    size exhaustion is D4'
+  violation_symptoms:
+  - crash
+  - wrong-output
+  provenance: *id001
+- id: no-plugin-execution-when-disabled
+  kind: integrity
+  components:
+  - plugin-host
+  - cli-commands
+  tier: security-critical
+  conditions: --no-plugins is set
+  violation_symptoms:
+  - x-unexpected-code-execution
+  provenance:
+    kind: documented
+    source: 'PLUGIN_PROTOCOL "`--no-plugins`: bypass runtime discovery entirely"'
+- id: inputs-never-overwritten
+  kind: integrity
+  components:
+  - cli-commands
+  tier: security-critical
+  conditions: every file anytopdf writes (PDFs, --output-dir PDFs, --dump-graph, embed-failure sidecar JSON), even with --overwrite;
+    canonical paths; hard links and mid-run changes excluded (Q4)
+  violation_symptoms:
+  - x-input-overwritten
+  provenance:
+    kind: documented
+    source: README "input files and explicit transcripts are protected even with that flag"
+- id: existing-output-not-replaced
+  kind: integrity
+  components:
+  - cli-commands
+  tier: correctness-only
+  conditions: without --overwrite; every write staged beside the destination and renamed
+  violation_symptoms:
+  - wrong-output
+  provenance:
+    kind: documented
+    source: README "An explicit existing `-o` requires `--overwrite`"
+- id: plugin-response-validation
+  kind: integrity
+  components:
+  - plugin-host
+  tier: correctness-only
+  conditions: size, regular file, protocol, identities, visual_path containment after symlink resolution, finite and in-range
+    numbers; rejected enrichment rolled back
+  violation_symptoms:
+  - bad-data-accepted
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "Host validation and execution policy"
+- id: subprocess-time-and-output-bounds
+  kind: resource-bound
+  components:
+  - plugin-host
+  - provider-adapters
+  - input-importers
+  tier: correctness-only
+  conditions: each invocation killed at its timeout; captures and responses capped at 16 MiB; total job time not bounded
+  violation_symptoms:
+  - hang
+  - unbounded-allocation
+  provenance:
+    kind: documented
+    source: README "Captured stdout, stderr and plugin response JSON each have a 16 MiB limit"
+- id: failed-enrichment-rolls-back
+  kind: correctness
+  components:
+  - plugin-host
+  - provider-adapters
+  tier: correctness-only
+  conditions: source, graph and unit enrichers; plugin side effects are not undone
+  violation_symptoms:
+  - wrong-output
+  provenance:
+    kind: documented
+    source: ARCHITECTURE "Source, graph and unit enrichers roll back their in-memory changes on failure"
+- id: share-profile-path-redaction
+  kind: confidentiality
+  components:
+  - cli-commands
+  - pdf-renderer
+  tier: security-critical
+  conditions: --profile share; paths and metadata only, not text content (D6)
+  violation_symptoms:
+  - info-leak
+  provenance:
+    kind: documented
+    source: README "`share` also strips local paths, including from stderr diagnostics, the Summary and `--json` messages"
+- id: hidden-layer-content-only
+  kind: confidentiality
+  components:
+  - pdf-renderer
+  tier: correctness-only
+  conditions: all profiles; the manifest in the same PDF still carries metadata under archive
+  violation_symptoms:
+  - info-leak
+  provenance:
+    kind: documented
+    source: README "Search model" "source paths and file metadata are never written into it"
+- id: extract-schema-check
+  kind: integrity
+  components:
+  - cli-extract
+  tier: correctness-only
+  conditions: schema_version equals the supported version
+  violation_symptoms:
+  - bad-data-accepted
+  provenance:
+    kind: documented
+    source: README "A version-matched manifest or chunks file that does not match its schema exits 3"
+- id: cli-result-contract
+  kind: correctness
+  components:
+  - cli-commands
+  - pdf-renderer
+  tier: correctness-only
+  conditions: exit codes 0-7; one --json document; one run.finished; closed stderr never panics
+  violation_symptoms:
+  - wrong-output
+  - crash
+  provenance:
+    kind: documented
+    source: README "Progress events" "Every run ends with exactly one `run.finished` event"
+- id: transcript-never-ignored
+  kind: correctness
+  components:
+  - provider-adapters
+  tier: correctness-only
+  conditions: every --transcript file is attached or warned about
+  violation_symptoms:
+  - wrong-output
+  provenance:
+    kind: documented
+    source: README "Searchable text and diagnostics" "`--transcript` is never silently ignored"
+- id: frame-caps-when-set
+  kind: resource-bound
+  components:
+  - input-importers
+  tier: correctness-only
+  conditions: --max-image-frames or --max-video-frames above 0
+  violation_symptoms:
+  - unbounded-allocation
+  provenance:
+    kind: documented
+    source: README "`--max-image-frames N` caps the count (0 = unlimited)"
+- id: plugin-warnings-recoded
+  kind: integrity
+  components:
+  - plugin-host
+  tier: correctness-only
+  conditions: all plugin warning strings
+  violation_symptoms:
+  - x-diagnostic-spoof
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "even if it imitates a built-in code"
+- id: reproducible-output
+  kind: correctness
+  components:
+  - pdf-renderer
+  - cli-commands
+  tier: correctness-only
+  conditions: SOURCE_DATE_EPOCH set; same inputs and provider versions
+  violation_symptoms:
+  - wrong-output
+  provenance:
+    kind: documented
+    source: README "Byte-reproducible output with `SOURCE_DATE_EPOCH` and recorded provider versions"
+- id: failed-input-isolation
+  kind: availability
+  components:
+  - input-importers
+  - cli-commands
+  tier: correctness-only
+  conditions: default mode; --fail-fast exits 7, --strict exits 5; panics are Q6
+  violation_symptoms:
+  - wrong-output
+  provenance:
+    kind: documented
+    source: README "Exit codes" "the rest of the batch continues"
+- id: workspace-confinement-of-derived-files
+  kind: correctness
+  components:
+  - input-importers
+  - provider-adapters
+  - plugin-host
+  - pdf-renderer
+  tier: correctness-only
+  conditions: built-in code only; plugins are not confined (D1); no cleanup promise after abnormal exit (D11)
+  violation_symptoms:
+  - wrong-output
+  provenance:
+    kind: documented
+    source: README "Design invariants" "Temporary derived artifacts live inside one job workspace"
+properties_disclaimed:
+- id: sidecar-symlink-following
+  components:
+  - provider-adapters
+  conditions: 'same-stem .srt/.vtt/.txt/.md next to media; is_file() follows symlinks so the target is read and embedded;
+    the operator controls the input layout. Basis: maintainer ruling.'
+  tier: security-critical
+  false_friend: false
+  provenance: *id001
+- id: os-sandbox
+  components:
+  - plugin-host
+  - provider-adapters
+  - input-importers
+  conditions: 'what a plugin or provider process does on the host; not P4 or P5. Basis: stated limit.'
+  tier: security-critical
+  false_friend: true
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "without filesystem/network isolation or hard CPU/memory quotas"
+- id: capability-filter-as-execution-control
+  components:
+  - plugin-host
+  conditions: 'manifest commands of every discovered plugin still run; only --no-plugins stops execution. Basis: stated limit.'
+  tier: security-critical
+  false_friend: true
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "manifest commands still run during discovery"
+- id: descendant-containment
+  components:
+  - plugin-host
+  - provider-adapters
+  conditions: 'only the direct child is killed. Basis: stated limit.'
+  tier: correctness-only
+  false_friend: false
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "independently spawned descendants are not guaranteed to stop"
+- id: untrusted-input-resource-bounds
+  components:
+  - input-importers
+  - provider-adapters
+  - pdf-renderer
+  - cli-commands
+  - cli-extract
+  conditions: 'memory, disk and CPU exhaustion from input size or shape, including PDFs passed to extract (maintainer ruling
+    2026-10); not P5, P12 or crashes (Q6, P17). Basis: stated limit.'
+  tier: security-critical
+  false_friend: false
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps, zip-bomb rejection" unchecked
+- id: archive-profile-privacy
+  components:
+  - cli-commands
+  - pdf-renderer
+  conditions: 'default archive profile keeps metadata (GPS, camera, serials) and absolute paths. Basis: stated limit.'
+  tier: security-critical
+  false_friend: false
+  provenance:
+    kind: documented
+    source: README "`--profile archive|share` (default `archive`) selects metadata detail"
+- id: share-profile-content-redaction
+  components:
+  - cli-commands
+  - pdf-renderer
+  conditions: 'visible text, OCR, captions, transcripts, base names and SHA-256 stay. Basis: absence.'
+  tier: security-critical
+  false_friend: true
+  provenance:
+    kind: documented
+    source: 'README "Reliability and operation" describes `share` only as stripping paths and metadata; basis: absence'
+- id: output-authenticity
+  components:
+  - pdf-renderer
+  - cli-extract
+  - cli-commands
+  conditions: 'no signatures; extract does not bind manifest or sidecars to the PDF. Basis: absence.'
+  tier: security-critical
+  false_friend: true
+  provenance:
+    kind: documented
+    source: 'README "Embedded manifest and chunks" names no signature; basis: absence'
+- id: terminal-safe-diagnostics
+  components:
+  - cli-commands
+  conditions: 'human stderr lines print names and messages raw; JSON output is escaped. Basis: absence.'
+  tier: correctness-only
+  false_friend: false
+  provenance:
+    kind: documented
+    source: 'README "Diagnostics and strict mode" states no escaping; basis: absence'
+- id: complex-script-layout
+  components:
+  - pdf-renderer
+  conditions: 'missing glyphs warn. Basis: stated limit.'
+  tier: correctness-only
+  false_friend: false
+  provenance:
+    kind: documented
+    source: README "Complex text shaping and bidirectional layout are not guaranteed"
+- id: cross-file-atomicity
+  components:
+  - cli-commands
+  conditions: 'each file atomic on its own. Basis: stated limit.'
+  tier: correctness-only
+  false_friend: false
+  provenance:
+    kind: documented
+    source: README "PDF and JSON outputs are separate file transactions"
+- id: abnormal-exit-cleanup
+  components:
+  - cli-commands
+  - plugin-host
+  conditions: 'no signal handlers. Basis: absence.'
+  tier: correctness-only
+  false_friend: false
+  provenance:
+    kind: documented
+    source: 'README "Reliability and operation" promises staging, not cleanup; basis: absence'
+- id: concurrent-run-coordination
+  components:
+  - cli-commands
+  conditions: 'without --overwrite one run fails; with it the last rename wins. Basis: absence.'
+  tier: correctness-only
+  false_friend: false
+  provenance:
+    kind: documented
+    source: 'README "Reliability and operation" has no concurrency statement; basis: absence'
+- id: untrusted-plugin-safety
+  components:
+  - plugin-host
+  conditions: 'installing a plugin grants it the user''s permissions. Basis: stated limit.'
+  tier: security-critical
+  false_friend: true
+  provenance:
+    kind: documented
+    source: README "Install only trusted plugins or use `--no-plugins`"
+downstream_responsibilities:
+- id: R1
+  component: plugin-host
+  statement: install only trusted plugins; keep plugin search directories trusted; use --no-plugins otherwise
+  enforces:
+  - install-trusted-plugins
+  - trusted-plugin-dirs
+  - no-plugins-if-untrusted
+  provenance:
+    kind: documented
+    source: README "Install only trusted plugins or use `--no-plugins`"
+- id: R2
+  component: input-importers
+  statement: convert untrusted media in an OS sandbox with quotas; set non-zero frame caps
+  enforces:
+  - bound-input-resources
+  - set-frame-caps
+  - bound-scan-trees
+  provenance:
+    kind: documented
+    source: README "Security and plugins" "size and page caps" unchecked
+- id: R3
+  component: cli-commands
+  statement: use --profile share before sharing outputs; review content for sensitive data yourself
+  enforces:
+  - use-share-profile
+  - manifest-authentic-or-metadata-free
+  provenance:
+    kind: documented
+    source: README "`share` also strips local paths"
+- id: R4
+  component: cli-extract
+  statement: do not treat manifest SHA-256 values as proof a PDF is unaltered; sign and verify externally
+  enforces:
+  - verify-extract-output
+  provenance:
+    kind: documented
+    source: 'README "Embedded manifest and chunks" names no signature; basis: absence'
+- id: R5
+  component: cli-commands
+  statement: escape text from PDFs, JSON, extract output and stderr before HTML, terminal, shell or database use
+  enforces:
+  - treat-output-untrusted
+  - stderr-terminal-safe
+  provenance: *id001
+- id: R6
+  component: cli-commands
+  statement: put outputs outside the directories you scan
+  enforces:
+  - outputs-outside-inputs
+  provenance:
+    kind: documented
+    source: README "Put outputs outside input directories"
+- id: R7
+  component: provider-adapters
+  statement: keep FFmpeg, ExifTool, Tesseract, Python and docTR from trusted sources
+  enforces:
+  - trust-providers
+  provenance: *id001
+- id: R8
+  component: provider-adapters
+  statement: pre-install docTR weights or use --ocr tesseract/off on offline hosts
+  enforces:
+  - trust-providers
+  provenance:
+    kind: documented
+    source: README "docTR may download model weights on first use"
+- id: R9
+  component: cli-commands
+  statement: do not run two conversions to the same output at once; clean temp dirs after killed runs
+  enforces:
+  - concurrent-run-coordination
+  - abnormal-exit-cleanup
+  provenance:
+    kind: documented
+    source: 'README "Reliability and operation" has no concurrency or cleanup statement; basis: absence'
+- id: R10
+  component: cli-extract
+  statement: treat extract output as unverified for sidecar origin or version-mismatch warnings
+  enforces:
+  - verify-extract-output
+  - extract-manifest-describes-pdf
+  provenance:
+    kind: documented
+    source: README "adds an `extract.version-mismatch` warning"
+- id: R11
+  component: pdf-renderer
+  statement: treat file base names on the provenance page and in the manifest as attacker-chosen text
+  enforces:
+  - basenames-trustworthy
+  provenance: *id001
+- id: R12
+  component: plugin-host
+  statement: plugin authors treat request content as untrusted, write responses atomically and stay in the workspace
+  enforces:
+  - trust-plugin-digests
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "The plugin must write the response atomically"
+known_misuses:
+- id: M1
+  components:
+  - cli-commands
+  - input-importers
+  pattern: scanning an untrusted tree with defaults, then sharing the PDF
+  safer_alternative: --no-plugins, non-zero frame caps, --profile share, inside a sandbox
+  provenance:
+    kind: documented
+    source: README "Reliability and operation" "(default `archive`) selects metadata detail"
+- id: M2
+  components:
+  - plugin-host
+  pattern: using --deny-plugin-kind to block an untrusted plugin
+  safer_alternative: remove the plugin from the search path or use --no-plugins
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "manifest commands still run during discovery"
+- id: M3
+  components:
+  - cli-extract
+  - pdf-renderer
+  pattern: treating the manifest as tamper evidence
+  safer_alternative: sign the PDF and verify the signature
+  provenance:
+    kind: documented
+    source: 'README "Embedded manifest and chunks" names no signature; basis: absence'
+- id: M4
+  components:
+  - cli-commands
+  pattern: writing outputs inside the scanned directory
+  safer_alternative: write outputs to a separate directory
+  provenance:
+    kind: documented
+    source: README "Put outputs outside input directories"
+- id: M5
+  components:
+  - cli-commands
+  - pdf-renderer
+  pattern: treating --profile share as anonymization
+  safer_alternative: redact content before conversion
+  provenance:
+    kind: documented
+    source: README "Reliability and operation" describes `share` only as stripping paths and metadata
+- id: M6
+  components:
+  - input-importers
+  - plugin-host
+  pattern: running untrusted conversions on a shared host with defaults
+  safer_alternative: per-job containers with quotas, plus non-zero frame caps
+  provenance:
+    kind: documented
+    source: README "These limits are safeguards, not an OS sandbox"
+known_non_findings:
+- id: KNF-1
+  components:
+  - plugin-host
+  symptom: x-unsandboxed-host-access
+  tool_pattern: a runtime plugin can read or write any file, open sockets, or use unlimited CPU and memory
+  conditions: actor is an installed anytopdf-plugin-* executable acting through its own process, not its response JSON; no
+    P4 or P5 check bypassed
+  discharged_by:
+  - os-sandbox
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "without filesystem/network isolation or hard CPU/memory quotas"
+- id: KNF-2
+  components:
+  - plugin-host
+  symptom: x-unexpected-code-execution
+  tool_pattern: a plugin whose capability kind is denied still executes
+  conditions: --no-plugins not set; the only execution is the --anytopdf-manifest command during discovery
+  discharged_by:
+  - capability-filter-as-execution-control
+  provenance:
+    kind: documented
+    source: PLUGIN_PROTOCOL "manifest commands still run during discovery"
+dispositions:
+- VALID
+- VALID-HARDENING
+- 'OUT-OF-MODEL: trusted-input'
+- 'OUT-OF-MODEL: adversary-not-in-scope'
+- 'OUT-OF-MODEL: unsupported-component'
+- 'OUT-OF-MODEL: non-default-build'
+- 'OUT-OF-MODEL: dependency-contract'
+- 'BY-DESIGN: property-disclaimed'
+- KNOWN-NON-FINDING
+- MODEL-GAP
+disposition_precedence:
+- KNOWN-NON-FINDING
+- 'OUT-OF-MODEL: unsupported-component'
+- 'OUT-OF-MODEL: non-default-build'
+- 'OUT-OF-MODEL: dependency-contract'
+- 'OUT-OF-MODEL: trusted-input'
+- 'OUT-OF-MODEL: adversary-not-in-scope'
+- 'BY-DESIGN: property-disclaimed'
+- VALID
+- VALID-HARDENING
+- MODEL-GAP
+disposition_statuses:
+- closed
+- provisional
+- escalated

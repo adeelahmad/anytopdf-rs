@@ -3,7 +3,16 @@ use std::{path::PathBuf, process::Command, time::Duration};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub const PROVIDER_NAMES: [&str; 5] = ["ffmpeg", "ffprobe", "exiftool", "tesseract", "python3"];
+pub const PROVIDER_NAMES: [&str; 8] = [
+    "ffmpeg",
+    "ffprobe",
+    "exiftool",
+    "tesseract",
+    "python3",
+    "soffice",
+    "pdftoppm",
+    "pdftotext",
+];
 
 #[derive(Debug, Clone)]
 pub struct ProviderVersion {
@@ -17,7 +26,10 @@ pub fn detect_providers() -> Vec<ProviderVersion> {
     PROVIDER_NAMES
         .iter()
         .map(|&name| {
-            let path = which::which(name).ok();
+            let path = match name {
+                "soffice" => crate::importers::soffice_path(),
+                _ => which::which(name).ok(),
+            };
             let version = path.as_ref().and_then(|p| {
                 let output = Command::new(p)
                     .arg(version_flag(name))
@@ -40,6 +52,7 @@ fn version_flag(name: &str) -> &'static str {
     match name {
         "exiftool" => "-ver",
         "ffmpeg" | "ffprobe" => "-version",
+        "pdftoppm" | "pdftotext" => "-v",
         _ => "--version",
     }
 }
@@ -58,6 +71,15 @@ fn parse_version(name: &str, output: &str) -> Option<String> {
             .filter(|t| *t == "tesseract")
             .and(tokens.next()),
         "python3" => tokens.next().filter(|t| *t == "Python").and(tokens.next()),
+        "soffice" => tokens
+            .next()
+            .filter(|t| t.starts_with("LibreOffice"))
+            .and(tokens.next()),
+        "pdftoppm" | "pdftotext" => {
+            tokens.next().filter(|t| *t == name)?;
+            tokens.next().filter(|t| *t == "version")?;
+            tokens.next()
+        }
         _ => None,
     }?;
     token
@@ -94,6 +116,14 @@ mod tests {
         assert_eq!(
             parse_version("python3", "Python 3.11.9\n").as_deref(),
             Some("3.11.9")
+        );
+        assert_eq!(
+            parse_version("soffice", "LibreOffice 24.2.7.2 420(Build:2)\n").as_deref(),
+            Some("24.2.7.2")
+        );
+        assert_eq!(
+            parse_version("pdftoppm", "pdftoppm version 24.02.0\nCopyright\n").as_deref(),
+            Some("24.02.0")
         );
     }
 

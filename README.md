@@ -83,7 +83,11 @@ Importers:
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
+- HTML pages (readable text, title and image alt text; no network fetches)
+- email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - SRT / VTT captions
+- Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
+  LibreOffice and Poppler
 
 Enrichment:
 - ExifTool metadata
@@ -96,7 +100,8 @@ Enrichment:
 - video timestamps and scene-selection provenance
 
 Rendering:
-- searchable PDF via `printpdf`
+- searchable PDF via `printpdf` (default, `--renderer pdf`)
+- tagged PDF/A-3a with bookmarks via `krilla` (`--renderer pdfa`)
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -118,9 +123,20 @@ image conversion; provider-specific dependencies are listed below.
 ./anytopdf doctor
 ```
 
+Homebrew, Scoop, cargo-binstall, `cargo install` and a container image with
+FFmpeg, ExifTool and Tesseract are described in
+[docs/distribution.md](docs/distribution.md).
+
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
-a supplied transcript or a plugin. PDF/Office/HTML importers are future work.
+a supplied transcript or a plugin. PDF importers are future work.
+
+Office documents (`.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf` and
+their legacy formats) need LibreOffice (`soffice`) and Poppler's `pdftoppm`.
+Each page is rendered as an image; with Poppler's `pdftotext` the document's own
+text is placed invisibly over it and OCR is skipped for those pages. Without
+`pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
+a private LibreOffice profile, so the original file is never opened in place.
 
 ## CLI
 
@@ -134,6 +150,7 @@ anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf mcp
 ```
 
 Video defaults combine interval sampling and FFmpeg scene-change sampling and
@@ -154,6 +171,34 @@ anytopdf convert meeting.mp4 \
 `status` (`ok`, `partial`, `failed`) and `exit_code` match the process exit code;
 a failed run adds an `error` message. A closed stderr pipe never panics.
 
+### PDF/A-3 output
+
+`anytopdf convert --renderer pdfa` writes tagged PDF/A-3a instead of plain PDF.
+Pages, page numbering and the embedded manifest and chunks are the same as with the
+default renderer. On top of that:
+
+- Fonts are always embedded. The first `ANYTOPDF_FONT` entry (or a system font) is the
+  primary font. `ANYTOPDF_FONT` may list more fonts, separated like `PATH`, and they
+  are tried next, followed by common system fonts for Arabic, Hebrew and CJK. A
+  fallback font is embedded only when it supplies characters the earlier fonts lack.
+  Fonts whose licence forbids embedding are skipped. Characters no font covers are
+  left out with a render warning, because PDF/A forbids `.notdef` glyphs.
+- Each line is reordered with the Unicode bidi algorithm and shaped, so Arabic and
+  Hebrew read correctly. Right-to-left lines carry `ActualText` with the logical
+  order for copying and extraction.
+- The structure tree has a section per unit, a figure with alternate text per image or
+  frame, a paragraph per source line, and an H1 heading on the provenance page.
+  Bookmarks point to the first page of each source and to the provenance page. The
+  document language is `und` (undetermined).
+- The document carries XMP metadata and an sRGB output intent. The manifest and
+  chunks are PDF/A-3 associated files (`/AF`, relationship `Data`).
+- The hidden layer is written as text with a fill opacity of 0 rather than text
+  rendering mode 3, because krilla has no mode 3. It is still searchable and
+  extractable.
+
+Output is reproducible under `SOURCE_DATE_EPOCH` on a given host. Fallback fonts come
+from the host, so different hosts can embed different fonts.
+
 ### Embedded manifest and chunks
 
 Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
@@ -173,12 +218,115 @@ does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
+### Job queue and webhooks
+
+`anytopdf queue` runs conversions from a plain queue directory, so it needs no
+database or daemon. Nothing listens on a port; the worker only makes outbound
+requests when `--webhook` is given.
+
+```bash
+anytopdf queue add ~/scans-queue invoice.jpg -- --profile share
+anytopdf queue work ~/scans-queue -- --ocr auto     # options for inbox files
+anytopdf queue work ~/scans-queue --once            # drain, then exit
+anytopdf queue status ~/scans-queue
+```
+
+- Files dropped into `QUEUE/inbox/` are claimed once two scans
+  (`--poll-interval`, default 2 seconds) see the same size and mtime. Dotfiles and
+  `*.part`, `*.tmp`, `*.crdownload`, `*.download` and `*.partial` names are ignored.
+- Job records (`anytopdf.job/1`, `schemas/job.schema.json`) move between
+  `QUEUE/jobs/pending`, `running`, `done` and `failed` by atomic rename, so several
+  workers can share a queue. PDFs land in `QUEUE/outbox/`.
+- Each job runs `anytopdf convert --events --json` as a child process;
+  `QUEUE/work/<id>/events.ndjson` keeps its NDJSON events and `convert.json` its
+  result. Convert options after `--` are checked by the convert parser; `-o`,
+  `--output-dir`, `--events`, `--json` and `--dump-graph` belong to the worker.
+- `--job-timeout` (default 3600 seconds) stops an overrunning conversion. A
+  running job whose worker died is requeued once its lease (timeout plus 60
+  seconds) expires.
+
+`--webhook URL` (repeatable) sends [Standard Webhooks](https://www.standardwebhooks.com)
+`job.received`, `job.completed` and `job.failed` events (`anytopdf.webhook/1`,
+`schemas/webhook.schema.json`). Requests carry `webhook-id`, `webhook-timestamp`
+and a `webhook-signature` HMAC-SHA256 over `id.timestamp.body`, keyed by
+`ANYTOPDF_WEBHOOK_SECRET` (create one with `anytopdf queue secret`). Payloads
+carry file names and queue-relative output paths, never absolute paths or error
+text. Deliveries are stored in `QUEUE/webhooks/pending/` before they are sent and
+are retried after 5 s, 5 min, 30 min, 2 h, 5 h, 10 h and 10 h; a 410 response or
+the last failure moves them to `QUEUE/webhooks/failed/`. Delivery is
+at-least-once, so receivers should deduplicate on `webhook-id`.
+
+### Remote printing
+
+The print helper listens on localhost only. `anytopdf print remote` lets phones and
+laptops on your Tailscale or WireGuard network print to it: it accepts TLS
+connections (`ipps://`), admits only allowlisted peers, asks for a print user's
+password, then passes the job to the helper.
+
+```bash
+tailscale cert printer.tailnet-name.ts.net
+echo 'a long password' | anytopdf print passwd adeel --users ~/.anytopdf/print-users.json
+anytopdf print remote --listen 100.101.102.103:8631 --allow-tailnet \
+  --tls-cert printer.tailnet-name.ts.net.crt --tls-key printer.tailnet-name.ts.net.key \
+  --users ~/.anytopdf/print-users.json
+```
+
+It refuses a non-loopback listener without users and an allowlist, and
+`0.0.0.0`, `::` or a `/0` allowlist without `--allow-public-bind`. The signed-in
+user replaces the IPP `requesting-user-name`, so the helper records who really
+printed; `--receipts receipts.jsonl` also appends one `anytopdf.print-receipt/1`
+line per job with the time, peer address, user and job name. The PDF of a print
+job carries the job id, name, user and format as `print.*` source metadata in the
+manifest and as a receipt on the provenance page (`archive` profile only; `share`
+drops them). `anytopdf doctor` reports the print helper and Tailscale. Discovery:
+`anytopdf print advertise` announces the printer over multicast DNS on the local
+network (IPP Everywhere `_ipps._tcp` with the AirPrint `_universal` subtype);
+multicast does not cross a VPN, so `anytopdf print dns-sd --domain home.example
+--host printer.home.example` prints unicast DNS-SD records to add to your own DNS
+for remote Apple clients, and `anytopdf print url` prints the `ipps://` URL to add
+the printer by hand on Windows and Android. See `docs/design/remote-printing.md`.
+
+### MCP server
+
+`anytopdf mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio (newline-delimited JSON-RPC 2.0) so agents can call anytopdf
+as tools:
+
+| Tool | Runs | Returns |
+| --- | --- | --- |
+| `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
+| `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
+| `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
+| `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
+
+Each call re-runs the same executable, so tools keep the CLI's validation,
+overwrite protection, profiles and exit codes. The JSON document is returned as
+both text and `structuredContent`; a non-zero exit becomes a tool result with
+`isError: true` whose text starts with the exit code and class, followed by
+stderr. Global flags given before `mcp` (`--no-plugins`, `--plugin-timeout`,
+`--allow-plugin-kind`, `--deny-plugin-kind`) apply to every call. Paths are local
+to the server and relative paths resolve against its working directory, so give
+agents absolute paths. The server reads and writes files with your permissions,
+exactly like the CLI.
+
+Register it with an MCP client, for example Claude Code:
+
+```bash
+claude mcp add anytopdf -- anytopdf --no-plugins mcp
+```
+
+or in a client's JSON configuration:
+
+```json
+{"mcpServers": {"anytopdf": {"command": "anytopdf", "args": ["mcp"]}}}
+```
+
 ## Roadmap
 
 anytopdf is meant to produce an evidence file: one PDF that is both the human
 rendition and the machine index (embedded manifest, chunks, provenance and hashes),
-works offline, and is ready for agents to read. `- [x]` is implemented on the sprint 2
-branch and `- [ ]` is planned.
+works offline, and is ready for agents to read. `- [x]` is implemented on `main`
+and `- [ ]` is planned.
 Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Searchable text and diagnostics
@@ -188,6 +336,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Provider version detection
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
+- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
+- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
@@ -210,13 +360,15 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
-- [ ] PDF/A-3, tagged PDF and bookmarks
+- [x] PDF/A-3a output (`--renderer pdfa`)
+- [x] Tagged PDF and bookmarks (`--renderer pdfa`)
 
 ### Rendering
 - [x] Spike: layout and writer options
-- [ ] New renderer (parley layout, krilla writer, Rust 1.92 toolchain bump, invisible text via fill opacity)
+- [x] krilla 0.8 writer behind `--renderer pdfa` (Rust 1.92, invisible text via fill opacity)
+- [ ] `pdfa` as the default renderer
 - [ ] Rendered Markdown
-- [ ] Arabic, Hebrew and CJK shaping
+- [x] Arabic, Hebrew and CJK shaping, bidi and font fallback (`--renderer pdfa`)
 
 ### Input formats
 - [ ] PDF input (keep the text layer, OCR only textless pages)
@@ -236,8 +388,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] OCR-text-aware video frame retention
 
 ### Intake channels
-- [ ] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
-- [ ] Shared job queue with watched folder and HTTP upload inputs
+- [x] Webhooks (Standard Webhooks: job.received, job.completed, job.failed, HMAC signature, retries)
+- [x] Shared job queue with watched folder input
+- [ ] HTTP upload input for the job queue
 - [ ] IMAP watcher (IDLE and polling, Paperless-ngx style rules, OAuth, DKIM/SPF sender allowlist, quarantine)
 - [ ] Email-to-print
 
@@ -257,9 +410,10 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
 - [x] Spike: slim and full build shapes
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
-- [ ] Homebrew, winget, scoop, cargo binstall, `curl | sh`, and npx/uvx wrappers
+- [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
+- [ ] Published Homebrew tap and Scoop bucket, winget, `curl | sh`, and npx/uvx wrappers
 - [ ] Signing and notarization
-- [ ] MCP server mode
+- [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`
 
 ## Dependencies
@@ -267,7 +421,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 Building from source:
 - GNU Make and Bash to start the bootstrap (Git Bash on Windows).
 - Python 3.11+ for build verification and release tooling.
-- Rust 1.88.0 (pinned in `rust-toolchain.toml`); packaged binaries do not require Rust.
+- Rust 1.92.0 (pinned in `rust-toolchain.toml`); packaged binaries do not require Rust.
 - `Cargo.lock` pins dependencies compatible with this toolchain.
 
 Optional runtime providers:
@@ -342,8 +496,11 @@ document to stdout (diagnostics go to stderr); contracts live in `schemas/`.
 `convert --json` always emits one `anytopdf.convert/1` document, including on failure
 (`status` is `ok`, `partial` when inputs were skipped but exit is 0, or `failed`; `exit_code`
 mirrors the process exit code). With `--profile share`, paths in it are base names.
-`capabilities --json` lists exit codes, diagnostic codes, profiles, OCR modes, importers and schema ids
-(`anytopdf.capabilities/1`).
+`capabilities` prints a table of what this binary and environment support: built-in
+importers, enrichers and renderers, OCR providers, external tools and runtime plugins, each
+marked available, partial or missing, followed by how to enable what is missing and how to add a
+plugin (`capabilities --help` explains the legend). `capabilities --json` lists exit codes,
+diagnostic codes, profiles, OCR modes, importers and schema ids (`anytopdf.capabilities/1`).
 
 ```bash
 anytopdf --no-plugins convert notes.txt --ocr off -o notes.pdf
@@ -416,7 +573,8 @@ image. Every frame of a GIF or multi-page TIFF becomes a page carrying a `frame`
 
 Fonts are loaded from the system, subset to the required glyphs, and embedded in the PDF. Set `ANYTOPDF_FONT` to a
 TTF file for a particular script or on minimal Linux installations. Missing glyphs
-produce warnings. Complex text shaping and bidirectional layout are not guaranteed.
+produce warnings. Shaping, bidirectional layout and font fallback apply to `--renderer pdfa`
+only; the default printpdf renderer draws characters one font, left to right.
 Markdown is rendered as plain text. Audio requires sidecar/explicit transcripts or
 a plugin for speech recognition; docTR may download model weights on first use.
 

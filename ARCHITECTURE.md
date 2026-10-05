@@ -66,6 +66,17 @@ An importer emits normalized units. Examples:
 - subtitle -> text/cue units
 - text -> visible text unit
 - future `.igl` -> arbitrary page/image/text units
+- email/archive -> its own units plus the units of each member file
+
+Containers (emails, archives) implement `Importer::import_with_members`. They
+write members into the job workspace under sanitized single-component names and
+hand each path to the pipeline's `MemberImporter`, which probes it against the
+registry like a top-level input. Member units are re-parented onto the container
+source and tagged with `container.member`, so the source list, `--output-dir`
+grouping and manifest still describe the inputs the user named. Members must
+resolve inside the workspace, nesting stops at `MAX_MEMBER_DEPTH`, and a member
+that cannot be imported is an `input.members-not-imported` warning, not a failed
+input. Runtime plugins keep the plain `import` path.
 
 ### Source enrichment
 
@@ -93,6 +104,19 @@ For visual pages:
 3. write OCR with text rendering mode 3;
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
+
+Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
+`provenance.rs`) and therefore produce the same pages and `unit_pages`:
+
+- `pdf` (default): printpdf. The CLI adds the manifest and chunks afterwards with
+  lopdf.
+- `pdfa`: krilla 0.8, tagged PDF/A-3a validated by krilla at write time, with a
+  structure tree, bookmarks, bidi reordering, rustybuzz shaping and per-character
+  font fallback (`pdfa_text.rs`). It builds the
+  manifest and chunks itself from the graph and its own render report and stores them
+  as PDF/A-3 associated files. The CLI detects attachments that already match and
+  does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
+  uses a fill opacity of 0.
 
 ## Extension strategy
 
@@ -183,4 +207,35 @@ command recovers them.
 ## CLI contract
 
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
-`capabilities` command reports available providers.
+`capabilities` command reports which importers, enrichers, renderers, providers and runtime
+plugins this environment supports (`--json` gives the static contract).
+
+## Job queue and webhooks
+
+`anytopdf queue` sits outside the pipeline: it never calls the pipeline in-process.
+Each job runs the same `convert` command as a child process with `--events --json`,
+so exit codes, NDJSON events and schemas are unchanged and a crashing conversion or
+plugin cannot take the worker down. The queue is a directory: job records
+(`anytopdf.job/1`) change state by atomic rename between `jobs/pending`, `running`,
+`done` and `failed`, which lets several workers share it without locks, and a
+running job carries a lease after which another worker requeues it. The watched
+inbox is the only intake channel so far; it holds no network listener.
+
+Webhook messages (`anytopdf.webhook/1`) are written to `webhooks/pending/` before
+they are sent, signed per Standard Webhooks with HMAC-SHA256, and retried with
+backoff, giving at-least-once delivery that survives a worker restart. Payloads use
+file names and queue-relative paths only.
+
+## Remote printing
+
+`anytopdf-print` sits in front of the print helper and never parses document
+data. It terminates TLS (rustls), drops peers outside the CIDR allowlist before
+the handshake, checks HTTP Basic credentials against Argon2id hashes, and
+forwards each HTTP request to the helper on loopback with the IPP
+`requesting-user-name` replaced by the signed-in user; a receipts log records
+the peer address the helper never sees. The helper passes job details to
+`convert` as `ANYTOPDF_PRINT_*` variables, which become `print.*` source
+metadata (manifest and provenance page, dropped by `share`). A guard refuses
+non-loopback listeners without users and an allowlist. The same DNS-SD
+description feeds the unicast zone snippet and the mDNS advertisement. Jobs
+still enter the pipeline through the helper and the normal importers.

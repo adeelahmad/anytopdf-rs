@@ -124,7 +124,15 @@ fn capabilities_lists_profiles_ocr_modes_importers_and_schema_ids() {
         .iter()
         .map(|entry| entry["name"].as_str().expect("importer name").to_string())
         .collect();
-    for name in ["text", "image", "subtitle", "audio", "ffmpeg-video"] {
+    for name in [
+        "text",
+        "html",
+        "email",
+        "image",
+        "subtitle",
+        "audio",
+        "ffmpeg-video",
+    ] {
         assert!(
             importers.contains(name),
             "missing importer {name}: {importers:?}"
@@ -144,7 +152,7 @@ fn capabilities_lists_profiles_ocr_modes_importers_and_schema_ids() {
             schema["$id"].as_str().expect("schema $id").to_string()
         })
         .collect();
-    assert_eq!(on_disk.len(), 9, "9 schema files expected: {on_disk:?}");
+    assert_eq!(on_disk.len(), 11, "11 schema files expected: {on_disk:?}");
     let listed: BTreeSet<String> = document["schemas"]
         .as_array()
         .expect("schemas must be an array")

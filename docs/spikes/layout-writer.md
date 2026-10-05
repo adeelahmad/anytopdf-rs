@@ -72,6 +72,20 @@ krilla itself does no layout: its optional rustybuzz path is basic only, and bid
 - Typst's licence (Apache-2.0 only) and unstable API are the reasons it is the weaker option, not performance.
 - Upstream facts may have changed after 2026-10-04.
 
+## Follow-up (item 5, 2026-10-05)
+
+- krilla 0.5.0 compiles and passes tests on Rust 1.88.0 (0.6.0 does not: it uses
+  `LazyCell::force_mut`, stabilised in 1.89), so the first krilla renderer ships
+  without a toolchain bump, as `--renderer pdfa`.
+- Opacity-0 hidden text was checked: `pdftotext -bbox` finds the OCR, caption and
+  time-range words at the same positions as the printpdf renderer (within 0.01 pt),
+  and veraPDF 1.28.2 reports PDF/A-3b compliance for text, PNG, JPEG, CMYK JPEG and
+  TIFF pages with the manifest and chunks attached.
+- After the Rust 1.92 bump the renderer moved to krilla 0.8.2 and PDF/A-3a (tagged).
+  Parley was not needed: unicode-bidi orders runs, krilla shapes each run with
+  rustybuzz, and fonts fall back per character. veraPDF 1.28.2 reports PDF/A-3a
+  compliance for text, PNG, JPEG, TIFF and mixed Arabic, Hebrew and CJK text.
+
 ## Recommendation
 
 Recommendation: Do not adopt Typst; plan item 5 as parley (layout, bidi, fallback) plus krilla (writer), gated on a deliberate Rust 1.92 toolchain bump and a scratch check of opacity-0 hidden text, behind an owned layout model.

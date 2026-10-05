@@ -1,7 +1,10 @@
 # Roadmap
 
-Checked items describe implemented code, not release certification. See
-`RELEASING.md` for validation evidence and release procedures.
+Checked items describe implemented code on `main`, not release certification. See
+`RELEASING.md` for validation evidence and release procedures, `CHANGELOG.md` for
+per-release behaviour changes, and the README roadmap for the feature-level view.
+
+Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" merged the same day.
 
 ## 0.1 — architecture + searchable media core
 - [x] staged registry
@@ -30,38 +33,64 @@ Checked items describe implemented code, not release certification. See
 - [x] Apple Silicon/Intel macOS and ARM64/x86-64 Linux release execution
 - [x] Windows GNU cross-build and Wine execution smoke test
 - [x] hosted native Windows MSVC release matrix verification
+- [x] hosted CI on Linux, macOS and Windows; five release targets
 
-## 0.2 — runtime plugin host
+## 0.2 — runtime plugin host, evidence file and CLI contract
 - [x] PATH / `ANYTOPDF_PLUGIN_PATH` executable discovery
 - [x] runtime importer adapter
 - [x] runtime source/graph/unit enricher adapters
 - [x] plugin timeouts and bounded captured output/response size
-- [ ] OS sandbox, descendant process containment, and hard CPU/memory/disk quotas
 - [x] capability allow/deny registration policy and discovery opt-out
+- [x] content-only invisible text layer; visible provenance page
+- [x] multi-frame TIFF/GIF import with `--max-image-frames`
+- [x] content-derived source/unit IDs with SHA-256 and size; source anchors and page map
+- [x] embedded versioned manifest and chunks (sidecar fallback) and `anytopdf extract --json`
+- [x] `extract` rejects schema-invalid manifest/chunks with exit 3
+- [x] archive and share privacy profiles
+- [x] reproducible output with `SOURCE_DATE_EPOCH`
+- [x] typed diagnostics, `--strict`, exit codes 0-7, `--fail-fast`, `--output-dir`
+- [x] `--json` output with published schemas, `capabilities`, `doctor`
+- [x] NDJSON `--events` progress stream
+- [x] sprint 4 cleanup: shared test helpers, portable census paths on Windows
 
-## 0.3 — richer media semantics
-- [ ] pluggable Whisper/whisper.cpp transcription
+## After sprint 4 — intake, more inputs and outputs (merged 2026-10-05)
+- [x] HTML importer: readable text, title and alt text, no network fetches
+- [x] email importer (`.eml`, `.mbox`): one text page per message; attachments imported by their own importers, nested at most 4 deep
+- [x] Office importer (Word, Excel, PowerPoint, OpenDocument, RTF) through headless LibreOffice and Poppler
+- [x] `capabilities` table of available, partial and missing capabilities with hints
+- [x] `anytopdf queue`: folder-backed job queue with a watched inbox and signed Standard Webhooks (`job.received`, `job.completed`, `job.failed`) retried from a durable outbox
+- [x] `anytopdf print remote`: TLS print front for Tailscale/WireGuard with user passwords, a peer allowlist and DNS-SD discovery
+- [x] PDF/A-3b renderer through krilla (`--renderer pdfa`), manifest and chunks as associated files
+- [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
+- [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a container image
+- [x] Rust toolchain 1.92.0
+
+## Backlog
+
+Priority order as of sprint 4 sign-off, with status on `main`.
+
+1. Webhooks and a job queue: done; HTTP upload input still open.
+2. IMAP mail watcher: in progress.
+3. PAPPL print server (IPP Everywhere / AirPrint / Mopria helper process): in progress.
+4. Remote printing: done; signed-in user stamps and print receipts in progress.
+5. New renderer and PDF/A-3: PDF/A-3b done; tagged PDF/A-3a, bookmarks and bidi shaping in progress; parley layout and `pdfa` as the default still open.
+6. More inputs: HTML and email done; zip/tar archives in progress; PDF and HEIC still open.
+7. Office documents and Whisper transcription: Office done; Whisper plugin in progress.
+8. Distribution and an MCP server: MCP server and package manifests done; published tap and bucket, winget, `curl | sh`, npx/uvx wrappers, signing and notarization still open.
+
+## Security
+- [x] `SECURITY.md` with private reporting through GitHub, and the threat model in `docs/threat-model/`
+- [ ] OS sandbox and descendant process containment for runtime plugins (in progress), then hard CPU/memory/disk quotas
+- [ ] untrusted-input handling for intake channels (no network, size/page caps, zip-bomb rejection)
+- [ ] threat model revision for the post-sprint-4 surfaces (job queue and webhooks, remote print front, MCP server, new importers)
+- [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
+
+## Later media semantics
 - [ ] neutral face detection: presence/count/bounds
 - [ ] object detection provider (YOLO/DETR plugin)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction
 - [ ] audio chapter / speaker-turn annotations
 - [ ] OCR-text-aware video frame retention
-
-## 0.4 — more "anything"
-- [ ] PDF importer
-- [ ] Office documents
-- [ ] email / mbox / EML
-- [ ] HTML / URL snapshot provider
-- [ ] archives
-- [ ] CAD / image stacks
-- [ ] IGL plugin once the file format/parser is specified
-- [ ] generic command-adapter plugin
-
-## 0.5 — RAG packaging
-- [ ] embed normalized manifest as PDF associated data when renderer supports it
-- [ ] deterministic chunk IDs
-- [ ] source hashes
-- [ ] optional JSONL sidecar
-- [ ] semantic page/chunk headings
-- [ ] provenance graph export
+- [ ] deterministic chunk IDs, semantic page/chunk headings, provenance graph export
+- [ ] CAD / image stacks, IGL plugin once the format is specified, generic command-adapter plugin

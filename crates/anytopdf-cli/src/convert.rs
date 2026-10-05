@@ -12,7 +12,10 @@ use anytopdf_core::{
     PipelineEvent, PipelineObserver, PipelineRun, Profile, Registry, RuntimePluginPolicy, Severity,
     Stage, register_runtime_plugins_with_policy, strip_workspace_paths,
 };
-use anytopdf_pdf::{EmbeddedFile, SearchablePdfRenderer, embed_files};
+use anytopdf_pdf::{
+    CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, PdfARenderer, SearchablePdfRenderer, embed_files,
+    read_embedded_files,
+};
 use regex::Regex;
 use std::{
     io::Stderr,
@@ -27,6 +30,7 @@ pub(crate) fn registry(
     let mut registry = Registry::default();
     register_builtins(&mut registry, opts);
     registry.register_renderer(Arc::new(SearchablePdfRenderer::default()));
+    registry.register_renderer(Arc::new(PdfARenderer::default()));
     let warnings = register_runtime_plugins_with_policy(&mut registry, policy);
     (registry, warnings)
 }
@@ -424,6 +428,10 @@ fn convert_inner(
             metadata.insert(format!("provider.{}.version", p.name), version);
         }
     }
+    let job = crate::print::job_metadata(|key| std::env::var(key).ok());
+    for source in &mut run.graph.sources {
+        source.metadata.extend(job.iter().cloned());
+    }
     let dump = args.dump_graph.as_ref().map(|_| {
         args.profile.filter(
             &strip_workspace_paths(&run.graph, &run.context.workspace),
@@ -619,16 +627,26 @@ fn stage_document(
     let chunks = serde_json::to_vec_pretty(&ChunkSet::build(&run.graph, &report))?;
     let files = [
         EmbeddedFile {
-            name: "anytopdf-manifest.json".into(),
+            name: MANIFEST_FILE.into(),
             mime_type: "application/json".into(),
             bytes: manifest.clone(),
         },
         EmbeddedFile {
-            name: "anytopdf-chunks.json".into(),
+            name: CHUNKS_FILE.into(),
             mime_type: "application/json".into(),
             bytes: chunks.clone(),
         },
     ];
+    // A renderer that wrote these exact attachments itself (pdfa stores them as
+    // PDF/A-3 associated files) must not be rewritten.
+    if already_embedded(&bytes, &files) {
+        return Ok(StagedDocument {
+            bytes,
+            pages: report.pages,
+            sources,
+            sidecars: None,
+        });
+    }
     let (bytes, sidecars) = match embed_files(&bytes, &files) {
         Ok(embedded) => (embedded, None),
         Err(e) => {
@@ -649,6 +667,17 @@ fn stage_document(
         pages: report.pages,
         sources,
         sidecars,
+    })
+}
+
+fn already_embedded(pdf: &[u8], files: &[EmbeddedFile]) -> bool {
+    let Ok(present) = read_embedded_files(pdf) else {
+        return false;
+    };
+    files.iter().all(|want| {
+        present
+            .iter()
+            .any(|have| have.name == want.name && have.bytes == want.bytes)
     })
 }
 

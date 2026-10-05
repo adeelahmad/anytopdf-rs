@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.92.0
         with:
           targets: ${{ matrix.target }}
       - uses: actions/setup-python@v5
@@ -175,6 +175,10 @@ jobs:
           Path('SHA256SUMS').write_text(''.join(checksums), encoding='utf-8')
           print('Verified exact five archives and their checksums')
           PYTHON
+      - name: Render Homebrew formula and Scoop manifest
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/distribution.py --version "$RELEASE_TAG" --checksums dist/SHA256SUMS --output packaging
       - name: Publish archives and checksums
         env:
           GH_TOKEN: ${{ github.token }}
@@ -187,3 +191,69 @@ jobs:
           fi
           gh release create "$RELEASE_TAG" dist/* \
             --verify-tag --title "anytopdf $RELEASE_TAG" --notes-file release-notes.md "${options[@]}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-manifests
+          path: packaging/*
+          if-no-files-found: error
+
+  container:
+    name: Container image
+    needs: [package, publish]
+    if: ${{ !cancelled() && needs.package.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: anytopdf-*-linux-musl
+          merge-multiple: true
+          path: archives
+      - name: Stage the smoke-tested musl binaries
+        run: |
+          for pair in amd64:x86_64-unknown-linux-musl arm64:aarch64-unknown-linux-musl; do
+            arch=${pair%%:*} target=${pair#*:}
+            archive=$(find archives -maxdepth 1 -name "anytopdf-*-$target.tar.gz" -print -quit)
+            test -n "$archive" || { echo "missing $target archive" >&2; exit 1; }
+            (cd archives && sha256sum --check --strict "$(basename "$archive").sha256")
+            mkdir -p "dist/docker/$arch"
+            tar -xzf "$archive" -C "dist/docker/$arch" --strip-components=1 --wildcards '*/anytopdf'
+          done
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Choose image tags
+        id: tags
+        env:
+          PUSH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [[ "$PUSH" == true ]]; then
+            tags="$image:${RELEASE_TAG#v}"
+            if [[ "${RELEASE_TAG%%+*}" != *-* ]]; then
+              tags+=",$image:latest"
+            fi
+          else
+            tags="$image:dev"
+          fi
+          echo "push=$PUSH" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        if: steps.tags.outputs.push == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: BINARY=prebuilt
+          tags: ${{ steps.tags.outputs.tags }}
+          push: ${{ steps.tags.outputs.push == 'true' }}
