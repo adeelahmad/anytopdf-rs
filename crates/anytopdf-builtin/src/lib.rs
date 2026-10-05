@@ -52,6 +52,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_importer(Arc::new(importers::ImageImporter::new(
         opts.max_image_frames,
     )));
+    registry.register_importer(Arc::new(importers::HeifImporter));
     registry.register_importer(Arc::new(importers::TextImporter));
     registry.register_importer(Arc::new(importers::HtmlImporter));
     registry.register_importer(Arc::new(importers::EmailImporter));

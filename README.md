@@ -80,6 +80,7 @@ and register itself as an importer without modifying the core binary.
 
 Importers:
 - raster images
+- HEIC/HEIF/AVIF photos, converted by `sips` (macOS), `heif-convert` (libheif) or ImageMagick
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
@@ -316,9 +317,6 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Provider version detection
 - [x] Every frame of multi-frame TIFF/GIF becomes a page (`--max-image-frames` caps it, warning `input.frames-not-imported` when frames are dropped)
 - [x] Content-sniffed text importer (csv, json, log, code; lossy for non-UTF-8)
-- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
-- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
-- [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] `--transcript` is never silently ignored
 
 ### CLI and automation
@@ -353,10 +351,11 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Input formats
 - [ ] PDF input (keep the text layer, OCR only textless pages)
-- [ ] HTML and URL snapshot
-- [ ] EML and mbox
-- [ ] Archives (zip, tar)
-- [ ] HEIC
+- [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
+- [ ] URL snapshot
+- [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
+- [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
+- [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
 - [ ] Office documents (structure first, LibreOffice when present)
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 

@@ -1,6 +1,7 @@
 mod archive;
 mod audio;
 mod email;
+mod heif;
 mod html;
 mod image_file;
 mod office;
@@ -11,6 +12,7 @@ mod video;
 pub use archive::ArchiveImporter;
 pub use audio::AudioImporter;
 pub use email::EmailImporter;
+pub use heif::HeifImporter;
 pub use html::HtmlImporter;
 pub use image_file::ImageImporter;
 pub use office::{OfficeImporter, TEXT_LAYER_KEY, TEXT_LAYER_NATIVE, soffice_path};
