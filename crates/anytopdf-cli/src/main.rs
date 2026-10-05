@@ -7,6 +7,7 @@ mod environment;
 mod events;
 mod exit;
 mod extract;
+mod mcp;
 mod naming;
 mod publish;
 use anytopdf_core::RuntimePluginPolicy;
@@ -44,6 +45,7 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<(), CliError> {
+    let forwarded = mcp::Forwarded::from_cli(&cli);
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
         timeout: Duration::from_secs(cli.plugin_timeout),
@@ -73,6 +75,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             Ok(())
         }
         Commands::Probe { input, .. } => probe(&input, &policy),
+        Commands::Mcp => Ok(mcp::serve(forwarded)?),
     }
 }
 

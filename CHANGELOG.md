@@ -46,6 +46,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - `--output-dir` selects the batch output directory.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
+- `--renderer pdfa` writes PDF/A-3b through krilla: embedded fonts, XMP metadata, an
+  sRGB output intent, and the manifest and chunks as associated files. The hidden
+  layer uses fill opacity 0 instead of text rendering mode 3. `extract` now reads
+  compressed attachments.
 
 ## 0.1.0
 

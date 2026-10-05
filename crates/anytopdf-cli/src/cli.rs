@@ -67,6 +67,8 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    Mcp,
 }
 
 #[derive(Debug, clap::Args)]
@@ -88,7 +90,7 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) fail_fast: bool,
 
-    /// Renderer plugin that writes the output.
+    /// Renderer plugin that writes the output: `pdf` or `pdfa` (PDF/A-3b).
     #[arg(long, default_value = "pdf")]
     pub(crate) renderer: String,
 

@@ -108,6 +108,17 @@ For visual pages:
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
 
+Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
+`provenance.rs`) and therefore produce the same pages and `unit_pages`:
+
+- `pdf` (default): printpdf. The CLI adds the manifest and chunks afterwards with
+  lopdf.
+- `pdfa`: krilla 0.5, PDF/A-3b validated by krilla at write time. It builds the
+  manifest and chunks itself from the graph and its own render report and stores them
+  as PDF/A-3 associated files. The CLI detects attachments that already match and
+  does not rewrite the file. krilla has no text rendering mode 3, so the hidden layer
+  uses a fill opacity of 0.
+
 ## Extension strategy
 
 ### Built-ins

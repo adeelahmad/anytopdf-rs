@@ -99,7 +99,8 @@ Enrichment:
 - video timestamps and scene-selection provenance
 
 Rendering:
-- searchable PDF via `printpdf`
+- searchable PDF via `printpdf` (default, `--renderer pdf`)
+- PDF/A-3b via `krilla` (`--renderer pdfa`)
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -121,6 +122,10 @@ image conversion; provider-specific dependencies are listed below.
 ./anytopdf doctor
 ```
 
+Homebrew, Scoop, cargo-binstall, `cargo install` and a container image with
+FFmpeg, ExifTool and Tesseract are described in
+[docs/distribution.md](docs/distribution.md).
+
 Keep `Cargo.lock` when building from source. For video, install FFmpeg; for OCR,
 use native Apple Vision on macOS or install Tesseract. Audio transcription requires
 a supplied transcript or a plugin. PDF and Office importers are future work.
@@ -137,6 +142,7 @@ anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf mcp
 ```
 
 Video defaults combine interval sampling and FFmpeg scene-change sampling and
@@ -157,6 +163,19 @@ anytopdf convert meeting.mp4 \
 `status` (`ok`, `partial`, `failed`) and `exit_code` match the process exit code;
 a failed run adds an `error` message. A closed stderr pipe never panics.
 
+### PDF/A-3 output
+
+`anytopdf convert --renderer pdfa` writes PDF/A-3b instead of plain PDF. Pages,
+page numbering and the embedded manifest and chunks are the same as with the
+default renderer. The differences: the font is always embedded (set `ANYTOPDF_FONT`
+when no system font is found; without one the conversion fails), the document
+carries XMP metadata and an sRGB output intent, and the manifest and chunks are
+PDF/A-3 associated files (`/AF`, relationship `Data`). The hidden layer is written
+as text with a fill opacity of 0 rather than text rendering mode 3, because krilla
+has no mode 3; it is still searchable and extractable. Characters the font lacks
+are left out of the PDF with a render warning, since PDF/A forbids `.notdef`
+glyphs. Output is reproducible under `SOURCE_DATE_EPOCH`.
+
 ### Embedded manifest and chunks
 
 Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
@@ -175,6 +194,41 @@ on stderr) but still exits 0. A version-matched manifest or chunks file that
 does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
+
+### MCP server
+
+`anytopdf mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io)
+server over stdio (newline-delimited JSON-RPC 2.0) so agents can call anytopdf
+as tools:
+
+| Tool | Runs | Returns |
+| --- | --- | --- |
+| `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
+| `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
+| `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
+| `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
+
+Each call re-runs the same executable, so tools keep the CLI's validation,
+overwrite protection, profiles and exit codes. The JSON document is returned as
+both text and `structuredContent`; a non-zero exit becomes a tool result with
+`isError: true` whose text starts with the exit code and class, followed by
+stderr. Global flags given before `mcp` (`--no-plugins`, `--plugin-timeout`,
+`--allow-plugin-kind`, `--deny-plugin-kind`) apply to every call. Paths are local
+to the server and relative paths resolve against its working directory, so give
+agents absolute paths. The server reads and writes files with your permissions,
+exactly like the CLI.
+
+Register it with an MCP client, for example Claude Code:
+
+```bash
+claude mcp add anytopdf -- anytopdf --no-plugins mcp
+```
+
+or in a client's JSON configuration:
+
+```json
+{"mcpServers": {"anytopdf": {"command": "anytopdf", "args": ["mcp"]}}}
+```
 
 ## Roadmap
 
@@ -216,11 +270,13 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
-- [ ] PDF/A-3, tagged PDF and bookmarks
+- [x] PDF/A-3b output (`--renderer pdfa`)
+- [ ] Tagged PDF and bookmarks
 
 ### Rendering
 - [x] Spike: layout and writer options
-- [ ] New renderer (parley layout, krilla writer, Rust 1.92 toolchain bump, invisible text via fill opacity)
+- [x] krilla writer behind `--renderer pdfa` (krilla 0.5 on Rust 1.88, invisible text via fill opacity)
+- [ ] parley layout, krilla 0.8 with a Rust 1.92 toolchain bump, and `pdfa` as the default renderer
 - [ ] Rendered Markdown
 - [ ] Arabic, Hebrew and CJK shaping
 
@@ -262,9 +318,10 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Release build with LTO and strip (8.58 MB to 6.25 MB on macOS arm64)
 - [x] Spike: slim and full build shapes
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
-- [ ] Homebrew, winget, scoop, cargo binstall, `curl | sh`, and npx/uvx wrappers
+- [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
+- [ ] Published Homebrew tap and Scoop bucket, winget, `curl | sh`, and npx/uvx wrappers
 - [ ] Signing and notarization
-- [ ] MCP server mode
+- [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`
 
 ## Dependencies

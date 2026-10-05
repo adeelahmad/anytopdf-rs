@@ -1,4 +1,6 @@
-use crate::layout::wrap_text;
+use crate::layout::{
+    TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, text_page_chunks,
+};
 use anytopdf_core::*;
 use printpdf::*;
 use std::collections::BTreeMap;
@@ -76,18 +78,9 @@ pub(crate) fn provenance_pages(
     font: &PdfFontHandle,
     measure: &impl Fn(char) -> f32,
 ) -> Vec<PdfPage> {
-    let page_w = 210.0f32;
-    let page_h = 297.0f32;
-    let margin = 15.0f32;
-    let font_pt = 10.0f32;
-    let rows = (((page_h - margin * 2.0) / 4.5) as usize).max(1);
-    let wrapped = wrap_text(
-        &provenance_lines(graph, unit_pages).join("\n"),
-        (page_w - margin * 2.0) / 25.4 * 72.0 / font_pt,
-        measure,
-    );
-    wrapped
-        .chunks(rows)
+    let (page_w, page_h, margin) = (TEXT_PAGE_W_MM, TEXT_PAGE_H_MM, TEXT_MARGIN_MM);
+    text_page_chunks(&provenance_lines(graph, unit_pages).join("\n"), measure)
+        .into_iter()
         .map(|chunk| {
             let mut ops = vec![
                 Op::StartTextSection,
@@ -96,9 +89,11 @@ pub(crate) fn provenance_pages(
                 },
                 Op::SetFont {
                     font: font.clone(),
-                    size: Pt(font_pt),
+                    size: Pt(TEXT_FONT_PT),
                 },
-                Op::SetLineHeight { lh: Pt(13.0) },
+                Op::SetLineHeight {
+                    lh: Pt(TEXT_LINE_PT),
+                },
                 Op::SetTextCursor {
                     pos: Point::new(Mm(margin), Mm(page_h - margin)),
                 },
