@@ -1,5 +1,8 @@
 mod captions;
+mod containers;
 mod discovery;
+pub mod email;
+mod html;
 mod importers;
 mod metadata;
 mod ocr;
@@ -10,6 +13,7 @@ use anytopdf_core::Registry;
 use std::sync::Arc;
 
 pub use discovery::{DiscoveryOptions, discover_inputs};
+pub use html::{HtmlText, html_to_text};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{ProviderVersion, detect_providers};
 
@@ -52,6 +56,8 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_image_frames,
     )));
     registry.register_importer(Arc::new(importers::TextImporter));
+    registry.register_importer(Arc::new(importers::HtmlImporter));
+    registry.register_importer(Arc::new(importers::EmailImporter));
     registry.register_importer(Arc::new(importers::SubtitleImporter));
     registry.register_importer(Arc::new(importers::VideoImporter::new(
         opts.video_interval,

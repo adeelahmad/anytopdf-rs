@@ -4,10 +4,27 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Convert media and documents into searchable, RAG-friendly PDFs"
+readme = "../../README.md"
+keywords = ["pdf", "ocr", "searchable-pdf", "mcp", "rag"]
+categories = ["command-line-utilities", "multimedia"]
 
 [[bin]]
 name = "anytopdf"
 path = "src/main.rs"
+
+# cargo-binstall downloads the GitHub release archive built by release.yml.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.tar.gz"
+bin-dir = "{ name }-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.zip"
+pkg-fmt = "zip"
 
 [features]
 default = ["apple-vision"]
@@ -25,3 +42,6 @@ which.workspace = true
 infer.workspace = true
 tempfile.workspace = true
 
+
+[dev-dependencies]
+printpdf.workspace = true

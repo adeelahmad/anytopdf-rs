@@ -1,4 +1,6 @@
 mod audio;
+mod email;
+mod html;
 mod image_file;
 mod raster;
 mod subtitle;
@@ -6,6 +8,8 @@ mod text;
 mod video;
 
 pub use audio::AudioImporter;
+pub use email::EmailImporter;
+pub use html::HtmlImporter;
 pub use image_file::ImageImporter;
 pub use raster::RasterImporter;
 pub use subtitle::SubtitleImporter;

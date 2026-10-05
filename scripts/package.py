@@ -31,7 +31,7 @@ def main():
         folder = Path(temporary) / name
         folder.mkdir()
         shutil.copy2(args.binary, folder / ("anytopdf.exe" if windows else "anytopdf"))
-        for filename in ["README.md", "ARCHITECTURE.md", "PLUGIN_PROTOCOL.md", "RELEASING.md", "ROADMAP.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE"]:
+        for filename in ["README.md", "ARCHITECTURE.md", "PLUGIN_PROTOCOL.md", "RELEASING.md", "ROADMAP.md", "SECURITY.md", "CHANGELOG.md", "LICENSE-MIT", "LICENSE-APACHE"]:
             shutil.copy2(ROOT / filename, folder / filename)
         if windows:
             with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:

@@ -17,6 +17,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - `--profile archive` and `--profile share` select output profiles.
 - Sources carry content-derived IDs, SHA-256 and size.
 - Multi-frame TIFF and GIF inputs import every frame as a page with a `frame` region anchor; `--max-image-frames N` caps the count (0 = unlimited) and warns `input.frames-not-imported`.
+- HTML files (`.html`, `.htm`, `.xhtml`, or any file opening with an HTML doctype) import
+  as one text page; scripts, styles and markup are dropped and the title is kept.
+- Email files (`.eml`, `.mbox`, or header-sniffed) import as one text page per message
+  (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
+  written into the job workspace under sanitized names and imported by whichever importer
+  matches; ones that cannot be imported warn `input.members-not-imported`.
+- Importers can expand containers through `Importer::import_with_members`; nesting stops
+  at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
 - PWG Raster and Apple Raster (URF) print jobs import one page per unit and keep their
   paper size through the `visual.dpi` unit value; the optional `anytopdf-printer` PAPPL
@@ -28,12 +36,18 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Exit codes 0-7 classify failures; batch conversion tolerates failures unless `--fail-fast`.
 - `convert` is implicit, `-o` may appear anywhere, and default output naming is derived from the input.
 - `--json` output with published schemas, and a `capabilities` command.
+- `capabilities` without `--json` prints a table of available, partial and missing
+  capabilities in this environment with hints to enable them; use `--json` for the JSON document.
 - The PDF embeds a manifest and chunks; `extract` recovers attachments.
 - Input fidelity: video frames are validated, file types are sniffed, lossy decoding is
   reported, and `--transcript` supplies audio transcripts.
 - `--output-dir` selects the batch output directory.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
+- `--renderer pdfa` writes PDF/A-3b through krilla: embedded fonts, XMP metadata, an
+  sRGB output intent, and the manifest and chunks as associated files. The hidden
+  layer uses fill opacity 0 instead of text rendering mode 3. `extract` now reads
+  compressed attachments.
 
 ## 0.1.0
 

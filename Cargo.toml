@@ -13,6 +13,8 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 authors = ["anytopdf contributors"]
+repository = "https://github.com/adeelahmad/anytopdf-rs"
+homepage = "https://github.com/adeelahmad/anytopdf-rs"
 
 [workspace.dependencies]
 anyhow = "1.0"
@@ -21,6 +23,7 @@ image = { version = "0.25", default-features = false, features = [
   "png", "jpeg", "gif", "webp", "bmp", "tiff"
 ] }
 infer = "0.22"
+mail-parser = { version = "0.11", default-features = false }
 tiff = { version = "0.11", default-features = false, features = ["deflate", "fax", "jpeg", "lzw"] }
 printpdf = { version = "0.12.8", default-features = false, features = [
   "png", "jpeg", "gif", "bmp", "tiff", "webp"
@@ -35,6 +38,8 @@ uuid = { version = "1.18", features = ["v4", "v8", "serde"] }
 walkdir = "2.5"
 which = "8.0"
 ttf-parser = "0.25"
+# krilla 0.6+ needs Rust 1.89; stay on 0.5 while the toolchain is pinned to 1.88.
+krilla = { version = "=0.5.0", default-features = false, features = ["raster-images", "simple-text"] }
 allsorts = { package = "allsorts-azul", version = "0.17.2", default-features = false, features = ["flate2_rust"] }
 
 [profile.release]
