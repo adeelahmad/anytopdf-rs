@@ -1,41 +1,21 @@
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, process::Command};
 
-use anytopdf_core::schema;
 use serde_json::{Value, json};
+
+#[path = "common/schema_assert.rs"]
+mod schema_assert;
+#[path = "common/schema.rs"]
+mod schema_files;
+#[path = "common/stdout_json.rs"]
+mod stdout_json;
+use schema_assert::assert_valid;
+use schema_files::validation_errors;
+use stdout_json::single_document;
 
 fn command() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
     command.arg("--no-plugins").env("PATH", "");
     command
-}
-
-fn load_schema(name: &str) -> Value {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root
-        .ancestors()
-        .map(|dir| dir.join("schemas").join(format!("{name}.schema.json")))
-        .find(|candidate| candidate.is_file());
-    match path {
-        Some(path) => serde_json::from_slice(&fs::read(path).unwrap()).unwrap(),
-        None => Value::Null,
-    }
-}
-
-fn validation_errors(name: &str, instance: &Value) -> Vec<String> {
-    let schema = load_schema(name);
-    assert!(
-        schema.is_object(),
-        "schemas/{name}.schema.json must exist and be a JSON object"
-    );
-    schema::validate(&schema, instance)
-        .into_iter()
-        .map(|error| format!("{}: {}", error.path, error.message))
-        .collect()
-}
-
-fn assert_valid(name: &str, instance: &Value) {
-    let errors = validation_errors(name, instance);
-    assert!(errors.is_empty(), "{name} schema errors: {errors:?}");
 }
 
 fn assert_invalid(name: &str, label: &str, instance: &Value) {
@@ -51,15 +31,6 @@ fn run_ok(args: &[&str]) -> Vec<u8> {
         String::from_utf8_lossy(&result.stderr)
     );
     result.stdout
-}
-
-fn single_document(stdout: &[u8]) -> Value {
-    let documents: Vec<Value> = serde_json::Deserializer::from_slice(stdout)
-        .into_iter::<Value>()
-        .map(|item| item.expect("stdout must be JSON only"))
-        .collect();
-    assert_eq!(documents.len(), 1, "stdout must hold exactly one document");
-    documents.into_iter().next().unwrap()
 }
 
 fn movie() -> (tempfile::TempDir, String) {

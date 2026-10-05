@@ -1,11 +1,15 @@
 use anytopdf_core::{DocumentGraph, JobContext, Renderer, SourceRecord, Unit, schema};
 use anytopdf_pdf::{SearchablePdfRenderer, read_embedded_files};
 use serde_json::Value;
+
+#[path = "common/stdout_json.rs"]
+mod stdout_json;
 use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
+use stdout_json::single_document;
 
 fn anytopdf() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
@@ -68,15 +72,6 @@ fn run_extract(pdf: &Path, json: bool) -> Output {
         cmd.arg("--json");
     }
     cmd.output().unwrap()
-}
-
-fn single_document(stdout: &[u8]) -> Value {
-    let docs: Vec<Value> = serde_json::Deserializer::from_slice(stdout)
-        .into_iter::<Value>()
-        .map(|item| item.expect("stdout must be JSON only"))
-        .collect();
-    assert_eq!(docs.len(), 1, "stdout must hold exactly one JSON value");
-    docs.into_iter().next().unwrap()
 }
 
 fn extract_ok(pdf: &Path) -> Value {

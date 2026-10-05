@@ -1,4 +1,4 @@
-use anytopdf_core::{schema, sha256_hex};
+use anytopdf_core::sha256_hex;
 use anytopdf_pdf::{EmbeddedFile, read_embedded_files};
 use serde_json::Value;
 use std::{
@@ -11,7 +11,12 @@ use std::{
 mod png;
 #[path = "common/png_gray.rs"]
 mod png_gray;
+#[path = "common/schema_assert.rs"]
+mod schema_assert;
+#[path = "common/schema.rs"]
+mod schema_files;
 use png_gray::write_png;
+use schema_assert::assert_valid;
 
 fn page_count(pdf: &[u8]) -> u64 {
     let text = String::from_utf8_lossy(pdf);
@@ -40,21 +45,6 @@ fn convert(inputs: &[&Path], pdf: &Path, extra: &[&str], dump: Option<&Path>) ->
         String::from_utf8_lossy(&out.stderr)
     );
     out
-}
-
-fn load_schema(name: &str) -> Value {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let path = root
-        .ancestors()
-        .map(|dir| dir.join("schemas").join(format!("{name}.schema.json")))
-        .find(|candidate| candidate.is_file())
-        .expect("schema file exists");
-    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
-}
-
-fn assert_valid(name: &str, instance: &Value) {
-    let errors = schema::validate(&load_schema(name), instance);
-    assert!(errors.is_empty(), "{name} schema errors: {errors:?}");
 }
 
 fn attachments(pdf: &Path) -> Vec<EmbeddedFile> {

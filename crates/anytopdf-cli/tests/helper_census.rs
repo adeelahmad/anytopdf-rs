@@ -99,3 +99,25 @@ fn png_fixture_helpers_are_defined_once_in_common() {
         offending.join("\n")
     );
 }
+
+#[test]
+fn schema_json_and_repo_helpers_are_defined_once_in_common() {
+    let mut offending = Vec::new();
+    for name in [
+        "load_schema(",
+        "validation_errors(",
+        "assert_valid(",
+        "single_document(",
+        "repo_file(",
+    ] {
+        let defined = definitions(name);
+        if defined.len() != 1 || !defined[0].starts_with("common/") {
+            offending.push(format!("{name} -> [{}]", defined.join(", ")));
+        }
+    }
+    assert!(
+        offending.is_empty(),
+        "schema, JSON and repo-file helpers must be defined once under common/:\n{}",
+        offending.join("\n")
+    );
+}

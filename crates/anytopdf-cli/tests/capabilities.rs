@@ -5,8 +5,12 @@ use std::{
     process::{Command, Output},
 };
 
-use anytopdf_core::{DiagnosticCode, schema};
+use anytopdf_core::DiagnosticCode;
 use serde_json::{Value, json};
+
+#[path = "common/schema.rs"]
+mod schema_files;
+use schema_files::validation_errors;
 
 fn schemas_dir() -> PathBuf {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -14,22 +18,6 @@ fn schemas_dir() -> PathBuf {
         .map(|dir| dir.join("schemas"))
         .find(|candidate| candidate.is_dir())
         .expect("schemas/ directory must exist")
-}
-
-fn load_schema() -> Value {
-    let path = schemas_dir().join("capabilities.schema.json");
-    assert!(
-        path.is_file(),
-        "schemas/capabilities.schema.json must exist"
-    );
-    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
-}
-
-fn validation_errors(instance: &Value) -> Vec<String> {
-    schema::validate(&load_schema(), instance)
-        .into_iter()
-        .map(|error| format!("{}: {}", error.path, error.message))
-        .collect()
 }
 
 fn run_capabilities() -> Output {
@@ -68,7 +56,7 @@ fn strings(value: &Value) -> Vec<String> {
 fn capabilities_json_validates_against_schema() {
     let document = payload();
     assert_eq!(document["schema_version"], "anytopdf.capabilities/1");
-    let errors = validation_errors(&document);
+    let errors = validation_errors("capabilities", &document);
     assert!(errors.is_empty(), "capabilities schema errors: {errors:?}");
 }
 
@@ -169,14 +157,20 @@ fn capabilities_lists_profiles_ocr_modes_importers_and_schema_ids() {
 #[test]
 fn mutated_capabilities_payload_is_rejected() {
     let valid = payload();
-    let errors = validation_errors(&valid);
+    let errors = validation_errors("capabilities", &valid);
     assert!(errors.is_empty(), "live payload must validate: {errors:?}");
 
     let mut missing = valid.clone();
     missing.as_object_mut().unwrap().remove("exit_codes");
-    assert!(!validation_errors(&missing).is_empty(), "no exit_codes");
+    assert!(
+        !validation_errors("capabilities", &missing).is_empty(),
+        "no exit_codes"
+    );
 
     let mut zero = valid.clone();
     zero["exit_codes"][0]["code"] = json!("zero");
-    assert!(!validation_errors(&zero).is_empty(), "code zero");
+    assert!(
+        !validation_errors("capabilities", &zero).is_empty(),
+        "code zero"
+    );
 }

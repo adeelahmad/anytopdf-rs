@@ -1,13 +1,18 @@
 use std::{fs, path::Path, process::Command};
 
-use anytopdf_core::{Uuid, content_unit_id, schema};
+use anytopdf_core::{Uuid, content_unit_id};
 use serde_json::Value;
 
 #[path = "common/png.rs"]
 mod png;
 #[path = "common/png_rgb.rs"]
 mod png_rgb;
+#[path = "common/schema_assert.rs"]
+mod schema_assert;
+#[path = "common/schema.rs"]
+mod schema_files;
 use png_rgb::write_rgb_png;
+use schema_assert::assert_valid;
 
 fn anytopdf() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf"));
@@ -147,21 +152,6 @@ fn extract(pdf: &Path) -> Value {
         .unwrap();
     assert_eq!(out.status.code(), Some(0));
     serde_json::from_slice(&out.stdout).unwrap()
-}
-
-fn load_schema(name: &str) -> Value {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let path = root
-        .ancestors()
-        .map(|dir| dir.join("schemas").join(format!("{name}.schema.json")))
-        .find(|candidate| candidate.is_file())
-        .expect("schema file exists");
-    serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
-}
-
-fn assert_valid(name: &str, instance: &Value) {
-    let errors = schema::validate(&load_schema(name), instance);
-    assert!(errors.is_empty(), "{name} schema errors: {errors:?}");
 }
 
 fn json_stdout(out: &std::process::Output) -> Value {
