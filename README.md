@@ -59,8 +59,8 @@ unless you turn on an intake channel (queue server, webhooks, IMAP or the printe
 | Platform | Command |
 | --- | --- |
 | macOS, Linux | `curl -fsSL https://raw.githubusercontent.com/adeelahmad/anytopdf-rs/main/install.sh \| sh` |
-| Homebrew | `brew tap adeelahmad/anytopdf https://github.com/adeelahmad/anytopdf-rs && brew install anytopdf` |
-| Windows (Scoop) | `scoop bucket add anytopdf https://github.com/adeelahmad/anytopdf-rs; scoop install anytopdf` |
+| Homebrew | `brew tap adeelahmad/anytopdf https://github.com/adeelahmad/anytopdf-rs && brew install adeelahmad/anytopdf/anytopdf` |
+| Windows (Scoop) | `scoop bucket add anytopdf https://github.com/adeelahmad/anytopdf-rs; scoop install anytopdf/anytopdf` |
 | cargo-binstall | `cargo binstall --git https://github.com/adeelahmad/anytopdf-rs anytopdf` |
 | Docker | `docker run --rm -v "$PWD:/work" ghcr.io/adeelahmad/anytopdf-rs photo.jpg -o photo.pdf` |
 | From source | `cargo install --locked --git https://github.com/adeelahmad/anytopdf-rs anytopdf` |
@@ -621,7 +621,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Spike: slim and full build shapes
 - [ ] Slim and full builds (full bundles LGPL decode-only ffmpeg, OCR models, Whisper base, Noto fonts)
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a GHCR container image built from the release archives
-- [ ] Published Homebrew tap and Scoop bucket, winget, `curl | sh`, and npx/uvx wrappers
+- [x] Published Homebrew tap and Scoop bucket (`Formula/` and `bucket/` in this repository)
+- [x] `curl | sh` installer (`install.sh`, checksum-verified)
+- [ ] winget and npx/uvx wrappers
 - [ ] Signing and notarization
 - [x] MCP server mode (`anytopdf mcp`)
 - [ ] Agent skill and `llms.txt`
