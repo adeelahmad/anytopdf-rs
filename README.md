@@ -103,6 +103,10 @@ Rendering:
 - searchable PDF via `printpdf` (default, `--renderer pdf`)
 - PDF/A-3b via `krilla` (`--renderer pdfa`)
 
+Bundled runtime plugins (separate executables in this workspace):
+- `anytopdf-plugin-whisper`: speech-to-text for audio and video through
+  whisper.cpp or an OpenAI-compatible Whisper CLI
+
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
 - scene classification
@@ -137,6 +141,33 @@ Each page is rendered as an image; with Poppler's `pdftotext` the document's own
 text is placed invisibly over it and OCR is skipped for those pages. Without
 `pdftotext`, pages fall back to OCR. The conversion runs in the job workspace with
 a private LibreOffice profile, so the original file is never opened in place.
+
+### Whisper transcription
+
+`anytopdf-plugin-whisper` transcribes audio and video sources that have no
+sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
+one of these engines, adding a visible, timed transcript page whose segments are
+searchable `transcript` annotations:
+
+- whisper.cpp (`whisper-cli`) with `ANYTOPDF_WHISPER_MODEL` set to a ggml model
+  file, for example `ggml-base.en.bin`;
+- `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
+  `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
+
+```bash
+cargo build --release -p anytopdf-plugin-whisper
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
+anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
+```
+
+`ANYTOPDF_WHISPER_ENGINE` (`auto`, `whisper.cpp`, `openai-whisper`),
+`ANYTOPDF_WHISPER_BIN` (an engine executable not on `PATH`) and
+`ANYTOPDF_WHISPER_LANGUAGE` (default: detect) override the defaults. One plugin
+invocation transcribes every media source in the job, so raise
+`--plugin-timeout` (default 60 seconds) for long recordings. A missing engine,
+missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
+the PDF is still written.
 
 ## CLI
 

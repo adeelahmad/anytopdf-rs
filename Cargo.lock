@@ -198,6 +198,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "anytopdf-plugin-whisper"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-core",
+ "serde_json",
+ "tempfile",
+ "uuid",
+ "which",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

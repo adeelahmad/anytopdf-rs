@@ -43,6 +43,8 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   headless LibreOffice and Poppler: one page image per page, with the document's
   positioned text from `pdftotext` and no OCR on those pages. `doctor` reports
   `soffice`, `pdftoppm` and `pdftotext`.
+- The `anytopdf-plugin-whisper` runtime plugin transcribes audio and video with
+  whisper.cpp or an OpenAI-compatible Whisper CLI into timed transcript pages.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
 - `--renderer pdfa` writes PDF/A-3b through krilla: embedded fonts, XMP metadata, an
