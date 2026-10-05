@@ -4,22 +4,53 @@ use serde_json::{Value, json};
 
 use crate::exit::ExitClass;
 
-const SCHEMAS: [&str; 9] = [
-    include_str!("../../../schemas/convert.schema.json"),
-    include_str!("../../../schemas/probe.schema.json"),
-    include_str!("../../../schemas/doctor.schema.json"),
-    include_str!("../../../schemas/plugins.schema.json"),
-    include_str!("../../../schemas/capabilities.schema.json"),
-    include_str!("../../../schemas/extract.schema.json"),
-    include_str!("../../../schemas/manifest.schema.json"),
-    include_str!("../../../schemas/chunks.schema.json"),
-    include_str!("../../../schemas/events.schema.json"),
+const SCHEMAS: [(&str, &str); 9] = [
+    (
+        "convert",
+        include_str!("../../../schemas/convert.schema.json"),
+    ),
+    ("probe", include_str!("../../../schemas/probe.schema.json")),
+    (
+        "doctor",
+        include_str!("../../../schemas/doctor.schema.json"),
+    ),
+    (
+        "plugins",
+        include_str!("../../../schemas/plugins.schema.json"),
+    ),
+    (
+        "capabilities",
+        include_str!("../../../schemas/capabilities.schema.json"),
+    ),
+    (
+        "extract",
+        include_str!("../../../schemas/extract.schema.json"),
+    ),
+    (
+        "manifest",
+        include_str!("../../../schemas/manifest.schema.json"),
+    ),
+    (
+        "chunks",
+        include_str!("../../../schemas/chunks.schema.json"),
+    ),
+    (
+        "events",
+        include_str!("../../../schemas/events.schema.json"),
+    ),
 ];
+
+pub(crate) fn schema_text(name: &str) -> Option<&'static str> {
+    SCHEMAS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, text)| *text)
+}
 
 pub fn capabilities() -> Result<Value> {
     let schemas = SCHEMAS
         .iter()
-        .map(|text| {
+        .map(|(_, text)| {
             let schema: Value = serde_json::from_str(text)?;
             Ok(json!({"id": schema["$id"]}))
         })
