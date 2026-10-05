@@ -34,12 +34,12 @@ pub(crate) fn time_line(t: TimeRange) -> String {
 // Wrap first, then space every row strictly downward inside the page so rows
 // never overlap, wrap around, or get truncated. Spacing and font shrink when crowded.
 // Rows are confined below y = height_mm points (the unit the layout is tested in).
-pub(crate) fn search_layer(
+// Each row is (baseline in mm from the page bottom, font size in points, text).
+pub(crate) fn search_rows(
     lines: &[String],
     width_mm: f32,
     height_mm: f32,
-    font: &PdfFontHandle,
-) -> Vec<Op> {
+) -> Vec<(f32, f32, String)> {
     const MIN_ROW_COLUMNS: f32 = 64.0;
     const MAX_STEP_PT: f32 = 1.13;
     let row_width = ((width_mm - 3.0).max(0.5) / 25.4 * 72.0).max(MIN_ROW_COLUMNS);
@@ -55,18 +55,55 @@ pub(crate) fn search_layer(
         .max(1.0);
     let step = (top * 0.9 / rows.len() as f32).min(MAX_STEP_PT);
     let font_size = step.min(1.0);
-    let mut ops = Vec::new();
-    for (i, row) in rows.into_iter().enumerate() {
-        let y_pt = top - step * i as f32;
-        ops.extend(hidden_text_ops(
-            Point::new(Mm(1.0), Mm(y_pt * 25.4 / 72.0)),
-            font.clone(),
-            Pt(font_size),
-            row,
-        ));
-    }
-    ops
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, row)| ((top - step * i as f32) * 25.4 / 72.0, font_size, row))
+        .collect()
 }
+
+pub(crate) fn search_layer(
+    lines: &[String],
+    width_mm: f32,
+    height_mm: f32,
+    font: &PdfFontHandle,
+) -> Vec<Op> {
+    search_rows(lines, width_mm, height_mm)
+        .into_iter()
+        .flat_map(|(y_mm, size, row)| {
+            hidden_text_ops(
+                Point::new(Mm(SEARCH_X_MM), Mm(y_mm)),
+                font.clone(),
+                Pt(size),
+                row,
+            )
+        })
+        .collect()
+}
+
+/// Left edge of the non-positional search layer.
+pub(crate) const SEARCH_X_MM: f32 = 1.0;
+
+/// Geometry shared by visible text and provenance pages (A4 portrait).
+pub(crate) const TEXT_PAGE_W_MM: f32 = 210.0;
+pub(crate) const TEXT_PAGE_H_MM: f32 = 297.0;
+pub(crate) const TEXT_MARGIN_MM: f32 = 15.0;
+pub(crate) const TEXT_FONT_PT: f32 = 10.0;
+pub(crate) const TEXT_LINE_PT: f32 = 13.0;
+
+/// Wrap `text` for a visible text page and split it into page-sized chunks.
+pub(crate) fn text_page_chunks(text: &str, measure: &impl Fn(char) -> f32) -> Vec<Vec<String>> {
+    wrap_text(text, TEXT_WRAP_EMS, measure)
+        .chunks(TEXT_ROWS_PER_PAGE)
+        .map(<[String]>::to_vec)
+        .collect()
+}
+
+/// Line width of a visible text page, in ems of the body font.
+pub(crate) const TEXT_WRAP_EMS: f32 =
+    (TEXT_PAGE_W_MM - TEXT_MARGIN_MM * 2.0) / 25.4 * 72.0 / TEXT_FONT_PT;
+/// Rows that fit on one visible text page.
+pub(crate) const TEXT_ROWS_PER_PAGE: usize =
+    ((TEXT_PAGE_H_MM - TEXT_MARGIN_MM * 2.0) / 4.5) as usize;
 
 pub(crate) fn wrap_text(text: &str, width: f32, measure: &impl Fn(char) -> f32) -> Vec<String> {
     let mut lines = Vec::new();

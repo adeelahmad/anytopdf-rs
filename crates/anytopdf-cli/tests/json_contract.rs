@@ -61,7 +61,16 @@ fn doctor_json_reports_providers_and_validates() {
         .collect();
     assert_eq!(
         names,
-        ["ffmpeg", "ffprobe", "exiftool", "tesseract", "python3"]
+        [
+            "ffmpeg",
+            "ffprobe",
+            "exiftool",
+            "tesseract",
+            "python3",
+            "soffice",
+            "pdftoppm",
+            "pdftotext"
+        ]
     );
     assert!(providers.iter().all(|p| p["available"] == false));
     let ocr: Vec<&str> = doctor["ocr"]

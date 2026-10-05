@@ -8,12 +8,16 @@ mod fonts;
 #[cfg(test)]
 mod injection_tests;
 mod layout;
+mod pdfa;
+mod pdfa_text;
 mod provenance;
-pub use attachments::{EmbeddedFile, embed_files, read_embedded_files};
+pub use attachments::{CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, embed_files, read_embedded_files};
 use fonts::{find_system_font, subset_document_font};
 use layout::{
-    annotation_line, hidden_text_ops, is_searchable_content, search_layer, time_line, wrap_text,
+    TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, annotation_line,
+    hidden_text_ops, is_searchable_content, search_layer, text_page_chunks, time_line,
 };
+pub use pdfa::PdfARenderer;
 use provenance::provenance_pages;
 use std::{
     fs,
@@ -291,20 +295,10 @@ impl SearchablePdfRenderer {
         font: &PdfFontHandle,
         measure: &impl Fn(char) -> f32,
     ) -> Vec<PdfPage> {
-        let page_w = 210.0f32;
-        let page_h = 297.0f32;
-        let margin = 15.0f32;
-        let font_pt = 10.0f32;
-        let line_mm = 4.5f32;
-        let rows = ((page_h - margin * 2.0) / line_mm) as usize;
-        let wrapped = wrap_text(
-            text,
-            (page_w - margin * 2.0) / 25.4 * 72.0 / font_pt,
-            measure,
-        );
+        let (page_w, page_h, margin) = (TEXT_PAGE_W_MM, TEXT_PAGE_H_MM, TEXT_MARGIN_MM);
         let mut pages = Vec::new();
 
-        for (page_index, chunk) in wrapped.chunks(rows.max(1)).enumerate() {
+        for (page_index, chunk) in text_page_chunks(text, measure).iter().enumerate() {
             let first_page = page_index == 0;
             let mut ops = vec![
                 Op::StartTextSection,
@@ -313,9 +307,11 @@ impl SearchablePdfRenderer {
                 },
                 Op::SetFont {
                     font: font.clone(),
-                    size: Pt(font_pt),
+                    size: Pt(TEXT_FONT_PT),
                 },
-                Op::SetLineHeight { lh: Pt(13.0) },
+                Op::SetLineHeight {
+                    lh: Pt(TEXT_LINE_PT),
+                },
                 Op::SetTextCursor {
                     pos: Point::new(Mm(margin), Mm(page_h - margin)),
                 },

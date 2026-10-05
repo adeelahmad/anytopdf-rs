@@ -105,6 +105,10 @@ Units may also carry an optional `unit_pages` field (additive; the host fills it
 page range a unit occupies in the rendered PDF). Plugins must ignore it on requests and
 the protocol stays at `"protocol": 1`.
 
+Units whose positioned text came from the document itself (not OCR) may set the
+unit metadata entry `"text-layer": "native"`; the built-in OCR enricher skips
+those units. The Office importer sets it for pages with extractable text.
+
 Plugins may create derived files only under the supplied workspace unless the
 user explicitly configured otherwise.
 

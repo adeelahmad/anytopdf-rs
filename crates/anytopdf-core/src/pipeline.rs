@@ -1,6 +1,6 @@
 use crate::{
-    Diagnostic, DiagnosticCode, DocumentGraph, JobContext, PipelineEvent, PipelineObserver,
-    ProvidersExhausted, Registry, SourceRecord, Stage,
+    Diagnostic, DiagnosticCode, DocumentGraph, ImportOutcome, JobContext, MemberImporter,
+    PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord, Stage,
 };
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -8,6 +8,44 @@ use tempfile::TempDir;
 
 pub struct Pipeline {
     pub registry: Registry,
+}
+
+/// Containers nested deeper than this (an archive in an email in an archive...)
+/// are not expanded further.
+pub const MAX_MEMBER_DEPTH: usize = 4;
+
+struct RegistryMembers<'a> {
+    registry: &'a Registry,
+    depth: usize,
+}
+
+impl MemberImporter for RegistryMembers<'_> {
+    fn import_member(&self, ctx: &JobContext, path: &Path) -> Result<ImportOutcome> {
+        anyhow::ensure!(
+            self.depth < MAX_MEMBER_DEPTH,
+            "containers are nested more than {MAX_MEMBER_DEPTH} deep"
+        );
+        let canonical = path
+            .canonicalize()
+            .with_context(|| format!("resolve member {}", path.display()))?;
+        anyhow::ensure!(
+            canonical.starts_with(&ctx.workspace) && canonical.is_file(),
+            "member {} is not a file inside the job workspace",
+            path.display()
+        );
+        let mut source = SourceRecord::new(canonical);
+        if let Some(kind) = infer::get_from_path(&source.path).ok().flatten() {
+            source.detected_type = Some(kind.mime_type().to_string());
+        }
+        let importer = self.registry.importer_for(&source)?;
+        let nested = RegistryMembers {
+            registry: self.registry,
+            depth: self.depth + 1,
+        };
+        importer
+            .import_with_members(ctx, source, &nested)
+            .with_context(|| format!("{} import failed", importer.descriptor().name))
+    }
 }
 
 pub struct PipelineRun {
@@ -125,7 +163,13 @@ impl Pipeline {
                 }
             };
 
-            match crate::catch_panic(|| importer.import(&ctx, source.clone())) {
+            let members = RegistryMembers {
+                registry: &self.registry,
+                depth: 0,
+            };
+            match crate::catch_panic(|| {
+                importer.import_with_members(&ctx, source.clone(), &members)
+            }) {
                 Ok(outcome) => {
                     let candidate = DocumentGraph {
                         sources: vec![outcome.source.clone()],

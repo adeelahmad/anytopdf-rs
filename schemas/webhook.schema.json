@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/webhook/v1",
+  "title": "anytopdf Standard Webhooks payload (queue work --webhook)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "type",
+    "timestamp",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "anytopdf.webhook/1"
+    },
+    "type": {
+      "enum": [
+        "job.received",
+        "job.completed",
+        "job.failed"
+      ]
+    },
+    "timestamp": {
+      "type": "string"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "state",
+        "origin",
+        "inputs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "running",
+            "succeeded",
+            "failed"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "inbox",
+            "cli"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "output": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "partial",
+            "failed"
+          ]
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pages": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

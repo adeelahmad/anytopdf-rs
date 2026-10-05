@@ -6,6 +6,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf queue` (`add`, `work`, `status`, `secret`) adds a folder-backed job queue
+  with a watched inbox and Standard Webhooks (`job.received`, `job.completed`,
+  `job.failed`) signed with HMAC-SHA256 and retried from a durable outbox; new
+  `anytopdf.job/1` and `anytopdf.webhook/1` schemas. Other commands are unchanged
+  and open no sockets.
 - `extract` exits 3 (input) when a version-matched manifest or chunks file
   does not match its schema, naming the document and the first failing JSON path;
   other `schema_version` values still warn and exit 0.
@@ -17,6 +22,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - `--profile archive` and `--profile share` select output profiles.
 - Sources carry content-derived IDs, SHA-256 and size.
 - Multi-frame TIFF and GIF inputs import every frame as a page with a `frame` region anchor; `--max-image-frames N` caps the count (0 = unlimited) and warns `input.frames-not-imported`.
+- HTML files (`.html`, `.htm`, `.xhtml`, or any file opening with an HTML doctype) import
+  as one text page; scripts, styles and markup are dropped and the title is kept.
+- Email files (`.eml`, `.mbox`, or header-sniffed) import as one text page per message
+  (subject, sender, recipients, date, body; HTML-only bodies converted). Attachments are
+  written into the job workspace under sanitized names and imported by whichever importer
+  matches; ones that cannot be imported warn `input.members-not-imported`.
+- Importers can expand containers through `Importer::import_with_members`; nesting stops
+  at `MAX_MEMBER_DEPTH` (4).
 - Units carry anchors (time span, region, byte range) and page ranges (`unit_pages`).
 - Output is reproducible; `SOURCE_DATE_EPOCH` fixes embedded timestamps.
 - The graph dump no longer contains workspace paths.
@@ -25,12 +38,25 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - Exit codes 0-7 classify failures; batch conversion tolerates failures unless `--fail-fast`.
 - `convert` is implicit, `-o` may appear anywhere, and default output naming is derived from the input.
 - `--json` output with published schemas, and a `capabilities` command.
+- `capabilities` without `--json` prints a table of available, partial and missing
+  capabilities in this environment with hints to enable them; use `--json` for the JSON document.
 - The PDF embeds a manifest and chunks; `extract` recovers attachments.
 - Input fidelity: video frames are validated, file types are sniffed, lossy decoding is
   reported, and `--transcript` supplies audio transcripts.
 - `--output-dir` selects the batch output directory.
+- Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) import through
+  headless LibreOffice and Poppler: one page image per page, with the document's
+  positioned text from `pdftotext` and no OCR on those pages. `doctor` reports
+  `soffice`, `pdftoppm` and `pdftotext`.
 - Updated help text.
 - Release builds enable LTO and strip symbols.
+- `--renderer pdfa` writes tagged PDF/A-3a through krilla: embedded fonts, XMP
+  metadata, an sRGB output intent, a structure tree, bookmarks per source, and the
+  manifest and chunks as associated files. Lines are reordered with the bidi
+  algorithm and shaped, and characters fall back to further fonts (`ANYTOPDF_FONT`
+  may list several). The hidden layer uses fill opacity 0 instead of text rendering
+  mode 3. `extract` now reads compressed attachments.
+- The Rust toolchain is 1.92.0.
 
 ### Security hardening
 

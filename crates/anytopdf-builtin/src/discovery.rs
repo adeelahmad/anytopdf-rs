@@ -66,10 +66,10 @@ fn push_if_match(
     let canonical = path
         .canonicalize()
         .with_context(|| format!("canonicalize {}", path.display()))?;
-    if let Some(filter) = &opts.filter {
-        if !filter.is_match(&canonical.to_string_lossy()) {
-            return Ok(());
-        }
+    if let Some(filter) = &opts.filter
+        && !filter.is_match(&canonical.to_string_lossy())
+    {
+        return Ok(());
     }
     if seen.insert(canonical.clone()) {
         out.push(canonical);
@@ -143,7 +143,8 @@ mod tests {
         fs::create_dir(&hidden).unwrap();
         fs::write(hidden.join("a.txt"), "A").unwrap();
         fs::write(hidden.join(".b.txt"), "B").unwrap();
-        let paths = discover_inputs(&[hidden.clone()], &DiscoveryOptions::default()).unwrap();
+        let paths =
+            discover_inputs(std::slice::from_ref(&hidden), &DiscoveryOptions::default()).unwrap();
         assert_eq!(paths, vec![hidden.canonicalize().unwrap().join("a.txt")]);
     }
 

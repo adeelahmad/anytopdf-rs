@@ -47,14 +47,13 @@ impl SourceEnricher for MetadataEnricher {
                 .bounded_output(std::time::Duration::from_secs(30))
                 .context("run exiftool")?;
             if out.status.success() {
-                if let Ok(json) = serde_json::from_slice::<Value>(&out.stdout) {
-                    if let Some(obj) = json
+                if let Ok(json) = serde_json::from_slice::<Value>(&out.stdout)
+                    && let Some(obj) = json
                         .as_array()
                         .and_then(|a| a.first())
                         .and_then(|v| v.as_object())
-                    {
-                        flatten("exiftool", obj, &mut source.metadata);
-                    }
+                {
+                    flatten("exiftool", obj, &mut source.metadata);
                 }
             } else {
                 warnings.push(
@@ -80,57 +79,55 @@ impl SourceEnricher for MetadataEnricher {
             .detected_type
             .as_deref()
             .is_some_and(|m| m.starts_with("video/") || m.starts_with("audio/"))
+            && let Ok(ffprobe) = which::which("ffprobe")
         {
-            if let Ok(ffprobe) = which::which("ffprobe") {
-                let out = Command::new(ffprobe)
-                    .args([
-                        "-v",
-                        "error",
-                        "-protocol_whitelist",
-                        crate::FFMPEG_PROTOCOLS,
-                        "-show_format",
-                        "-show_streams",
-                        "-of",
-                        "json",
-                    ])
-                    .arg(&source.path)
-                    .bounded_output(std::time::Duration::from_secs(30))
-                    .context("run ffprobe")?;
-                if out.status.success() {
-                    if let Ok(value) = serde_json::from_slice::<Value>(&out.stdout) {
-                        flatten_value("ffprobe", &value, &mut source.metadata);
-                        // MP4/Ogg magic identifies a container; inspect streams to
-                        // avoid sending audio-only containers to the video importer.
-                        let streams = value["streams"].as_array();
-                        let has_audio = streams.is_some_and(|streams| {
-                            streams.iter().any(|s| s["codec_type"] == "audio")
-                        });
-                        let has_video = streams.is_some_and(|streams| {
-                            streams.iter().any(|s| {
-                                s["codec_type"] == "video" && s["disposition"]["attached_pic"] != 1
-                            })
-                        });
-                        if has_audio && !has_video {
-                            if let Some(mime) = source.detected_type.as_mut() {
-                                if let Some(subtype) = mime.strip_prefix("video/") {
-                                    *mime = format!("audio/{subtype}");
-                                }
-                            }
-                        }
+            let out = Command::new(ffprobe)
+                .args([
+                    "-v",
+                    "error",
+                    "-protocol_whitelist",
+                    crate::FFMPEG_PROTOCOLS,
+                    "-show_format",
+                    "-show_streams",
+                    "-of",
+                    "json",
+                ])
+                .arg(&source.path)
+                .bounded_output(std::time::Duration::from_secs(30))
+                .context("run ffprobe")?;
+            if out.status.success() {
+                if let Ok(value) = serde_json::from_slice::<Value>(&out.stdout) {
+                    flatten_value("ffprobe", &value, &mut source.metadata);
+                    // MP4/Ogg magic identifies a container; inspect streams to
+                    // avoid sending audio-only containers to the video importer.
+                    let streams = value["streams"].as_array();
+                    let has_audio = streams
+                        .is_some_and(|streams| streams.iter().any(|s| s["codec_type"] == "audio"));
+                    let has_video = streams.is_some_and(|streams| {
+                        streams.iter().any(|s| {
+                            s["codec_type"] == "video" && s["disposition"]["attached_pic"] != 1
+                        })
+                    });
+                    if has_audio
+                        && !has_video
+                        && let Some(mime) = source.detected_type.as_mut()
+                        && let Some(subtype) = mime.strip_prefix("video/")
+                    {
+                        *mime = format!("audio/{subtype}");
                     }
-                } else {
-                    warnings.push(
-                        Diagnostic::new(
-                            DiagnosticCode::ProviderFailed,
-                            format!(
-                                "ffprobe failed for {}: {}",
-                                source.path.display(),
-                                String::from_utf8_lossy(&out.stderr)
-                            ),
-                        )
-                        .to_string(),
-                    );
                 }
+            } else {
+                warnings.push(
+                    Diagnostic::new(
+                        DiagnosticCode::ProviderFailed,
+                        format!(
+                            "ffprobe failed for {}: {}",
+                            source.path.display(),
+                            String::from_utf8_lossy(&out.stderr)
+                        ),
+                    )
+                    .to_string(),
+                );
             }
         }
 

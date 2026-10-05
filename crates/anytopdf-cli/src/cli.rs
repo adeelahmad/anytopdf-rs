@@ -51,9 +51,11 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Describe exit codes, diagnostic codes, profiles, OCR modes, importers and schemas.
+    /// Show what this binary and environment support, and how to enable or add more.
+    #[command(after_long_help = crate::environment::HELP_FOOTER)]
     Capabilities {
-        /// Emit one JSON document on stdout (capabilities always does).
+        /// Emit one JSON document on stdout: exit codes, diagnostic codes, profiles,
+        /// OCR modes, importers and schema ids.
         #[arg(long)]
         json: bool,
     },
@@ -65,6 +67,164 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Run a folder-backed conversion queue with a watched inbox and signed webhooks.
+    Queue {
+        #[command(subcommand)]
+        command: QueueCommand,
+    },
+    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    Mcp,
+    /// Reach the print helper from other devices: TLS front, users and discovery.
+    #[command(subcommand)]
+    Print(PrintCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PrintCommand {
+    /// Accept print jobs from remote clients over TLS and pass them to the local print helper.
+    Remote(Box<RemoteArgs>),
+    /// Add or change a print user; reads the password from the first line of stdin.
+    Passwd {
+        /// User name clients sign in with.
+        user: String,
+        /// Users file (JSON, Argon2id hashes); created if missing.
+        #[arg(long)]
+        users: PathBuf,
+        /// Remove the user instead of setting a password.
+        #[arg(long)]
+        delete: bool,
+    },
+    /// Print unicast DNS-SD records that let remote clients discover the printer.
+    DnsSd {
+        /// DNS domain the records go in, e.g. home.example.
+        #[arg(long)]
+        domain: String,
+        /// Host name clients connect to, e.g. printer.home.example.
+        #[arg(long)]
+        host: String,
+        /// Port of the remote front.
+        #[arg(long, default_value_t = anytopdf_print::DEFAULT_PORT)]
+        port: u16,
+        /// Printer name shown to users.
+        #[arg(long, default_value = "anytopdf")]
+        name: String,
+        /// Also emit A/AAAA records for the host (repeatable).
+        #[arg(long = "address")]
+        addresses: Vec<std::net::IpAddr>,
+        /// Emit one JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Advertise the printer on the local network over multicast DNS until stopped.
+    Advertise {
+        /// Port of the remote front.
+        #[arg(long, default_value_t = anytopdf_print::DEFAULT_PORT)]
+        port: u16,
+        /// Printer name shown to users.
+        #[arg(long, default_value = "anytopdf")]
+        name: String,
+        /// Multicast DNS host name for this machine.
+        #[arg(long, default_value = "anytopdf.local")]
+        host: String,
+        /// Addresses to announce (repeatable); every interface when omitted.
+        #[arg(long = "address")]
+        addresses: Vec<std::net::IpAddr>,
+    },
+    /// Print the ipps:// URL to add the printer by hand (Windows, Android).
+    Url {
+        /// Host name or address clients connect to.
+        #[arg(long)]
+        host: String,
+        /// Port of the remote front.
+        #[arg(long, default_value_t = anytopdf_print::DEFAULT_PORT)]
+        port: u16,
+    },
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct RemoteArgs {
+    /// Address to accept clients on: the tailnet or WireGuard address, not 0.0.0.0.
+    #[arg(long)]
+    pub(crate) listen: std::net::SocketAddr,
+    /// Loopback address of the print helper.
+    #[arg(long, default_value = "127.0.0.1:8631")]
+    pub(crate) upstream: std::net::SocketAddr,
+    /// PEM certificate chain, e.g. from `tailscale cert`.
+    #[arg(long)]
+    pub(crate) tls_cert: PathBuf,
+    /// PEM private key for --tls-cert.
+    #[arg(long)]
+    pub(crate) tls_key: PathBuf,
+    /// Users file written by `anytopdf print passwd`; required off loopback.
+    #[arg(long)]
+    pub(crate) users: Option<PathBuf>,
+    /// Admit peers in this CIDR (repeatable); required off loopback.
+    #[arg(long)]
+    pub(crate) allow: Vec<String>,
+    /// Admit only Tailscale peers (100.64.0.0/10 and fd7a:115c:a1e0::/48).
+    #[arg(long)]
+    pub(crate) allow_tailnet: bool,
+    /// Append one JSON line per submitted job (time, peer address, user, job name) to this file.
+    #[arg(long)]
+    pub(crate) receipts: Option<PathBuf>,
+    /// Accept listening on every interface or admitting every peer.
+    #[arg(long)]
+    pub(crate) allow_public_bind: bool,
+    /// Maximum simultaneous client connections.
+    #[arg(long, default_value_t = 16, value_parser = clap::value_parser!(u16).range(1..))]
+    pub(crate) max_connections: u16,
+    /// Close a connection after this many idle seconds.
+    #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) idle_timeout: u64,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum QueueCommand {
+    /// Add a conversion job to a queue directory and print its id.
+    Add {
+        /// Queue directory (created if missing).
+        queue: PathBuf,
+        /// Files or directories to convert.
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Convert options after `--`, for example `-- --ocr off --profile share`.
+        #[arg(last = true)]
+        convert: Vec<String>,
+    },
+    /// Convert queued jobs and files dropped into the inbox, delivering webhooks.
+    Work(QueueWorkArgs),
+    /// List the jobs and webhook deliveries in a queue directory.
+    Status {
+        /// Queue directory.
+        queue: PathBuf,
+    },
+    /// Print a new webhook signing secret for ANYTOPDF_WEBHOOK_SECRET.
+    Secret,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct QueueWorkArgs {
+    /// Queue directory (created if missing).
+    pub(crate) queue: PathBuf,
+    /// Exit once the queue and inbox are empty instead of watching.
+    #[arg(long)]
+    pub(crate) once: bool,
+    /// Seconds between inbox scans; a file is claimed once two scans agree on it.
+    #[arg(long, default_value_t = 2.0)]
+    pub(crate) poll_interval: f64,
+    /// Seconds before a running conversion is stopped and its job fails.
+    #[arg(long, default_value = "3600", value_parser = clap::value_parser!(u64).range(1..))]
+    pub(crate) job_timeout: u64,
+    /// POST signed job.received, job.completed and job.failed events here (repeatable);
+    /// requires ANYTOPDF_WEBHOOK_SECRET.
+    #[arg(long)]
+    pub(crate) webhook: Vec<String>,
+    /// Suppress the worker log on stderr.
+    #[arg(short, long)]
+    pub(crate) quiet: bool,
+    /// Convert options for inbox files after `--`, for example `-- --ocr off`.
+    #[arg(last = true)]
+    pub(crate) convert: Vec<String>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -86,7 +246,7 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) fail_fast: bool,
 
-    /// Renderer plugin that writes the output.
+    /// Renderer plugin that writes the output: `pdf` or `pdfa` (tagged PDF/A-3a).
     #[arg(long, default_value = "pdf")]
     pub(crate) renderer: String,
 

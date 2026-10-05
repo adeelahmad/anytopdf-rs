@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::exit::ExitClass;
 
-const SCHEMAS: [(&str, &str); 9] = [
+const SCHEMAS: [(&str, &str); 11] = [
     (
         "convert",
         include_str!("../../../schemas/convert.schema.json"),
@@ -38,6 +38,11 @@ const SCHEMAS: [(&str, &str); 9] = [
         "events",
         include_str!("../../../schemas/events.schema.json"),
     ),
+    ("job", include_str!("../../../schemas/job.schema.json")),
+    (
+        "webhook",
+        include_str!("../../../schemas/webhook.schema.json"),
+    ),
 ];
 
 pub(crate) fn schema_text(name: &str) -> Option<&'static str> {
@@ -55,10 +60,19 @@ pub fn capabilities() -> Result<Value> {
             Ok(json!({"id": schema["$id"]}))
         })
         .collect::<Result<Vec<_>>>()?;
-    let importers: Vec<Value> = ["text", "image", "subtitle", "audio", "ffmpeg-video"]
-        .iter()
-        .map(|name| json!({"name": name}))
-        .collect();
+    let importers: Vec<Value> = [
+        "text",
+        "html",
+        "email",
+        "image",
+        "subtitle",
+        "audio",
+        "ffmpeg-video",
+        "office",
+    ]
+    .iter()
+    .map(|name| json!({"name": name}))
+    .collect();
     Ok(json!({
         "schema_version": "anytopdf.capabilities/1",
         "exit_codes": ExitClass::ALL

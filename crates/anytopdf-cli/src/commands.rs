@@ -21,10 +21,21 @@ pub(crate) fn doctor(json: bool) -> Result<()> {
             .into_iter()
             .map(|s| serde_json::json!({"name": s.name, "available": s.available, "detail": s.detail}))
             .collect();
+        let printing: Vec<_> = crate::print::printing_status()
+            .into_iter()
+            .map(|s| {
+                serde_json::json!({
+                    "name": s.name, "available": s.available,
+                    "path": s.path.map(|path| path.display().to_string()),
+                    "detail": s.detail
+                })
+            })
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "schema_version": "anytopdf.doctor/1", "providers": providers, "ocr": ocr
+                "schema_version": "anytopdf.doctor/1", "providers": providers, "ocr": ocr,
+                "printing": printing
             }))?
         );
         return Ok(());
@@ -51,6 +62,21 @@ pub(crate) fn doctor(json: bool) -> Result<()> {
             "{} {:<10} {}",
             if status.available { "[ok]  " } else { "[miss]" },
             status.name,
+            status.detail
+        );
+    }
+
+    println!();
+    println!("Printing:");
+    for status in crate::print::printing_status() {
+        println!(
+            "{} {:<16} {}{}",
+            if status.available { "[ok]  " } else { "[miss]" },
+            status.name,
+            status
+                .path
+                .map(|p| format!("{} ", p.display()))
+                .unwrap_or_default(),
             status.detail
         );
     }

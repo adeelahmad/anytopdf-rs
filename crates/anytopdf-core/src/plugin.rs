@@ -34,6 +34,39 @@ impl ProbeScore {
 pub trait Importer: Plugin {
     fn probe(&self, source: &SourceRecord) -> ProbeScore;
     fn import(&self, ctx: &JobContext, source: SourceRecord) -> Result<ImportOutcome>;
+
+    /// Imports a container (email, archive) whose members are themselves
+    /// importable files. The pipeline calls this instead of [`Importer::import`]
+    /// and supplies `members`, which imports files the importer extracted into
+    /// the job workspace with whichever registered importer probes best.
+    /// Importers without members keep the default.
+    fn import_with_members(
+        &self,
+        ctx: &JobContext,
+        source: SourceRecord,
+        members: &dyn MemberImporter,
+    ) -> Result<ImportOutcome> {
+        let _ = members;
+        self.import(ctx, source)
+    }
+}
+
+/// Imports files a container importer extracted into the job workspace.
+pub trait MemberImporter {
+    /// Probes and imports `path`, which must lie inside `ctx.workspace`. The
+    /// returned units belong to a throwaway source; callers re-parent them onto
+    /// the container source.
+    fn import_member(&self, ctx: &JobContext, path: &Path) -> Result<ImportOutcome>;
+}
+
+/// A [`MemberImporter`] that refuses every member, for importing a container
+/// outside the pipeline.
+pub struct NoMembers;
+
+impl MemberImporter for NoMembers {
+    fn import_member(&self, _ctx: &JobContext, path: &Path) -> Result<ImportOutcome> {
+        anyhow::bail!("no member importer available for {}", path.display())
+    }
 }
 
 pub trait SourceEnricher: Plugin {
