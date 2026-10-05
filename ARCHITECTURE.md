@@ -192,4 +192,5 @@ command recovers them.
 ## CLI contract
 
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the
-`capabilities` command reports available providers.
+`capabilities` command reports which importers, enrichers, renderers, providers and runtime
+plugins this environment supports (`--json` gives the static contract).

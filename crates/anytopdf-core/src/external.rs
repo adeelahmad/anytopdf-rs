@@ -93,7 +93,8 @@ impl Default for RuntimePluginPolicy {
 }
 
 impl RuntimePluginPolicy {
-    fn permits(&self, kind: &str) -> bool {
+    /// Whether this policy registers capabilities of `kind`.
+    pub fn permits(&self, kind: &str) -> bool {
         !self.deny_capabilities.contains(kind)
             && self
                 .allow_capabilities
@@ -146,6 +147,13 @@ fn read_manifest_with_timeout(
 
 pub fn discover_runtime_plugins() -> (Vec<RuntimePlugin>, Vec<String>) {
     discover_with_policy(&RuntimePluginPolicy::default())
+}
+
+/// Discover runtime plugins under `policy`, returning ignored executables as warnings.
+pub fn discover_runtime_plugins_with_policy(
+    policy: &RuntimePluginPolicy,
+) -> (Vec<RuntimePlugin>, Vec<String>) {
+    discover_with_policy(policy)
 }
 
 fn discover_with_policy(policy: &RuntimePluginPolicy) -> (Vec<RuntimePlugin>, Vec<String>) {
