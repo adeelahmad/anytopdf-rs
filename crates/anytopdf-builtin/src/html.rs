@@ -302,10 +302,10 @@ impl Writer {
                 self.pre += 1;
             }
             "img" => {
-                if let Some(alt) = attr(attrs, "alt").map(|a| collapse(&a)) {
-                    if !alt.is_empty() {
-                        self.text(&format!(" [image: {alt}] "));
-                    }
+                if let Some(alt) = attr(attrs, "alt").map(|a| collapse(&a))
+                    && !alt.is_empty()
+                {
+                    self.text(&format!(" [image: {alt}] "));
                 }
             }
             _ if BLOCKS.contains(&name) => self.newline(),

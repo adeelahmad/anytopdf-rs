@@ -177,10 +177,10 @@ esac
             (self.root / component).unlink()
         self.assert_ready(self.run_script())
         first = self.log.read_text()
-        self.assertIn("rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy", first)
+        self.assertIn("rustup toolchain install 1.92.0 --profile minimal --component rustfmt --component clippy", first)
         for component in ("rustfmt", "clippy"):
-            self.assertIn(f"rustup component add --toolchain 1.88.0 {component}", first)
-        self.assertIn("rustup target add --toolchain 1.88.0 aarch64-unknown-linux-gnu", first)
+            self.assertIn(f"rustup component add --toolchain 1.92.0 {component}", first)
+        self.assertIn("rustup target add --toolchain 1.92.0 aarch64-unknown-linux-gnu", first)
         self.log.write_text("")
         self.assert_ready(self.run_script())
         second = self.log.read_text()

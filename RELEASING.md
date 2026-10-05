@@ -8,7 +8,7 @@ in `ROADMAP.md`. `AGENTS.md` was preserved byte for byte.
 ## Reproduce the checks
 
 Use GNU Make and Bash with the supplied `Cargo.lock`. `make` bootstraps supported
-missing build dependencies and Rust 1.88.0, then builds locally. `make providers`
+missing build dependencies and Rust 1.92.0, then builds locally. `make providers`
 separately installs FFmpeg, ExifTool, Tesseract and Poppler; see README for platform
 prerequisites. Python must be 3.11+; an explicit `PYTHON` override is honored or
 fails clearly. For the complete verification:

@@ -12,7 +12,7 @@
 
 ARG BINARY=source
 
-FROM rust:1.88-bookworm AS source
+FROM rust:1.92-bookworm AS source
 WORKDIR /src
 COPY . .
 RUN cargo build --release --locked -p anytopdf --no-default-features \
