@@ -456,15 +456,16 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Input formats
 - [ ] PDF input (keep the text layer, OCR only textless pages)
-- [ ] HTML and URL snapshot
-- [ ] EML and mbox
+- [x] HTML files
+- [ ] URL snapshot
+- [x] EML and mbox
 - [x] Archives (zip, tar)
 - [ ] HEIC
-- [ ] Office documents (structure first, LibreOffice when present)
+- [x] Office documents through LibreOffice and Poppler
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 
 ### Media enrichment
-- [ ] Whisper transcription (pluggable whisper.cpp)
+- [x] Whisper transcription as a runtime plugin
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
 - [ ] Barcode and QR extraction
@@ -482,8 +483,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Spike: PAPPL printer feasibility
 - [x] Network printer via IPP Everywhere, built on PAPPL as an optional helper process ([`helpers/anytopdf-printer`](helpers/anytopdf-printer/README.md)); PWG Raster and Apple Raster print jobs keep their paper size
 - [ ] AirPrint and Mopria certification
-- [ ] IPP over TLS with a password, localhost by default, print receipts on the provenance page
-- [ ] Remote printing over Tailscale or WireGuard with DNS-based discovery
+- [x] IPP over TLS with a password, localhost by default
+- [ ] Print receipts on the provenance page
+- [x] Remote printing over Tailscale or WireGuard with DNS-based discovery
 - [ ] Microsoft Universal Print investigation
 
 ### Security and plugins
