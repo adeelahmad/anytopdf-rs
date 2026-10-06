@@ -16,24 +16,29 @@
 
 # anytopdf
 
-**Turn photos, scans, video, audio, email, Office files and archives into one
-searchable PDF, offline, with a single binary.**
+**A private search engine for everything you keep. Photos, scans, video, voice
+notes, chat exports, email and Office files become searchable PDFs that you can
+search and question, offline, from one download.**
 
 ```console
-$ anytopdf receipt.jpg meeting.mp4 inbox.mbox -o evidence.pdf
+$ anytopdf ~/inbox --index -o inbox.pdf
+$ anytopdf search northwind
+$ anytopdf ask inbox.pdf "How much was the Northwind receipt?"
 ```
 
 Every page looks like the original. Underneath, an invisible text layer carries
-the OCR, transcripts, captions and timestamps, so Ctrl+F, Spotlight, `pdftotext`
-and your RAG pipeline all find the words. A manifest with SHA-256 hashes and
-per-page chunks is embedded in the PDF, which makes the file its own index.
+what anytopdf read, heard and saw: OCR from flattened phone photos, Whisper
+transcripts, captions, objects, scene tags, places, dates and links. So Ctrl+F,
+Spotlight, `pdftotext`, `anytopdf search` and your RAG pipeline all find it. A
+manifest with SHA-256 hashes and per-page chunks is embedded in the PDF, which
+makes the file its own index.
 
 <p align="center">
-  <img alt="A phone photo of a receipt becomes a PDF in which a search for 'total' highlights the words on the page" src="docs/demo/before-after.png" width="100%">
+  <img alt="An angled phone photo of a receipt becomes a flattened PDF page in which a search for 'total' highlights the words" src="docs/demo/before-after.png" width="100%">
 </p>
 
 <p align="center">
-  <img alt="Terminal: anytopdf converts receipt.jpg, pdftotext finds TOTAL GBP 128.40, anytopdf extract prints the source hash" src="docs/demo/demo.gif" width="80%">
+  <img alt="Terminal: anytopdf converts a folder with a receipt photo and a WhatsApp chat into an indexed PDF, anytopdf search finds Northwind in both, and anytopdf ask returns the passages with the total" src="docs/demo/demo.gif" width="80%">
 </p>
 
 <sub>Both images come from a real run of the release binary
@@ -43,16 +48,19 @@ per-page chunks is embedded in the PDF, which makes the file its own index.
 
 | | |
 | --- | --- |
-| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF, camera RAW) with phone-photo page flattening, scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, JSON and JSON Lines, HTML, `.eml`/`.mbox` email with attachments, WhatsApp/Telegram/Slack/iMessage chat exports, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
-| **Finds the words** | OCR through Apple Vision, docTR or Tesseract, kept word-aligned under the image; speech to text through the bundled Whisper plugin; video keyframes chosen by interval and scene change |
+| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF, camera RAW) with phone-photo page flattening, scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, JSON and JSON Lines, HTML, web pages and YouTube links, browser bookmarks, `.eml`/`.mbox` email with attachments, WhatsApp/Telegram/Slack/iMessage chat exports, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, screen recordings and print jobs |
+| **Reads, hears and sees** | OCR through Apple Vision, docTR or Tesseract, word-aligned under the image; Whisper speech to text; CLIP scene tags so "beach" finds beach photos; YOLO objects; face presence and opt-in matching against your own local face index; laughter, applause and sirens; dominant colours, places, dates, links, sentiment and tone. Nothing estimates age, gender or emotion |
+| **Search and ask across everything** | `anytopdf search` queries a local SQLite index of every converted PDF, filtered by kind or person; `anytopdf ask` returns ranked passages citing file, page and time, and writes a cited answer with any local OpenAI-compatible LLM |
 | **Writes a real archive file** | Tagged PDF/A-3a with bookmarks, Arabic/Hebrew/CJK shaping, byte-reproducible output, and a provenance page |
-| **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes and page maps; `anytopdf extract --json` reads them back |
-| **Plugs into agents** | `anytopdf mcp` is a Model Context Protocol server: `claude mcp add anytopdf -- anytopdf mcp` |
+| **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes, page maps and entities; `anytopdf extract --json` reads them back |
+| **Plugs into agents** | `anytopdf mcp` is a Model Context Protocol server with convert, search and ask tools: `claude mcp add anytopdf -- anytopdf mcp` |
 | **Runs unattended** | Folder-backed job queue, HTTP upload intake, signed webhooks, an IMAP mailbox watcher, and an optional IPP printer helper that phones and laptops can print to |
 | **Extends without forks** | Any `anytopdf-plugin-*` executable on `PATH`, in any language, speaks a versioned JSON protocol; an opt-in sandbox confines it |
 
-Nothing leaves your machine: no cloud OCR, no telemetry, and no network access
-unless you turn on an intake channel (queue server, webhooks, IMAP or the printer).
+Nothing leaves your machine: models run locally, there is no telemetry, and the
+network is used only when you convert a URL, download a model, point anytopdf at
+your own LLM endpoint, or turn on an intake channel (queue server, webhooks, IMAP
+or the printer).
 
 ## Install
 
