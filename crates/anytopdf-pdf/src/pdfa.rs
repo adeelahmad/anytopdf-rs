@@ -297,9 +297,12 @@ impl Renderer for PdfARenderer {
     }
 }
 
-/// One bookmark per source, pointing at the first page rendered from it.
+/// One bookmark per source, pointing at the first page rendered from it. A source
+/// with `outline.title` is labelled with it, and one with `outline.folders`
+/// (newline-separated, outermost first) is nested under those folders, each folder
+/// pointing at the first page inside it.
 fn source_outline(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>) -> Outline {
-    let mut outline = Outline::new();
+    let mut root = Folder::default();
     for source in &graph.sources {
         let first = graph
             .units
@@ -308,14 +311,88 @@ fn source_outline(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>)
             .filter_map(|u| unit_pages.get(&u.id))
             .map(|r| r.first)
             .min();
-        if let Some(first) = first {
-            outline.push_child(OutlineNode::new(
-                basename(&source.path),
-                XyzDestination::new(first - 1, Point::from_xy(0.0, 0.0)),
-            ));
+        let Some(first) = first else { continue };
+        let title = source
+            .metadata
+            .get("outline.title")
+            .filter(|t| !t.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| basename(&source.path));
+        let folders = source
+            .metadata
+            .get("outline.folders")
+            .map(|f| {
+                f.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut folder = &mut root;
+        for name in folders {
+            let at = match folder
+                .children
+                .iter()
+                .position(|c| matches!(c, OutlineEntry::Folder(n, _) if n == name))
+            {
+                Some(at) => at,
+                None => {
+                    folder
+                        .children
+                        .push(OutlineEntry::Folder(name.to_string(), Folder::default()));
+                    folder.children.len() - 1
+                }
+            };
+            let OutlineEntry::Folder(_, inner) = &mut folder.children[at] else {
+                unreachable!("position matched a folder")
+            };
+            folder = inner;
+        }
+        folder.children.push(OutlineEntry::Source(title, first));
+    }
+    let mut outline = Outline::new();
+    for entry in root.children {
+        if let Some(node) = entry.into_node() {
+            outline.push_child(node);
         }
     }
     outline
+}
+
+#[derive(Default)]
+struct Folder {
+    children: Vec<OutlineEntry>,
+}
+
+enum OutlineEntry {
+    Source(String, usize),
+    Folder(String, Folder),
+}
+
+impl OutlineEntry {
+    fn first_page(&self) -> Option<usize> {
+        match self {
+            OutlineEntry::Source(_, first) => Some(*first),
+            OutlineEntry::Folder(_, f) => f.children.iter().filter_map(Self::first_page).min(),
+        }
+    }
+
+    fn into_node(self) -> Option<OutlineNode> {
+        let first = self.first_page()?;
+        let dest = XyzDestination::new(first - 1, Point::from_xy(0.0, 0.0));
+        match self {
+            OutlineEntry::Source(title, _) => Some(OutlineNode::new(title, dest)),
+            OutlineEntry::Folder(name, folder) => {
+                let mut node = OutlineNode::new(name, dest);
+                for child in folder.children {
+                    if let Some(c) = child.into_node() {
+                        node.push_child(c);
+                    }
+                }
+                Some(node)
+            }
+        }
+    }
 }
 
 /// Horizontal scale that fits a word of `natural` width into an OCR box `box_w`

@@ -4,6 +4,7 @@
 
 mod guard;
 mod http;
+mod links;
 mod media;
 mod snapshot;
 
@@ -72,6 +73,7 @@ pub(crate) fn is_url(input: &Path) -> bool {
 
 pub(crate) fn fetch_inputs(
     inputs: &[PathBuf],
+    lists: &[PathBuf],
     opts: &UrlOptions,
     progress: bool,
 ) -> Result<Fetched, CliError> {
@@ -82,7 +84,7 @@ pub(crate) fn fetch_inputs(
         warnings: Vec::new(),
         dir: None,
     };
-    if !inputs.iter().any(|p| is_url(p)) {
+    if lists.is_empty() && !inputs.iter().any(|p| is_url(p)) {
         fetched.inputs = inputs.to_vec();
         fetched.names = inputs.to_vec();
         return Ok(fetched);
@@ -92,27 +94,88 @@ pub(crate) fn fetch_inputs(
         .tempdir()
         .map_err(CliError::from)?;
     let agent = http::agent(opts.timeout);
-    for (n, input) in inputs.iter().enumerate() {
+    let mut next = 0usize;
+    let mut subdir = || -> Result<PathBuf, CliError> {
+        let sub = dir.path().join(next.to_string());
+        next += 1;
+        std::fs::create_dir_all(&sub).map_err(CliError::from)?;
+        Ok(sub)
+    };
+    for input in inputs {
         let Some(url) = input.to_str().filter(|_| is_url(input)) else {
             fetched.inputs.push(input.clone());
             fetched.names.push(input.clone());
             continue;
         };
-        let sub = dir.path().join(n.to_string());
-        std::fs::create_dir_all(&sub).map_err(CliError::from)?;
         if progress {
             eprintln!("fetch: {url}");
         }
-        let (name, origins) = fetch_one(&agent, url, &sub, opts, &mut fetched.warnings)?;
+        let (name, origins) = fetch_one(&agent, url, &subdir()?, opts, &mut fetched.warnings)?;
         // `default_output` takes the file stem; the suffix keeps dots in the name.
         fetched.names.push(PathBuf::from(format!("{name}.url")));
-        for origin in origins {
-            fetched.inputs.push(origin.path.clone());
-            fetched.origins.push(origin);
+        fetched.add(origins);
+    }
+    for list in lists {
+        let links = tag(ExitClass::Input, links::read_links(list))?;
+        let list_name = anytopdf_core::basename(list);
+        let stem = list
+            .file_stem()
+            .map_or_else(|| "links".into(), |s| s.to_string_lossy().into_owned());
+        fetched.names.push(PathBuf::from(format!("{stem}.list")));
+        for (i, link) in links.iter().enumerate() {
+            if progress {
+                eprintln!("fetch [{}/{}]: {}", i + 1, links.len(), link.url);
+            }
+            // One unreachable link skips that link, not the whole list.
+            match fetch_one(&agent, &link.url, &subdir()?, opts, &mut fetched.warnings) {
+                Ok((_, mut origins)) => {
+                    for origin in &mut origins {
+                        origin.label(link, &list_name);
+                    }
+                    fetched.add(origins);
+                }
+                Err(e) => fetched.warnings.push(Diagnostic::for_input(
+                    DiagnosticCode::InputUnreadable,
+                    &link.url,
+                    format!("{}: {:#}", link.url, e.error),
+                )),
+            }
         }
     }
     fetched.dir = Some(dir);
     Ok(fetched)
+}
+
+impl Fetched {
+    fn add(&mut self, origins: Vec<Origin>) {
+        for origin in origins {
+            self.inputs.push(origin.path.clone());
+            self.origins.push(origin);
+        }
+    }
+}
+
+impl Origin {
+    /// Bookmark title and folders for the PDF outline, plus the list it came from.
+    fn label(&mut self, link: &links::Link, list: &str) {
+        let snapshot = self
+            .metadata
+            .iter()
+            .any(|(k, v)| k == "url.kind" && v == "snapshot");
+        if let Some(title) = &link.title {
+            let title = if snapshot {
+                format!("{title} (snapshot)")
+            } else {
+                title.clone()
+            };
+            self.metadata.push(("outline.title".into(), title));
+        }
+        if !link.folders.is_empty() {
+            self.metadata
+                .push(("outline.folders".into(), link.folders.join("\n")));
+        }
+        self.metadata.push(("url.list".into(), list.to_string()));
+    }
 }
 
 fn fetch_one(

@@ -294,7 +294,7 @@ pub(crate) struct QueueWorkArgs {
 #[derive(Debug, clap::Args)]
 pub(crate) struct ConvertArgs {
     /// Files, directories or http(s) URLs to convert.
-    #[arg(required = true)]
+    #[arg(required_unless_present = "links")]
     pub(crate) inputs: Vec<PathBuf>,
 
     /// Replace an existing output; source files are always protected.
@@ -404,6 +404,12 @@ pub(crate) struct ConvertArgs {
 #[derive(Debug, clap::Args)]
 #[command(next_help_heading = "URL inputs")]
 pub(crate) struct UrlArgs {
+    /// Convert every link in FILE (repeatable): one URL per line, a browser bookmark
+    /// export (HTML) or Chrome's Bookmarks JSON. Bookmark folders become nested PDF
+    /// bookmarks; an unreachable link is skipped with a warning.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) links: Vec<PathBuf>,
+
     /// How to fetch URLs: auto uses yt-dlp for known video and podcast hosts and
     /// downloads anything else; page always downloads; media always uses yt-dlp.
     #[arg(long, env = "ANYTOPDF_URL_MODE", value_enum, default_value = "auto")]

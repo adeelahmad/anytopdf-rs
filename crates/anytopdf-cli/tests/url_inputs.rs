@@ -246,3 +246,56 @@ echo "$dir/Talk-x1.mp3"
     assert_eq!(meta["url.uploader"], "Bird Club");
     assert!(chunk_text(&doc).contains("The heron speaks"));
 }
+
+#[test]
+fn bookmark_exports_convert_every_link_and_skip_unreachable_ones() {
+    let (base, _) = serve();
+    let tmp = tempfile::tempdir().unwrap();
+    let list = tmp.path().join("bookmarks.html");
+    std::fs::write(
+        &list,
+        format!(
+            "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<DL><p>\n\
+             <DT><H3>Reading</H3>\n<DL><p>\n\
+             <DT><A HREF=\"{base}/post\">Heron post</A>\n\
+             <DT><A HREF=\"{base}/gone\">Dead link</A>\n\
+             </DL><p>\n<DT><A HREF=\"{base}/notes\">Notes</A>\n</DL><p>\n"
+        ),
+    )
+    .unwrap();
+    let out = run(convert_default_name(
+        &["--url-allow-private", "--json", "--links", "bookmarks.html"],
+        tmp.path(),
+    ));
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["status"], "partial", "{report}");
+    let skipped = report["summary"]["skipped"].to_string();
+    assert!(skipped.contains("/gone") && skipped.contains("HTTP 404"), "{skipped}");
+    let doc = extract(&tmp.path().join("bookmarks.pdf"));
+    let sources = doc["manifest"]["sources"].as_array().unwrap();
+    assert_eq!(sources.len(), 2);
+    let meta = &sources[0]["metadata"];
+    assert_eq!(meta["outline.title"], "Heron post");
+    assert_eq!(meta["outline.folders"], "Reading");
+    assert_eq!(meta["url.list"], "bookmarks.html");
+    assert_eq!(sources[1]["metadata"]["outline.title"], "Notes");
+    assert!(sources[1]["metadata"].get("outline.folders").is_none());
+}
+
+#[test]
+fn plain_text_link_lists_need_no_other_inputs() {
+    let (base, _) = serve();
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("reading.txt"),
+        format!("# my list\n{base}/notes\n{base}/post Field notes\n"),
+    )
+    .unwrap();
+    let (cmd, pdf) = convert(
+        &["--url-allow-private", "--quiet", "--links", "reading.txt"],
+        tmp.path(),
+    );
+    run(cmd);
+    let text = chunk_text(&extract(&pdf));
+    assert!(text.contains("Remember the milk") && text.contains("The heron returned"));
+}

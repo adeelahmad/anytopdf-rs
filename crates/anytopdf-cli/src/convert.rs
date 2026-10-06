@@ -143,6 +143,7 @@ pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result
         .iter()
         .filter(|p| !crate::fetch::is_url(p))
         .chain(&args.transcripts)
+        .chain(&args.url.links)
         .chain(args.output.iter())
         .chain(args.output_dir.iter())
         .chain(args.dump_graph.iter())
@@ -264,6 +265,7 @@ fn convert_inner(
 
     let fetched = crate::fetch::fetch_inputs(
         &args.inputs,
+        &args.url.links,
         &args.url.options(),
         !args.quiet && sink.is_none(),
     )?;
@@ -311,6 +313,7 @@ fn convert_inner(
     protected.extend(
         args.transcripts
             .iter()
+            .chain(&args.url.links)
             .map(|p| p.canonicalize())
             .collect::<std::io::Result<Vec<_>>>()?,
     );

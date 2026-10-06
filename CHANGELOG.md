@@ -14,6 +14,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `--url-max-height`, `--url-max-mb`, `--url-timeout` and `--url-allow-private` (each
   also an `ANYTOPDF_URL_*` variable) tune fetching; loopback and private addresses are
   refused by default. `doctor` lists `yt-dlp` and `chrome`.
+- `convert --links FILE` converts every link in a text list, a browser bookmark export
+  (Netscape HTML) or Chrome's `Bookmarks` JSON; bookmark folders become nested PDF/A
+  bookmarks (`outline.title`, `outline.folders`, kept under `--profile share`) and an
+  unreachable link is skipped with `input.unreadable`.
 - The HTML importer keeps only the page's single `<main>` (or `<article>`) element
   when one exists and records it as `html.content`.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and

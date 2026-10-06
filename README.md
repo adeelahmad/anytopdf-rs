@@ -312,6 +312,18 @@ by the normal importers:
 - **Anything else** (PDFs, images, audio, text) is saved with an extension from its
   URL or `Content-Type` and probed like a local file.
 
+`--links FILE` (repeatable) converts every link in a list: a text file with one URL
+per line (text after the URL is its title, `#` starts a comment), a browser bookmark
+export (Chrome, Edge, Firefox or Safari "Export bookmarks" HTML) or Chrome's profile
+`Bookmarks` JSON. Bookmark folders become nested PDF bookmarks labelled with the
+bookmark titles, the default output is named after the list (`bookmarks.pdf`), and an
+unreachable link is skipped with `input.unreadable` instead of failing the run.
+
+```bash
+anytopdf convert --links reading-list.txt
+anytopdf convert --links ~/Downloads/bookmarks_10_6_26.html -o bookmarks.pdf
+```
+
 `--url-mode page|media` forces a plain download or yt-dlp for every URL. Each source
 records `url.source`, `url.fetched` and, for redirects, `url.final` in the manifest
 (dropped by `--profile share`), and the provenance page lists the URL. The default
