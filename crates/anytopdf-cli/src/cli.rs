@@ -4,7 +4,7 @@ mod search;
 mod setup;
 mod url;
 
-use anytopdf_builtin::{ChatDateOrder, LocationMode, RawDecode, ScanMode};
+use anytopdf_builtin::ChatDateOrder;
 use anytopdf_core::{Profile, SandboxMode};
 pub(crate) use capture::{CaptureCommand, ScreenArgs};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
@@ -416,29 +416,9 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) include_hidden: bool,
 
-    /// Location enrichment: on (GPS fixes and place names in text), gps (GPS only) or off.
-    #[arg(long, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new([
-        clap::builder::PossibleValue::new("on"),
-        clap::builder::PossibleValue::new("gps"),
-        clap::builder::PossibleValue::new("off").alias("none"),
-    ]).try_map(|s| s.parse::<LocationMode>()))]
-    pub(crate) location: LocationMode,
-
     /// Transcript file to attach to media (repeatable).
     #[arg(long = "transcript")]
     pub(crate) transcripts: Vec<PathBuf>,
-
-    /// How camera RAW photos become pages: `auto` uses the embedded camera preview and
-    /// develops the RAW data when the preview is small, `preview` never runs a tool,
-    /// `develop` prefers a local developer (sips, dcraw_emu, dcraw or ImageMagick).
-    #[arg(long, env = "ANYTOPDF_RAW_DECODE", default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(["auto", "preview", "develop"]).try_map(|s| s.parse::<RawDecode>()))]
-    pub(crate) raw_decode: RawDecode,
-
-    /// Photographed-document cleanup before OCR: `auto` flattens and straightens photos
-    /// that clearly show a page, `on` crops to any detected sheet and straightens every
-    /// photo with text lines, `off` keeps images unchanged.
-    #[arg(long, env = "ANYTOPDF_SCAN_MODE", default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(["auto", "on", "off"]).try_map(|s| s.parse::<ScanMode>()))]
-    pub(crate) scan_mode: ScanMode,
 
     /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]
@@ -447,10 +427,6 @@ pub(crate) struct ConvertArgs {
     /// Skip extracting URLs, email addresses, domains, app names, dates and times from text.
     #[arg(long)]
     pub(crate) no_entities: bool,
-
-    /// Order of day and month in all-numeric dates such as 03/04/2024.
-    #[arg(long, default_value = "dmy", value_parser = ["dmy", "mdy"])]
-    pub(crate) date_order: String,
 
     /// Dominant-colour annotations on images and keyframes (searching "red" finds red frames).
     #[arg(long, action = clap::ArgAction::Set, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new(["on", "off"])

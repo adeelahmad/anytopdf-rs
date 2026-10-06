@@ -221,18 +221,11 @@ fn convert_inner(
     let opts = BuiltinOptions {
         explicit_transcripts: args.transcripts.clone(),
         entities: !args.no_entities,
-        date_order: tag(
-            ExitClass::Usage,
-            args.date_order.parse().map_err(anyhow::Error::msg),
-        )?,
         colors: args.colors,
         chat: ChatOptions {
             attachments: !args.no_chat_attachments,
             date_order: args.chat_date_order,
         },
-        raw_decode: args.raw_decode,
-        scan: args.scan_mode,
-        location: args.location,
         ..tag(
             ExitClass::Usage,
             BuiltinOptions::from_tables(&policy.options),

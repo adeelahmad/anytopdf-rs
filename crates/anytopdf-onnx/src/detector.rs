@@ -1,16 +1,7 @@
-//! ONNX helpers for the face detector, which needs a fixed BGR input and
-//! landmark-carrying detections (the shared `anytopdf-onnx` crate letterboxes RGB).
-//!
-//! Inference uses `tract`, a pure-Rust ONNX runtime, so the plugin needs no
-//! native library or Python in release archives on any platform.
-//! It runs on the CPU only.
-//!
-//! This module covers the steps every detector repeats: load a model with a fixed
-//! NCHW input, letterbox an image into that input, run it, and suppress
-//! overlapping detections.
-
-// Kept as a complete helper set (its tests cover all of it); the detector uses a subset.
-#![allow(dead_code)]
+//! Fixed-input detectors with named outputs (YuNet faces): a model whose
+//! first input is pinned to one `[1, channels, height, width]` shape, an RGB or
+//! BGR letterbox of raw 0..=255 pixels padded at the right and bottom, and
+//! keypoint-carrying detections with per-class non-maximum suppression.
 
 use anyhow::{Context, Result, bail, ensure};
 use image::RgbImage;

@@ -158,6 +158,8 @@ const CONVERT_FLAGS: &[Binding] = &[
         "--no-embedded-subtitles",
         "captions.embedded_subtitles",
     ),
+    negate("no_entities", "--no-entities", "entities.enabled"),
+    bind("colors", "--colors", "colors.enabled"),
 ];
 
 /// Every default the schema declares, plus the built-in tables' struct defaults.
@@ -474,6 +476,8 @@ pub(crate) fn apply(cli: &mut Cli, matches: &ArgMatches, resolved: &Resolved) ->
         }
         args.no_provenance_page = !settings.provenance_page;
         args.no_embedded_subtitles = !builtin.captions.embedded_subtitles;
+        args.no_entities = !builtin.entities;
+        args.colors = builtin.colors;
     }
     Ok(())
 }

@@ -1,11 +1,11 @@
 //! CLIP image and text encoders on ONNX Runtime-free CPU inference.
 
-use crate::onnx::{
-    Fit, ImageSpec, InputData, OnnxModel, image_to_nchw, l2_normalize,
-    ndarray::{Array2, ArrayD, Axis},
-};
 use crate::tokenizer::{CONTEXT_LENGTH, Tokenizer};
 use anyhow::{Context, Result, bail};
+use anytopdf_onnx::{
+    encoder::{Fit, ImageSpec, InputData, OnnxModel, image_to_nchw, l2_normalize},
+    ndarray::{Array2, ArrayD, Axis},
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{

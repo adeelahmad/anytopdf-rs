@@ -1,10 +1,5 @@
-//! ONNX inference helpers for the CLIP encoders: multi-input models, typed
-//! token inputs and embedding maths (the shared `anytopdf-onnx` crate covers
-//! single-image detectors).
-//!
-//! Inference runs on the CPU with [tract](https://github.com/sonos/tract), a
-//! pure-Rust ONNX runtime, so the plugin builds on every release target without
-//! downloading a native runtime and ships as one self-contained executable.
+//! Encoder models (CLIP): multi-input graphs with typed token inputs, square
+//! image preprocessing and embedding maths.
 
 use anyhow::{Context, Result, bail, ensure};
 use image::{DynamicImage, imageops::FilterType};
@@ -12,8 +7,7 @@ use std::{fmt, path::Path, sync::Arc};
 use tract_onnx::prelude::*;
 use tract_onnx::tract_hir::infer::Factoid;
 
-use ndarray::{Array4, ArrayD, IxDyn};
-pub use tract_onnx::prelude::tract_ndarray as ndarray;
+use crate::ndarray::{Array4, ArrayD, IxDyn};
 
 /// Element type of a model input, as declared by the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,7 +166,6 @@ pub enum Fit {
     /// Resize the shortest side to the input size, then crop the centre (CLIP).
     CenterCrop,
     /// Resize both sides to the input size, ignoring the aspect ratio.
-    #[cfg_attr(not(test), allow(dead_code))] // only the tests stretch
     Stretch,
 }
 
