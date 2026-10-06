@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.2.0
+## 0.3.0
 
-Searchable-PDF fidelity, identity, and CLI contract release.
+Visual and audio analysis, cross-file search, and many new inputs.
 
 ### Behaviour changes
 
@@ -70,7 +70,6 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `ANYTOPDF_SENTIMENT_LLM_MODEL` use a local OpenAI-compatible endpoint instead,
   falling back to the lexicon with a warning. Text only: nothing is inferred from
   faces or voices.
-
 - Every option can be set three equivalent ways, rclone-style: `[video] interval` in a
   TOML config file (`~/.config/anytopdf/config.toml`, or `--config PATH`),
   `ANYTOPDF_VIDEO_INTERVAL`, or `--video-interval`, with `--set TABLE.KEY=VALUE` on top;
@@ -143,6 +142,79 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `--plugin-sandbox-allow-read PATH` adds readable paths under `strict`.
   `anytopdf queue` defaults to `contain`, so no process a plugin starts outlives a
   queued job; pass `--plugin-sandbox off` or `strict` to choose another level.
+- `anytopdf-plugin-vlm` asks a local OpenAI-compatible vision model (Ollama,
+  llama.cpp, LM Studio) or the Moondream API about every image and video keyframe:
+  a caption, what it shows and the activities in it, plus optional open-vocabulary
+  detection. An after-units graph enricher adds a summary page with a category and
+  topics for each video, audio or subtitle source and per-scene summaries for videos.
+  Graph enrichers may declare phase `after-units`; the protocol stays 1.
+- `anytopdf-plugin-faces` finds faces in images and keyframes with an embedded YuNet
+  model and records neutral presence, count, bounds and landmarks only.
+  `anytopdf-plugin-face-id` embeds each detected face with a user-supplied ONNX model,
+  and `--recognize-faces` matches the embeddings against a local face index so face
+  boxes and `--person` searches carry the matched name. No age, gender, emotion or
+  other trait is estimated.
+- `anytopdf-plugin-audio-events` adds an "Audio events" page per audio or video
+  source listing speech, music, noise and silence segments, raised voices and, with an
+  AudioSet model, events such as laughter, applause or sirens, with their time ranges.
+- `anytopdf watch imap` gains `--allow-from` and `--require-dmarc` sender checks,
+  `--auth xoauth2` (`ANYTOPDF_IMAP_OAUTH_TOKEN` or `--oauth-token-file`) and
+  `--queue DIR` hand-off; the `imap` feature is now default and ships in the musl
+  release archives and the container.
+- Security hardening from the threat model: panics in importers, enrichers and the
+  renderer skip that input instead of aborting the run; directory scans skip symlinks;
+  `--profile share` redacts plugin directories from diagnostics; FFmpeg and ffprobe
+  run with `-protocol_whitelist file`; `--overwrite` through a hard link replaces only
+  the link; `extract` exits 3 on cyclic PDFs.
+- Release archives, Homebrew, Scoop and the container now bundle every workspace
+  runtime plugin (`audio-events`, `clip`, `face-id`, `faces`, `objects`, `sentiment`,
+  `vlm`, `whisper`); each stays idle until it reports `ready` or is put on
+  `ANYTOPDF_PLUGIN_PATH`.
+
+### Commit history
+
+#### Features
+
+- imap: add sender allowlist, XOAUTH2, queue hand-off and ship in releases (#29) (b6e66d91)
+- core: add opt-in runtime plugin sandbox (#12) (346fab37)
+- queue: run queued jobs under --plugin-sandbox contain by default (#31) (af680a34)
+- dist: serve the v0.2.0 Homebrew formula and Scoop manifest from this repository (#33) (23ba3474)
+- launch kit with install.sh, README rewrite and word-aligned OCR highlights (#32) (545d7831)
+- pdf: draw labelled annotation boxes on visual pages with --draw-boxes (#34) (3f0ccad1)
+- vlm: describe keyframes and summarize videos with a local vision model (#41) (a783263e)
+- cli: add `anytopdf capture screen` for live screen recording (#35) (f1e44982)
+- builtin: annotate images and keyframes with their dominant colours (#40) (a1a5c323)
+- plugins: detect objects in images and video keyframes with YOLO (#48) (b83f6f0f)
+- builtin: extract URLs, app names, dates and times from OCR, captions and transcripts (#36, landed in #48) (b83f6f0f)
+- builtin: import JSON and JSON Lines as per-record searchable chunks (#45, landed in #48) (b83f6f0f)
+- builtin: import WhatsApp, Telegram, Slack and iMessage chat exports (#46, landed in #48) (b83f6f0f)
+- builtin: import camera RAW photos and flatten photographed pages before OCR (#52, landed in #48) (b83f6f0f)
+- cli: convert URLs, link lists and browser bookmark exports (#47, landed in #48) (b83f6f0f)
+- builtin: reverse geocode GPS fixes and extract place names offline (#39, landed in #48) (b83f6f0f)
+- index: search across all converted files with a SQLite index (#38, landed in #48) (b83f6f0f)
+- cli: answer questions about converted PDFs with anytopdf ask and an MCP tool (#43, landed in #48) (b83f6f0f)
+- whisper: one-step transcription setup (#37, landed in #48) (b83f6f0f)
+- cli: rclone-style options from one definition: config file, env and flags (#49) (30e62c7c)
+- faces: add face detection runtime plugin with embedded YuNet (#42, landed in #49) (30e62c7c)
+- clip: embed images with CLIP for search by meaning and zero-shot scene tags (#44, landed in #49) (30e62c7c)
+- plugin: add sentiment and tone runtime plugin (#51, landed in #49) (30e62c7c)
+- plugins: add audio-events plugin for speech, music, raised voices and sound events (#50, landed in #49) (30e62c7c)
+- faces: recognize people from a local face index (#53, landed in #49) (30e62c7c)
+
+#### Fixes
+
+- security: resolve threat model open questions with tests and fixes (#6) (0e848585)
+
+#### Maintenance
+
+- security: model the opt-in plugin sandbox and the IMAP watcher (#30) (b73c6dfd)
+
+## 0.2.0
+
+Searchable-PDF fidelity, identity, and CLI contract release.
+
+### Behaviour changes
+
 - `anytopdf queue` (`add`, `work`, `status`, `secret`) adds a folder-backed job queue
   with a watched inbox and Standard Webhooks (`job.received`, `job.completed`,
   `job.failed`) signed with HMAC-SHA256 and retried from a durable outbox; new

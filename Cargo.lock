@@ -136,7 +136,7 @@ checksum = "fb5dfbc6d8d2675589ccbe4d0fd61df2419075625f8c1a62325e718e2b0049f9"
 
 [[package]]
 name = "anytopdf"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-builtin",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-builtin"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "infer",
@@ -212,7 +212,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-faces"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-imap"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "imap",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-index"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-onnx"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "image",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-pdf"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "allsorts-azul",
  "anyhow",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-audio-events"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-clip"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-face-id"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-faces",
@@ -323,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-faces"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "image",
@@ -334,7 +334,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-objects"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-sentiment"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-vlm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-plugin-whisper"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "anytopdf-print"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "argon2",
