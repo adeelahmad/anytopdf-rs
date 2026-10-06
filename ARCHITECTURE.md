@@ -88,8 +88,13 @@ ExifTool, ffprobe, hashes, provenance, GPS, dates, etc.
 
 ### Unit enrichment
 
-Adds OCR, captions, transcripts, object labels, scene labels, face bounds, and
-other annotations to individual units.
+Adds OCR, captions, transcripts, object labels, scene labels, face bounds,
+dominant colours, and other annotations to individual units.
+
+Extracted facts that have no dedicated `AnnotationKind` use `Custom` with an
+`entity` attribute (for example `entity = color` with `hex`, `share`, `name`
+and `family`). The renderer puts `Custom` annotations into the hidden search
+layer only when they carry `entity`.
 
 Unit enrichers run in registration order, built-ins before runtime plugins. A
 late unit enricher (`Registry::register_late_unit_enricher`) runs after all of

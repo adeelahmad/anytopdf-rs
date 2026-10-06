@@ -221,7 +221,7 @@ Every fact becomes an `Annotation` with provenance:
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, time ranges); source paths and file
+(OCR, captions, transcripts, objects, barcodes, colours, time ranges); source paths and file
 metadata are never written into it. Text/transcript units become normal
 visible text pages.
 
@@ -291,6 +291,9 @@ Enrichment:
   Friday") are normalized to ISO 8601; relative ones resolve against the capture
   date from ExifTool or ffprobe when known, and each keeps the moment it was seen
   or spoken. `--date-order dmy|mdy` (default `dmy`) reads `03/04/2024`
+- dominant colours of images and keyframes (up to five per page, named
+  "red", "navy blue", ... with hex and share), so searching a colour finds
+  the frames it dominates; `--colors off` disables it
 
 Rendering:
 - tagged PDF/A-3a with bookmarks via `krilla` (default, `--renderer pdfa`)
@@ -672,6 +675,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Whisper transcription as a runtime plugin
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
+- [x] Dominant colours per image and keyframe
 - [ ] Barcode and QR extraction
 - [ ] Audio chapters and speaker turns
 - [ ] OCR-text-aware video frame retention

@@ -14,6 +14,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `anytopdf.chunks/1`. App names come from a gazetteer, window titles and URL
   domains, never bare capitalized words. `--no-entities` turns extraction off and
   `--date-order dmy|mdy` sets how `03/04/2024` is read.
+- Images and video keyframes carry up to five dominant colours in the hidden search
+  layer and the chunks JSON (`color navy blue #141e64 31%`), so searching "red" or
+  "blue" finds the frames those colours dominate. `--colors off` disables it.
+  Runtime plugins' `custom` annotations with an `entity` attribute are now searchable too.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's
