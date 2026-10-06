@@ -6,6 +6,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
+  gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
+  until `--duration` or Ctrl-C, then converts the recording with the video importer's
+  interval, scene-change and dedupe sampling. `anytopdf doctor` adds a "Screen capture"
+  section (`capture` in `--json`) with the grabber and, on macOS, the Screen Recording
+  permission.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error
