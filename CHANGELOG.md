@@ -14,6 +14,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `anytopdf.chunks/1`. App names come from a gazetteer, window titles and URL
   domains, never bare capitalized words. `--no-entities` turns extraction off and
   `--date-order dmy|mdy` sets how `03/04/2024` is read.
+- `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
+  (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
+  image and video-frame pages in both renderers. Face boxes show the matched person's
+  name when a recognizer supplies one. The source image is untouched and the overlay
+  is a PDF/A artifact, so the text layer and page count are unchanged.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error
