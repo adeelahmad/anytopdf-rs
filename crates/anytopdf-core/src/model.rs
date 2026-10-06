@@ -364,7 +364,9 @@ impl DocumentGraph {
         let mut occurrences: HashMap<String, usize> = HashMap::new();
         let mut remap: HashMap<Uuid, Uuid> = HashMap::new();
         for source in &mut self.sources {
-            if source.sha256.is_none() {
+            // A supplied digest is trusted only for sources the host cannot read itself, such as
+            // virtual sources a plugin adds; a file on disk is always hashed by the host.
+            if source.sha256.is_none() || source.path.is_file() {
                 let bytes = std::fs::read(&source.path)
                     .with_context(|| format!("read {} for digest", source.path.display()))?;
                 source.size = Some(bytes.len() as u64);
@@ -440,6 +442,24 @@ mod tests {
             graph.sources.push(source);
         }
         graph
+    }
+
+    #[test]
+    fn supplied_digest_is_replaced_for_files_and_kept_for_virtual_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut graph = graph_for(dir.path(), &[("a.txt", FIXTURE)]);
+        let forged = "0".repeat(64);
+        graph.sources[0].sha256 = Some(forged.clone());
+        graph.sources[0].size = Some(1);
+        let mut remote = SourceRecord::new(dir.path().join("not-on-disk.igl"));
+        remote.sha256 = Some(forged.clone());
+        graph.units.push(Unit::text(remote.id, "virtual".into()));
+        graph.sources.push(remote);
+        graph.assign_content_ids().unwrap();
+        assert_eq!(graph.sources[0].sha256.as_deref(), Some(DIGEST));
+        assert_eq!(graph.sources[0].size, Some(17));
+        assert_eq!(graph.sources[0].id, content_source_id(DIGEST, 0));
+        assert_eq!(graph.sources[1].sha256.as_deref(), Some(forged.as_str()));
     }
 
     #[test]

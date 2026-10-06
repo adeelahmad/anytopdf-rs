@@ -144,7 +144,8 @@ annotation model.
 Importer responses may omit unit `id` and `source_id`; the host generates unit IDs
 and assigns the importing source ID. Supplied source IDs must match the request.
 Sources may carry optional `sha256` (lowercase hex of the file bytes) and `size`
-(bytes). After all enrichers run, the host re-derives every source and unit ID,
+(bytes). The host recomputes both for every source whose path is a readable file
+and uses supplied values only for sources it cannot read, such as virtual sources. After all enrichers run, the host re-derives every source and unit ID,
 so plugins may omit these fields and any IDs they supply are transient:
 
 - `source.id = UUIDv8(first 16 bytes of SHA-256("anytopdf/source/v1\0" + sha256_hex + "\0" + occurrence))`,
@@ -162,8 +163,10 @@ annotations into the hidden search layer. A `custom` annotation joins them only
 when its `attributes` include `entity` (for example the built-in dominant-colour
 enricher's `entity: "color"`); other custom annotations stay in the chunks JSON.
 
-Visual paths must be absolute existing paths to the original input or inside the
-canonical job workspace. The host resolves symlinks before validating the path.
+Visual paths must be existing paths to the original input or inside the canonical
+job workspace. Send absolute paths: a relative path is resolved against anytopdf's
+working directory, and the containment check, not absoluteness, is what the host
+enforces. The host resolves symlinks before validating the path.
 This validation does not prevent an executable from accessing other files itself.
 
 - `--no-plugins`: bypass runtime discovery entirely.

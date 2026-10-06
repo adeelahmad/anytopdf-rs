@@ -178,26 +178,27 @@ pub fn discover_runtime_plugins_with_policy(
     discover_with_policy(policy)
 }
 
-fn discover_with_policy(policy: &RuntimePluginPolicy) -> (Vec<RuntimePlugin>, Vec<String>) {
-    if !policy.enabled {
-        return (Vec::new(), Vec::new());
-    }
+/// Canonical paths of the `anytopdf-plugin-*` executables discovery would consider, without
+/// running any of them; empty when runtime plugins are disabled.
+pub fn runtime_plugin_candidates(policy: &RuntimePluginPolicy) -> BTreeSet<PathBuf> {
     let mut candidates = BTreeSet::new();
+    if !policy.enabled {
+        return candidates;
+    }
+    for var in ["PATH", "ANYTOPDF_PLUGIN_PATH"] {
+        if let Some(path) = env::var_os(var) {
+            for dir in env::split_paths(&path) {
+                scan_plugin_dir(&dir, &mut candidates);
+            }
+        }
+    }
+    candidates
+}
+
+fn discover_with_policy(policy: &RuntimePluginPolicy) -> (Vec<RuntimePlugin>, Vec<String>) {
     let mut warnings = Vec::new();
-
-    if let Some(path) = env::var_os("PATH") {
-        for dir in env::split_paths(&path) {
-            scan_plugin_dir(&dir, &mut candidates);
-        }
-    }
-    if let Some(path) = env::var_os("ANYTOPDF_PLUGIN_PATH") {
-        for dir in env::split_paths(&path) {
-            scan_plugin_dir(&dir, &mut candidates);
-        }
-    }
-
     let mut plugins = Vec::new();
-    for executable in candidates {
+    for executable in runtime_plugin_candidates(policy) {
         match read_manifest_with_timeout(&executable, policy.timeout, &policy.sandbox) {
             Ok(manifest) => plugins.push(RuntimePlugin {
                 executable,

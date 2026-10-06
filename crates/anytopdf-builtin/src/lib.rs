@@ -14,6 +14,10 @@ mod scene;
 use anytopdf_core::Registry;
 use std::sync::Arc;
 
+/// FFmpeg and ffprobe may open only local files named by an input, so a crafted container or
+/// playlist cannot make them fetch network URLs.
+pub(crate) const FFMPEG_PROTOCOLS: &str = "file";
+
 pub use colors::{DominantColor, dominant_colors};
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
