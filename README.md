@@ -390,7 +390,8 @@ or `ANYTOPDF_WHISPER_MODEL` once `[whisper]` is in a config file
 
 `anytopdf config` prints the effective settings with the file, variable or flag
 each came from (`--json` emits `anytopdf.config/1`); `anytopdf config --defaults`
-prints a starter file. The file format is `schemas/config-file.schema.json`. An
+prints a starter file; values under keys such as `api_key`, `token` or `password`
+are shown as `<redacted>`. The file format is `schemas/config-file.schema.json`. An
 invalid value exits 2 and names the key and where it was set. Secrets
 (`ANYTOPDF_WEBHOOK_SECRET`, `ANYTOPDF_QUEUE_TOKEN`, `ANYTOPDF_IMAP_*`) and
 `ANYTOPDF_PLUGIN_PATH` stay environment-only and are never read as settings, and

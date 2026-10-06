@@ -394,7 +394,7 @@ impl Resolved {
         json!({
             "schema_version": SCHEMA_VERSION,
             "files": self.files,
-            "values": self.document,
+            "values": redacted(&self.document),
             "origins": self.origins,
         })
     }
@@ -607,4 +607,29 @@ fn env_path(name: &str, tables: &[String]) -> Option<Vec<String>> {
             (!key.is_empty()).then(|| vec![table.clone(), key.to_string()])
         })
         .max_by_key(|path| path[0].len())
+}
+
+/// Shown in place of values whose key names a credential.
+pub(super) const REDACTED: &str = "<redacted>";
+
+/// Whether a key such as `llm_api_key` or `token` holds a credential that
+/// `anytopdf config` must not print.
+pub(super) fn is_secret_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    ["key", "token", "secret", "password", "passwd", "credential"]
+        .iter()
+        .any(|word| key.split(['_', '-']).any(|part| part == *word))
+}
+
+fn redacted(map: &Map<String, Value>) -> Map<String, Value> {
+    map.iter()
+        .map(|(key, value)| {
+            let shown = match value {
+                _ if is_secret_key(key) => Value::String(REDACTED.into()),
+                Value::Object(inner) => Value::Object(redacted(inner)),
+                other => other.clone(),
+            };
+            (key.clone(), shown)
+        })
+        .collect()
 }

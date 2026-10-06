@@ -451,3 +451,24 @@ fn environment_names_map_to_tables_and_globals() {
     assert_eq!(path("ANYTOPDF_CONFIG"), None);
     assert_eq!(path("ANYTOPDF_VIDEO"), None);
 }
+
+#[test]
+fn credentials_in_plugin_tables_are_never_printed() {
+    let resolved = resolve(
+        &["doctor"],
+        &[("ANYTOPDF_SENTIMENT_LLM_API_KEY", "sk-live-123")],
+        Some("[sentiment]\nllm_model = \"m\"\n[x]\ntoken = \"t0k\"\nkeyframes = 3\n"),
+    )
+    .unwrap();
+    assert_eq!(
+        resolved.tables().table("sentiment").unwrap()["llm_api_key"],
+        json!("sk-live-123"),
+        "the plugin still receives it"
+    );
+    let shown = format!("{}{}", resolved.render(true), resolved.report());
+    assert!(
+        !shown.contains("sk-live-123") && !shown.contains("t0k"),
+        "{shown}"
+    );
+    assert!(shown.contains("keyframes = 3"), "{shown}");
+}

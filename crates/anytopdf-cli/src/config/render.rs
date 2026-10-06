@@ -63,7 +63,12 @@ impl Resolved {
             .origin_under(path)
             .map(ToString::to_string)
             .unwrap_or_default();
-        (toml_key(key), toml_value(value), origin)
+        let value = if super::is_secret_key(key) {
+            toml_value(&Value::String(super::REDACTED.into()))
+        } else {
+            toml_value(value)
+        };
+        (toml_key(key), value, origin)
     }
 }
 
