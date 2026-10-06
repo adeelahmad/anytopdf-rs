@@ -6,6 +6,8 @@ members = [
   "crates/anytopdf-pdf",
   "crates/anytopdf-cli",
   "crates/anytopdf-imap",
+  "crates/anytopdf-faces",
+  "crates/anytopdf-plugin-face-id",
   "crates/anytopdf-plugin-whisper",
   "crates/anytopdf-print",
 ]
@@ -61,6 +63,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-pki-types = { version = "1.9", features = ["std"] }
 unicode-bidi = "0.3.18"
 krilla = { version = "0.8.2", default-features = false, features = ["raster-images", "simple-text"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+tract-onnx = { version = "0.23.8", default-features = false }
 allsorts = { package = "allsorts-azul", version = "0.17.2", default-features = false, features = ["flate2_rust"] }
 
 [profile.release]

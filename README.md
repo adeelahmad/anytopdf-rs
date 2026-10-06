@@ -130,6 +130,44 @@ invocation transcribes every media source in the job, so raise
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
 the PDF is still written.
 
+### Face recognition
+
+`--recognize-faces` names the people in photos and video keyframes from a local
+face index, so searching the PDF for "Alice" finds every frame she is in, and
+adds a "People in …" page per source listing each person with the times (or
+pages) where they appear. Faces that match nobody are grouped as `person-N`
+across runs; name a group once and later runs use the name. It is off by
+default and needs two runtime plugins: a face detector that adds `face`
+annotations with five-point landmarks, and `anytopdf-plugin-face-id`, which
+embeds each face with an ArcFace-style ONNX model (for example InsightFace
+`w600k_mbf.onnx` or `w600k_r50.onnx`; check the model's licence) using pure-Rust
+inference, so no Python or ONNX Runtime install is needed.
+
+```bash
+cargo build --release -p anytopdf-plugin-face-id
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"   # plus the face detector
+export ANYTOPDF_FACE_EMBED_MODEL="$HOME/models/w600k_mbf.onnx"
+
+anytopdf faces enroll Alice alice-1.jpg alice-2.jpg
+anytopdf faces import faces/              # faces/<Name>/*.jpg, one folder per person
+anytopdf convert party.mp4 --recognize-faces -o party.pdf
+anytopdf faces list                       # Alice, person-2, person-3 …
+anytopdf faces name person-2 Bob          # merges into Bob if Bob already exists
+anytopdf faces find someone.jpg           # every file and time that face appears
+anytopdf faces rename|merge|forget …
+```
+
+The index is `faces.sqlite` in the anytopdf data directory
+(`$XDG_DATA_HOME/anytopdf`, `~/Library/Application Support/anytopdf` or
+`%APPDATA%\anytopdf`; override with `ANYTOPDF_DATA_DIR`, `ANYTOPDF_FACE_INDEX` or
+`--face-index`). It holds embeddings and sightings, which never go into a PDF.
+`--face-threshold` (default 0.40, cosine similarity) sets how close a face must
+be to count as a known person; two faces in one frame are never the same
+person. Embedding runs as one plugin call per conversion, so raise
+`--plugin-timeout` for long videos. `--profile share` leaves names and the
+"People in …" pages out of the PDF. Identities come only from people you enroll
+or name: nothing infers age, gender, emotion or other traits.
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -167,19 +205,21 @@ Every fact becomes an `Annotation` with provenance:
 - date/time and GPS/location metadata
 - scene/keyframe changes
 - object labels from an object-analysis plugin
-- neutral face presence/count/bounds from a face-analysis plugin
+- face presence, count and bounds from a face-analysis plugin, and the names of
+  people you enrolled (`--recognize-faces`)
 - arbitrary future annotations
 
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, time ranges); source paths and file
+(OCR, captions, transcripts, objects, faces, barcodes, time ranges); source paths and file
 metadata are never written into it. Text/transcript units become normal
 visible text pages.
 
-The built-in project intentionally limits face enrichment to neutral facts such
-as presence, count and bounds. It does **not** infer gender identity, emotion,
-age or other sensitive/demographic traits from a face. The plugin model supports
+Face enrichment is limited to presence, count and bounds, plus identity only
+for people the user enrolls or names in the local face index. It does **not**
+infer gender identity, emotion, age or other sensitive/demographic traits from
+a face. The plugin model supports
 adding other non-sensitive semantic analyzers without changing the core.
 
 ## Plugin model
@@ -243,6 +283,8 @@ Rendering:
 Bundled runtime plugins (separate executables in this workspace):
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-face-id`: face embeddings for `--recognize-faces`, through an
+  ArcFace-style ONNX model
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -589,6 +631,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Media enrichment
 - [x] Whisper transcription as a runtime plugin
 - [ ] Face presence, count and bounds
+- [x] Face recognition against a local, user-enrolled face index (`--recognize-faces`)
 - [ ] Object detection and scene classification providers
 - [ ] Barcode and QR extraction
 - [ ] Audio chapters and speaker turns

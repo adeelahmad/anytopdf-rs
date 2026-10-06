@@ -227,6 +227,12 @@ fn convert_inner(
             "--scene-threshold must be between 0 and 1",
         ));
     }
+    if !args.face_threshold.is_finite() || !(-1.0..=1.0).contains(&args.face_threshold) {
+        return Err(fail(
+            ExitClass::Usage,
+            "--face-threshold must be between -1 and 1",
+        ));
+    }
     if args.dedupe_distance > 64 {
         return Err(fail(
             ExitClass::Usage,
@@ -362,6 +368,20 @@ fn convert_inner(
         pipeline.ingest_observed(&inputs, args.quiet, &mut observer),
     )?;
     run.warnings.append(&mut warnings);
+    let mut face_outcome = None;
+    if args.recognize_faces {
+        let index = crate::faces::index_path(args.face_index.as_deref())?;
+        let (mut diagnostics, outcome) = crate::faces::recognize_run(
+            &mut run.graph,
+            &run.context.workspace,
+            &index,
+            args.face_threshold,
+        );
+        run.warnings.append(&mut diagnostics);
+        face_outcome = outcome;
+    } else {
+        anytopdf_faces::recognize::strip_refs(&mut run.graph);
+    }
 
     redactor.add_dir(&run.context.workspace.join("x"));
     let redactor = &*redactor;
@@ -566,6 +586,12 @@ fn convert_inner(
         if !args.quiet && sink.is_none() {
             eprintln!("Wrote {} ({} pages)", redactor.path(out_path), doc.pages);
         }
+    }
+    if let Some(faces) = face_outcome.filter(|_| !args.quiet && sink.is_none()) {
+        eprintln!(
+            "Faces: {} recognized, {} new unnamed (see `anytopdf faces list`)",
+            faces.recognized, faces.new_people
+        );
     }
     Ok(())
 }

@@ -20,7 +20,7 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
 
 pub(crate) fn is_searchable_content(kind: &AnnotationKind) -> bool {
     use AnnotationKind::*;
-    matches!(*kind, Ocr | Caption | Transcript | Object | Barcode)
+    matches!(*kind, Ocr | Caption | Transcript | Object | Face | Barcode)
 }
 
 pub(crate) fn annotation_line(a: &Annotation) -> String {

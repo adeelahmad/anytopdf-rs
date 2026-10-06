@@ -21,6 +21,13 @@ pub struct RuntimeCapability {
     pub mime_types: Vec<String>,
     #[serde(default)]
     pub priority: i32,
+    /// Enricher run order (lower first, default 0); see `Plugin::order`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub order: i32,
+}
+
+fn is_zero(value: &i32) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -471,6 +478,9 @@ impl Plugin for RuntimeGraphEnricher {
     fn descriptor(&self) -> PluginDescriptor {
         descriptor(&self.plugin, &self.capability)
     }
+    fn order(&self) -> i32 {
+        self.capability.order
+    }
 }
 impl GraphEnricher for RuntimeGraphEnricher {
     fn enrich_graph(&self, ctx: &JobContext, graph: &mut DocumentGraph) -> Result<Vec<String>> {
@@ -514,6 +524,9 @@ struct RuntimeUnitEnricher {
 impl Plugin for RuntimeUnitEnricher {
     fn descriptor(&self) -> PluginDescriptor {
         descriptor(&self.plugin, &self.capability)
+    }
+    fn order(&self) -> i32 {
+        self.capability.order
     }
 }
 impl UnitEnricher for RuntimeUnitEnricher {
@@ -731,6 +744,7 @@ mod process_tests {
             extensions: vec!["example".into()],
             mime_types: vec![],
             priority: 1,
+            order: 0,
         };
         let plugin = RuntimePlugin {
             executable,
@@ -777,6 +791,7 @@ mod process_tests {
             extensions: vec!["example".into()],
             mime_types: vec![],
             priority: 1,
+            order: 0,
         };
         let plugin = RuntimePlugin {
             executable,

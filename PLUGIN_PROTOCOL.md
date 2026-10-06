@@ -28,6 +28,12 @@ stdout:
 }
 ```
 
+Capabilities may carry an optional `order` (integer, default 0). Enrichers of
+the same kind run in ascending `order`, then in discovery order. Graph enrichers
+with an `order` above 0 run after every unit enricher instead of before, so they
+can consume unit annotations (for example `anytopdf-plugin-face-id`, order 100,
+embeds faces a detector added). The field is additive; the protocol stays 1.
+
 Capability kinds:
 - `importer`
 - `source-enricher`

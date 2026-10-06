@@ -1,6 +1,7 @@
 use crate::{
-    Diagnostic, DiagnosticCode, DocumentGraph, ImportOutcome, JobContext, MemberImporter,
-    PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord, Stage,
+    Diagnostic, DiagnosticCode, DocumentGraph, GraphEnricherRef, ImportOutcome, JobContext,
+    MemberImporter, PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord,
+    Stage,
 };
 use anyhow::{Context, Result};
 use std::cell::Cell;
@@ -81,6 +82,33 @@ impl MemberImporter for RegistryMembers<'_> {
         importer
             .import_with_members(ctx, source, &nested)
             .with_context(|| format!("{} import failed", importer.descriptor().name))
+    }
+}
+
+fn run_graph_enrichers(
+    enrichers: &[&GraphEnricherRef],
+    ctx: &JobContext,
+    graph: &mut DocumentGraph,
+    warnings: &mut Vec<Diagnostic>,
+) {
+    for enricher in enrichers {
+        let original = graph.clone();
+        match enricher.enrich_graph(ctx, graph).and_then(|warnings| {
+            graph.validate()?;
+            Ok(warnings)
+        }) {
+            Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
+            Err(e) => {
+                *graph = original;
+                warnings.push(Diagnostic::new(
+                    DiagnosticCode::EnrichmentFailed,
+                    format!(
+                        "{} graph enrichment failed: {e:#}",
+                        enricher.descriptor().name
+                    ),
+                ));
+            }
+        }
     }
 }
 
@@ -264,28 +292,14 @@ impl Pipeline {
 
         // Graph enrichers handle cross-unit semantics such as associating a
         // complete transcript with sampled video frames while also preserving a
-        // full transcript unit for RAG extraction.
-        for enricher in self.registry.graph_enrichers() {
-            let original = graph.clone();
-            match enricher
-                .enrich_graph(&ctx, &mut graph)
-                .and_then(|warnings| {
-                    graph.validate()?;
-                    Ok(warnings)
-                }) {
-                Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
-                Err(e) => {
-                    graph = original;
-                    warnings.push(Diagnostic::new(
-                        DiagnosticCode::EnrichmentFailed,
-                        format!(
-                            "{} graph enrichment failed: {e:#}",
-                            enricher.descriptor().name
-                        ),
-                    ));
-                }
-            }
-        }
+        // full transcript unit for RAG extraction. Those with a positive order
+        // run after unit enrichment, so they can consume unit annotations.
+        let (early, late): (Vec<_>, Vec<_>) = self
+            .registry
+            .graph_enrichers()
+            .iter()
+            .partition(|e| e.order() <= 0);
+        run_graph_enrichers(&early, &ctx, &mut graph, &mut warnings);
 
         // One consistent snapshot per provider avoids cloning the entire graph for every unit.
         for enricher in self.registry.unit_enrichers() {
@@ -346,6 +360,7 @@ impl Pipeline {
             }
         }
 
+        run_graph_enrichers(&late, &ctx, &mut graph, &mut warnings);
         observer.on_event(&PipelineEvent::StageFinished(Stage::Enrich));
         graph.assign_content_ids()?;
         for unit in &mut graph.units {
@@ -761,5 +776,66 @@ mod tests {
             messages[1]
         );
         assert_eq!(run.graph.units.len(), 2);
+    }
+
+    struct Tagger;
+    impl Plugin for Tagger {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl UnitEnricher for Tagger {
+        fn supports(&self, _: &DocumentGraph, _: &Unit) -> bool {
+            true
+        }
+        fn enrich_unit(
+            &self,
+            _: &JobContext,
+            _: &DocumentGraph,
+            unit: &mut Unit,
+        ) -> Result<Vec<String>> {
+            unit.annotations
+                .push(Annotation::text(AnnotationKind::Face, "tagger", "face"));
+            Ok(vec![])
+        }
+    }
+
+    struct Counter(i32);
+    impl Plugin for Counter {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+        fn order(&self) -> i32 {
+            self.0
+        }
+    }
+    impl GraphEnricher for Counter {
+        fn enrich_graph(&self, _: &JobContext, graph: &mut DocumentGraph) -> Result<Vec<String>> {
+            let seen = graph
+                .units
+                .iter()
+                .map(|u| u.annotations.len())
+                .sum::<usize>();
+            graph
+                .metadata
+                .insert(format!("seen.{}", self.0), seen.to_string());
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn positive_order_graph_enrichers_see_unit_annotations() {
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), "text").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        registry.register_graph_enricher(Arc::new(Counter(100)));
+        registry.register_graph_enricher(Arc::new(Counter(0)));
+        registry.register_unit_enricher(Arc::new(Tagger));
+        let run = Pipeline::new(registry)
+            .ingest(&[input.path().to_path_buf()], true)
+            .unwrap();
+        assert_eq!(run.graph.metadata["seen.0"], "0");
+        assert_eq!(run.graph.metadata["seen.100"], "1");
     }
 }

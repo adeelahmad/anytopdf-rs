@@ -15,6 +15,9 @@ pub enum Channel {
     GraphDump,
 }
 
+/// Unit metadata key marking generated summary pages (see `anytopdf-faces`).
+const SUMMARY_KEY: &str = "anytopdf.summary";
+
 const VOLATILE_SUFFIXES: &[&str] = &[
     "FileAccessDate",
     "FileModifyDate",
@@ -94,6 +97,23 @@ impl Profile {
             for source in &mut out.sources {
                 source.path = PathBuf::from(crate::basename(&source.path));
             }
+            // Recognized names and the "People in …" pages identify people.
+            let summaries: Vec<_> = graph
+                .units
+                .iter()
+                .filter(|u| u.metadata.get(SUMMARY_KEY).is_some_and(|v| v == "people"))
+                .map(|u| u.id)
+                .collect();
+            for (unit, original) in out.units.iter_mut().zip(&graph.units) {
+                for (annotation, before) in unit.annotations.iter_mut().zip(&original.annotations) {
+                    if before.kind == AnnotationKind::Face
+                        && before.attributes.contains_key("person")
+                    {
+                        annotation.text = "face".into();
+                    }
+                }
+            }
+            out.units.retain(|u| !summaries.contains(&u.id));
             for unit in &mut out.units {
                 unit.visual_path = None;
                 unit.annotations
@@ -293,5 +313,37 @@ mod tests {
         let out = strip_workspace_paths(&graph, &ws);
         assert_eq!(out.units[0].visual_path, None);
         assert_eq!(out.units[1].visual_path, Some(other.join("keep.png")));
+    }
+
+    #[test]
+    fn share_drops_recognized_names_and_people_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut graph = photo_graph(dir.path());
+        let mut face = Annotation::text(AnnotationKind::Face, "faces", "face Alice");
+        face.attributes = meta(&[("person", "Alice"), ("person.id", "person-1")]);
+        graph.units[0].annotations.push(face);
+        graph.units[0]
+            .annotations
+            .push(Annotation::text(AnnotationKind::Face, "faces", "2 faces"));
+        let mut summary = Unit::text(
+            graph.sources[0].id,
+            "People in photo.jpg\n\nAlice: page 1".into(),
+        );
+        summary.metadata = meta(&[("anytopdf.summary", "people")]);
+        graph.units.push(summary);
+
+        let archive = Profile::Archive.filter(&graph, Channel::Document);
+        assert_eq!(archive.units.len(), 2);
+        assert_eq!(archive.units[0].annotations[1].text, "face Alice");
+
+        for channel in [Channel::Document, Channel::GraphDump] {
+            let shared = Profile::Share.filter(&graph, channel);
+            assert_eq!(shared.units.len(), 1);
+            let json = serde_json::to_string(&shared).unwrap();
+            assert!(
+                !json.contains("Alice") && !json.contains("person-1"),
+                "{json}"
+            );
+        }
     }
 }

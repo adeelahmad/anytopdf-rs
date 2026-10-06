@@ -18,6 +18,13 @@ pub struct PluginDescriptor {
 
 pub trait Plugin: Send + Sync {
     fn descriptor(&self) -> PluginDescriptor;
+
+    /// Position among enrichers of the same kind: lower runs first, and equal
+    /// orders keep registration order. An enricher that consumes another's
+    /// annotations (face recognition after face detection) declares a higher one.
+    fn order(&self) -> i32 {
+        0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

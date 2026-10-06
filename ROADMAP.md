@@ -95,6 +95,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 
 ## Later media semantics
 - [ ] neutral face detection: presence/count/bounds
+- [x] face recognition against a local, user-enrolled face index: `--recognize-faces`, `anytopdf faces enroll|import|list|name|rename|merge|forget|find`, `anytopdf-plugin-face-id`
 - [ ] object detection provider (YOLO/DETR plugin)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction

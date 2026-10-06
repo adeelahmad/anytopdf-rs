@@ -7,6 +7,7 @@ mod environment;
 mod events;
 mod exit;
 mod extract;
+mod faces;
 mod mcp;
 mod naming;
 mod print;
@@ -103,6 +104,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
         }
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
         Commands::Print(command) => print::print(command),
+        Commands::Faces(args) => {
+            check_sandbox(&policy)?;
+            faces::faces(args, &policy)
+        }
     }
 }
 
