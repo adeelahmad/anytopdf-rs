@@ -43,6 +43,18 @@ pub struct RuntimePluginManifest {
     pub name: String,
     pub version: String,
     pub capabilities: Vec<RuntimeCapability>,
+    /// Whether the plugin can do its work in this environment. A bundled plugin
+    /// that reports `false` is not registered; one found on `PATH` or
+    /// `ANYTOPDF_PLUGIN_PATH` still is, so its own warnings explain the gap.
+    #[serde(default = "ready_by_default")]
+    pub ready: bool,
+    /// What the plugin found or what it still needs, for `doctor` and `capabilities`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+fn ready_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +106,10 @@ pub struct RuntimePluginPolicy {
     pub allow_capabilities: Option<BTreeSet<String>>,
     pub deny_capabilities: BTreeSet<String>,
     pub sandbox: SandboxPolicy,
+    /// Folders shipped with this executable (see [`bundled_plugin_dirs`]) and the
+    /// user's `<data dir>/plugins`. Their plugins run without
+    /// `ANYTOPDF_PLUGIN_PATH`, but only once they report ready.
+    pub bundled_dirs: Vec<PathBuf>,
 }
 
 impl Default for RuntimePluginPolicy {
@@ -104,8 +120,31 @@ impl Default for RuntimePluginPolicy {
             allow_capabilities: None,
             deny_capabilities: BTreeSet::new(),
             sandbox: SandboxPolicy::default(),
+            bundled_dirs: env::current_exe()
+                .map(|exe| bundled_plugin_dirs(&exe))
+                .unwrap_or_default()
+                .into_iter()
+                .chain(user_data_dir().map(|dir| dir.join("plugins")))
+                .collect(),
         }
     }
+}
+
+/// Plugin folders that ship beside an executable: `plugins/` next to it (release
+/// archives, Scoop) and `../libexec/plugins` (Homebrew). Symlinks are resolved
+/// first, so a Homebrew `bin/anytopdf` link finds its keg's `libexec`.
+pub fn bundled_plugin_dirs(executable: &Path) -> Vec<PathBuf> {
+    let executable = executable
+        .canonicalize()
+        .unwrap_or_else(|_| executable.to_path_buf());
+    let Some(dir) = executable.parent() else {
+        return Vec::new();
+    };
+    let mut dirs = vec![dir.join("plugins")];
+    if let Some(prefix) = dir.parent() {
+        dirs.push(prefix.join("libexec").join("plugins"));
+    }
+    dirs
 }
 
 impl RuntimePluginPolicy {
@@ -181,38 +220,99 @@ pub fn discover_runtime_plugins_with_policy(
 /// Canonical paths of the `anytopdf-plugin-*` executables discovery would consider, without
 /// running any of them; empty when runtime plugins are disabled.
 pub fn runtime_plugin_candidates(policy: &RuntimePluginPolicy) -> BTreeSet<PathBuf> {
-    let mut candidates = BTreeSet::new();
+    let (mut explicit, bundled) = plugin_candidates(policy);
+    explicit.extend(bundled);
+    explicit
+}
+
+/// Executables on `PATH` / `ANYTOPDF_PLUGIN_PATH`, and those in the bundled directories.
+fn plugin_candidates(policy: &RuntimePluginPolicy) -> (BTreeSet<PathBuf>, BTreeSet<PathBuf>) {
+    let mut explicit = BTreeSet::new();
+    let mut bundled = BTreeSet::new();
     if !policy.enabled {
-        return candidates;
+        return (explicit, bundled);
     }
     for var in ["PATH", "ANYTOPDF_PLUGIN_PATH"] {
         if let Some(path) = env::var_os(var) {
             for dir in env::split_paths(&path) {
-                scan_plugin_dir(&dir, &mut candidates);
+                scan_plugin_dir(&dir, &mut explicit);
             }
         }
     }
-    candidates
+    for dir in &policy.bundled_dirs {
+        scan_plugin_dir(dir, &mut bundled);
+    }
+    (explicit, bundled)
+}
+
+/// Everything discovery found, including bundled plugins left idle.
+#[derive(Debug, Clone, Default)]
+pub struct PluginDiscovery {
+    /// Plugins that register capabilities.
+    pub plugins: Vec<RuntimePlugin>,
+    /// Bundled plugins that reported `ready: false`; their manifest `detail`
+    /// says what is missing.
+    pub idle: Vec<RuntimePlugin>,
+    /// Executables whose manifest could not be read.
+    pub warnings: Vec<String>,
+}
+
+/// Like [`discover_runtime_plugins_with_policy`], but also reports idle bundled plugins.
+pub fn discover_runtime_plugins_detailed(policy: &RuntimePluginPolicy) -> PluginDiscovery {
+    if !policy.enabled {
+        return PluginDiscovery::default();
+    }
+    let (explicit, bundled) = plugin_candidates(policy);
+    let mut found = PluginDiscovery::default();
+
+    let read = |executable: PathBuf, warnings: &mut Vec<String>| match read_manifest_with_timeout(
+        &executable,
+        policy.timeout,
+        &policy.sandbox,
+    ) {
+        Ok(manifest) => Some(RuntimePlugin {
+            executable,
+            manifest,
+            timeout: policy.timeout,
+            sandbox: policy.sandbox.clone(),
+        }),
+        Err(e) => {
+            warnings.push(format!(
+                "runtime plugin {} ignored: {e:#}",
+                executable.display()
+            ));
+            None
+        }
+    };
+    for executable in &explicit {
+        if let Some(plugin) = read(executable.clone(), &mut found.warnings) {
+            found.plugins.push(plugin);
+        }
+    }
+    for executable in bundled.difference(&explicit) {
+        let Some(plugin) = read(executable.clone(), &mut found.warnings) else {
+            continue;
+        };
+        // A plugin the user put on a path wins over the copy shipped with anytopdf.
+        if found
+            .plugins
+            .iter()
+            .any(|p| p.manifest.name == plugin.manifest.name)
+        {
+            continue;
+        }
+        if plugin.manifest.ready {
+            found.plugins.push(plugin);
+        } else {
+            found.idle.push(plugin);
+        }
+    }
+    found
 }
 
 fn discover_with_policy(policy: &RuntimePluginPolicy) -> (Vec<RuntimePlugin>, Vec<String>) {
-    let mut warnings = Vec::new();
-    let mut plugins = Vec::new();
-    for executable in runtime_plugin_candidates(policy) {
-        match read_manifest_with_timeout(&executable, policy.timeout, &policy.sandbox) {
-            Ok(manifest) => plugins.push(RuntimePlugin {
-                executable,
-                manifest,
-                timeout: policy.timeout,
-                sandbox: policy.sandbox.clone(),
-            }),
-            Err(e) => warnings.push(format!(
-                "runtime plugin {} ignored: {e:#}",
-                executable.display()
-            )),
-        }
-    }
-    (plugins, warnings)
+    let found = discover_runtime_plugins_detailed(policy);
+    (found.plugins, found.warnings)
 }
 
 fn scan_plugin_dir(dir: &Path, out: &mut BTreeSet<PathBuf>) {
@@ -765,6 +865,8 @@ mod process_tests {
                 name: "test".into(),
                 version: "1".into(),
                 capabilities: vec![capability.clone()],
+                ready: true,
+                detail: None,
             },
         };
         let source = SourceRecord::new(source_path);
@@ -815,6 +917,8 @@ mod process_tests {
                 name: "test".into(),
                 version: "1".into(),
                 capabilities: vec![capability.clone()],
+                ready: true,
+                detail: None,
             },
         };
         let source = SourceRecord::new(source_path);
@@ -831,6 +935,73 @@ mod process_tests {
         assert_eq!(
             outcome.units[0].visible_text.as_deref(),
             Some("plugin content")
+        );
+    }
+
+    fn manifest_script(directory: &Path, name: &str, manifest: &str) {
+        fs::create_dir_all(directory).unwrap();
+        let staged = directory.join(format!("{name}.sh"));
+        fs::write(&staged, format!("#!/bin/sh\nprintf '%s' '{manifest}'\n")).unwrap();
+        let path = directory.join(format!("anytopdf-plugin-{name}"));
+        let copied = Command::new("cp").arg(&staged).arg(&path).status().unwrap();
+        assert!(copied.success(), "cp failed: {copied}");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[test]
+    fn bundled_plugins_register_only_when_ready() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundled = dir.path().join("plugins");
+        let cap = r#""capabilities":[{"kind":"graph-enricher","mime_types":["audio/*"]}]"#;
+        manifest_script(
+            &bundled,
+            "ready",
+            &format!(r#"{{"protocol":1,"name":"ready","version":"1",{cap}}}"#),
+        );
+        manifest_script(
+            &bundled,
+            "idle",
+            &format!(
+                r#"{{"protocol":1,"name":"idle","version":"1",{cap},"ready":false,"detail":"needs a model"}}"#
+            ),
+        );
+        let policy = RuntimePluginPolicy {
+            bundled_dirs: vec![bundled, dir.path().join("missing")],
+            ..Default::default()
+        };
+        let found = discover_runtime_plugins_detailed(&policy);
+        let names = |plugins: &[RuntimePlugin]| -> Vec<String> {
+            plugins.iter().map(|p| p.manifest.name.clone()).collect()
+        };
+        assert!(names(&found.plugins).contains(&"ready".to_string()));
+        assert!(!names(&found.plugins).contains(&"idle".to_string()));
+        assert_eq!(names(&found.idle), ["idle"]);
+        assert_eq!(
+            found.idle[0].manifest.detail.as_deref(),
+            Some("needs a model")
+        );
+
+        let disabled = RuntimePluginPolicy {
+            enabled: false,
+            ..policy
+        };
+        let found = discover_runtime_plugins_detailed(&disabled);
+        assert!(found.plugins.is_empty() && found.idle.is_empty());
+    }
+
+    #[test]
+    fn bundled_dirs_follow_symlinks_to_the_install_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let keg = dir.path().join("Cellar/anytopdf/1.0");
+        fs::create_dir_all(keg.join("bin")).unwrap();
+        fs::write(keg.join("bin/anytopdf"), "").unwrap();
+        fs::create_dir_all(dir.path().join("bin")).unwrap();
+        let link = dir.path().join("bin/anytopdf");
+        std::os::unix::fs::symlink(keg.join("bin/anytopdf"), &link).unwrap();
+        let keg = keg.canonicalize().unwrap();
+        assert_eq!(
+            bundled_plugin_dirs(&link),
+            [keg.join("bin/plugins"), keg.join("libexec/plugins")]
         );
     }
 

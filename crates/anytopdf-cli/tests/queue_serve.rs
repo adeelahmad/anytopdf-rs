@@ -273,3 +273,63 @@ fn unsafe_listeners_and_missing_tokens_are_usage_errors() {
         Some(2)
     );
 }
+
+#[test]
+fn search_endpoint_answers_from_the_index_only_when_enabled() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    fs::write(dir.join("memo.txt"), "Searchable memo about the harbour\n").unwrap();
+    let index = dir.join("index.sqlite");
+    let out = command()
+        .args([
+            "convert", "memo.txt", "--ocr", "off", "-q", "-o", "memo.pdf",
+        ])
+        .args(["--index", "--index-db"])
+        .arg(&index)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let http = agent(false);
+    let get = |base: &str, query: &str, token: &str| {
+        body_json(
+            http.get(&format!("{base}/v1/search?{query}"))
+                .header("authorization", &format!("Bearer {token}"))
+                .call()
+                .unwrap(),
+        )
+    };
+    let off = start(dir, &[]);
+    assert_eq!(get(&off.base, "q=harbour", TOKEN).0, 404);
+    drop(off);
+
+    let server = start(dir, &["--search", "--index-db", index.to_str().unwrap()]);
+    assert_eq!(
+        get(&server.base, "q=harbour", "wrong-token-0123456789").0,
+        401
+    );
+    let (code, doc) = get(&server.base, "q=the%20harbour&limit=5", TOKEN);
+    assert_eq!(code, 200, "{doc}");
+    assert_eq!(doc["schema_version"], "anytopdf.search/1");
+    assert!(doc.get("index").is_none(), "the index path stays private");
+    assert_eq!(doc["hits"][0]["source"]["name"], "memo.txt");
+    assert_eq!(doc["hits"][0]["pages"]["first"], 1);
+    assert_eq!(
+        get(&server.base, "q=harbour&kind=face", TOKEN).1["hits"],
+        serde_json::json!([])
+    );
+    assert_eq!(get(&server.base, "q=x&kind=gender", TOKEN).0, 400);
+    assert_eq!(get(&server.base, "q=x&limit=0", TOKEN).0, 400);
+    assert_eq!(get(&server.base, "", TOKEN).0, 400);
+    let post = http
+        .post(&format!("{}/v1/search", server.base))
+        .header("authorization", &format!("Bearer {TOKEN}"))
+        .send(&b""[..])
+        .unwrap();
+    assert_eq!(post.status().as_u16(), 405);
+}

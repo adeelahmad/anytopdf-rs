@@ -9,8 +9,8 @@ use crate::boxes::{BoxKind, RectPt, overlay_boxes};
 use crate::fonts::{configured_font, find_fallback_fonts};
 use crate::layout::{
     SEARCH_X_MM, TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM,
-    TEXT_ROWS_PER_PAGE, TEXT_WRAP_EMS, annotation_line, is_searchable_content, search_rows,
-    time_line, wrap_text,
+    TEXT_ROWS_PER_PAGE, TEXT_WRAP_EMS, annotation_line, flow_pages, flow_runs,
+    is_searchable_content, search_rows, time_line, wrap_text,
 };
 use crate::pdfa_text::{FontSet, has_rtl};
 use crate::provenance::provenance_lines;
@@ -211,10 +211,11 @@ impl Renderer for PdfARenderer {
         );
 
         let mut unit_pages = BTreeMap::new();
-        for unit in &graph.units {
-            let start = builder.pages;
-            let mut section = TagGroup::new(Tag::Section);
+        for run in flow_runs(&graph.units) {
+            let unit = &graph.units[run.start];
             if let Some(visual) = &unit.visual_path {
+                let start = builder.pages;
+                let mut section = TagGroup::new(Tag::Section);
                 match load_image(visual) {
                     Ok(image) => builder.visual_page(
                         &mut section,
@@ -226,18 +227,22 @@ impl Renderer for PdfARenderer {
                         warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }
                 }
-            } else if let Some(text) = &unit.visible_text {
-                builder.text_unit(&mut section, unit, text);
-            }
-            if builder.pages > start {
-                builder.tree.push(section);
-                unit_pages.insert(
-                    unit.id,
-                    PageRange {
-                        first: start + 1,
-                        last: builder.pages,
-                    },
-                );
+                if builder.pages > start {
+                    builder.tree.push(section);
+                    unit_pages.insert(
+                        unit.id,
+                        PageRange {
+                            first: start + 1,
+                            last: builder.pages,
+                        },
+                    );
+                }
+            } else if unit.visible_text.is_some() {
+                let units: Vec<&Unit> = graph.units[run].iter().collect();
+                for (unit, (section, pages)) in units.iter().zip(builder.text_run(&units)) {
+                    builder.tree.push(section);
+                    unit_pages.insert(unit.id, pages);
+                }
             }
         }
         if builder.pages == 0 {
@@ -301,9 +306,12 @@ impl Renderer for PdfARenderer {
     }
 }
 
-/// One bookmark per source, pointing at the first page rendered from it.
+/// One bookmark per source, pointing at the first page rendered from it. A source
+/// with `outline.title` is labelled with it, and one with `outline.folders`
+/// (newline-separated, outermost first) is nested under those folders, each folder
+/// pointing at the first page inside it.
 fn source_outline(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>) -> Outline {
-    let mut outline = Outline::new();
+    let mut root = Folder::default();
     for source in &graph.sources {
         let first = graph
             .units
@@ -312,14 +320,88 @@ fn source_outline(graph: &DocumentGraph, unit_pages: &BTreeMap<Uuid, PageRange>)
             .filter_map(|u| unit_pages.get(&u.id))
             .map(|r| r.first)
             .min();
-        if let Some(first) = first {
-            outline.push_child(OutlineNode::new(
-                basename(&source.path),
-                XyzDestination::new(first - 1, Point::from_xy(0.0, 0.0)),
-            ));
+        let Some(first) = first else { continue };
+        let title = source
+            .metadata
+            .get("outline.title")
+            .filter(|t| !t.trim().is_empty())
+            .cloned()
+            .unwrap_or_else(|| basename(&source.path));
+        let folders = source
+            .metadata
+            .get("outline.folders")
+            .map(|f| {
+                f.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut folder = &mut root;
+        for name in folders {
+            let at = match folder
+                .children
+                .iter()
+                .position(|c| matches!(c, OutlineEntry::Folder(n, _) if n == name))
+            {
+                Some(at) => at,
+                None => {
+                    folder
+                        .children
+                        .push(OutlineEntry::Folder(name.to_string(), Folder::default()));
+                    folder.children.len() - 1
+                }
+            };
+            let OutlineEntry::Folder(_, inner) = &mut folder.children[at] else {
+                unreachable!("position matched a folder")
+            };
+            folder = inner;
+        }
+        folder.children.push(OutlineEntry::Source(title, first));
+    }
+    let mut outline = Outline::new();
+    for entry in root.children {
+        if let Some(node) = entry.into_node() {
+            outline.push_child(node);
         }
     }
     outline
+}
+
+#[derive(Default)]
+struct Folder {
+    children: Vec<OutlineEntry>,
+}
+
+enum OutlineEntry {
+    Source(String, usize),
+    Folder(String, Folder),
+}
+
+impl OutlineEntry {
+    fn first_page(&self) -> Option<usize> {
+        match self {
+            OutlineEntry::Source(_, first) => Some(*first),
+            OutlineEntry::Folder(_, f) => f.children.iter().filter_map(Self::first_page).min(),
+        }
+    }
+
+    fn into_node(self) -> Option<OutlineNode> {
+        let first = self.first_page()?;
+        let dest = XyzDestination::new(first - 1, Point::from_xy(0.0, 0.0));
+        match self {
+            OutlineEntry::Source(title, _) => Some(OutlineNode::new(title, dest)),
+            OutlineEntry::Folder(name, folder) => {
+                let mut node = OutlineNode::new(name, dest);
+                for child in folder.children {
+                    if let Some(c) = child.into_node() {
+                        node.push_child(c);
+                    }
+                }
+                Some(node)
+            }
+        }
+    }
 }
 
 /// Horizontal scale that fits a word of `natural` width into an OCR box `box_w`
@@ -456,50 +538,46 @@ impl Builder<'_> {
         }
     }
 
-    fn text_unit(&mut self, section: &mut TagGroup, unit: &Unit, text: &str) {
-        // Wrap per source line so each line becomes one paragraph; the rows are the
-        // same ones `text_page_chunks` produces for the printpdf renderer.
+    /// Draw a run of text units (see [`flow_pages`]); returns each unit's
+    /// tagged section and page range. Each source line becomes one paragraph.
+    fn text_run(&mut self, units: &[&Unit]) -> Vec<(TagGroup, PageRange)> {
         let font = self.font;
-        let mut rows: Vec<(usize, String)> = text
-            .lines()
-            .enumerate()
-            .flat_map(|(i, line)| {
-                wrap_text(line, TEXT_WRAP_EMS, &|c| font.measure(c))
-                    .into_iter()
-                    .map(move |row| (i, row))
-            })
-            .collect();
-        if rows.is_empty() {
-            rows.push((0, String::new()));
-        }
-        let mut paragraphs: BTreeMap<usize, Vec<Identifier>> = BTreeMap::new();
-        let mut hidden_ids = Vec::new();
-        for (index, chunk) in rows.chunks(TEXT_ROWS_PER_PAGE).enumerate() {
-            let mut hidden = Vec::new();
-            if index == 0 {
-                hidden.extend(
-                    unit.annotations
-                        .iter()
-                        .filter(|a| is_searchable_content(a))
-                        .map(annotation_line),
-                );
-                if let Some(time) = unit.time_range {
-                    hidden.push(time_line(time));
+        let layout = flow_pages(units, &|c| font.measure(c));
+        let first_page = self.pages;
+        let mut paragraphs: Vec<BTreeMap<usize, Vec<Identifier>>> =
+            units.iter().map(|_| BTreeMap::new()).collect();
+        let mut hidden_ids: Vec<Vec<Identifier>> = units.iter().map(|_| Vec::new()).collect();
+        for page in &layout.pages {
+            let lines: Vec<&str> = page.rows.iter().map(|r| r.text.as_str()).collect();
+            let (ids, more) = self.text_page(&lines, &page.hidden);
+            for (row, id) in page.rows.iter().zip(ids) {
+                if let Some(unit) = row.unit {
+                    paragraphs[unit].entry(row.line).or_default().extend(id);
                 }
             }
-            let lines: Vec<&str> = chunk.iter().map(|(_, row)| row.as_str()).collect();
-            let (ids, more) = self.text_page(&lines, &hidden);
-            for ((para, _), id) in chunk.iter().zip(ids) {
-                paragraphs.entry(*para).or_default().extend(id);
+            if let Some(&unit) = page.starts.first() {
+                hidden_ids[unit].extend(more);
             }
-            hidden_ids.extend(more);
         }
-        for ids in paragraphs.into_values() {
-            section.push(paragraph(ids));
-        }
-        for id in hidden_ids {
-            section.push(paragraph([id]));
-        }
+        paragraphs
+            .into_iter()
+            .zip(hidden_ids)
+            .zip(layout.unit_pages)
+            .map(|((paragraphs, hidden), (first, last))| {
+                let mut section = TagGroup::new(Tag::Section);
+                for ids in paragraphs.into_values() {
+                    section.push(paragraph(ids));
+                }
+                for id in hidden {
+                    section.push(paragraph([id]));
+                }
+                let pages = PageRange {
+                    first: first_page + first + 1,
+                    last: first_page + last + 1,
+                };
+                (section, pages)
+            })
+            .collect()
     }
 
     fn provenance(&mut self, lines: &[String]) {

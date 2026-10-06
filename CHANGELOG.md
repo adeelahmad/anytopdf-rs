@@ -6,16 +6,94 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- URLs, email addresses, domains and app names found in OCR, captions, transcripts
+  and text become `custom` entity annotations, and dates and times become
+  `timestamp` annotations with an ISO 8601 value (relative ones such as "last
+  Friday" resolved against the capture date). Both are searchable in the hidden text
+  layer and listed per chunk under the new optional `entities` field of
+  `anytopdf.chunks/1`. App names come from a gazetteer, window titles and URL
+  domains, never bare capitalized words. `--no-entities` turns extraction off and
+  `--date-order dmy|mdy` sets how `03/04/2024` is read.
 - Images and video keyframes carry up to five dominant colours in the hidden search
   layer and the chunks JSON (`color navy blue #141e64 31%`), so searching "red" or
   "blue" finds the frames those colours dominate. `--colors off` disables it.
   Runtime plugins' `custom` annotations with an `entity` attribute are now searchable too.
+- JSON and JSON Lines inputs (`.json`, `.jsonl`, `.ndjson`, or sniffed). Each record of a
+  JSON Lines file, top-level array or long API response (`{"data": [...]}`) becomes its own
+  searchable chunk of `path: value` lines anchored to its exact bytes, and records share
+  pages instead of taking one each. Other documents render as an indented outline. A
+  malformed line is kept as text with one `input.lossy-decode` warning.
+- Camera RAW photos (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF and more) import as
+  image pages from their embedded camera preview, with no external tool. A missing or
+  small preview is developed by `sips`, `dcraw_emu`, `dcraw` or ImageMagick
+  (`--raw-decode auto|preview|develop`, `ANYTOPDF_RAW_DECODE`). TIFF-based RAW files no
+  longer fall through to the TIFF importer, which decoded only a thumbnail.
+- Photographed pages are flattened before OCR: the sheet is found, its perspective
+  corrected and skewed text lines straightened (`--scan-mode auto|on|off`,
+  `ANYTOPDF_SCAN_MODE`, default `auto`). `auto` only changes photos that clearly show a
+  page with text on a distinct background, or a page-filling scan with skewed lines;
+  the unit records `scan.page` corners and `scan.deskew-degrees`.
+- `convert` accepts `http://` and `https://` URLs. Web pages become readable text plus
+  a headless Chrome/Chromium/Edge snapshot (`--url-snapshot auto|on|off`), video and
+  podcast links are fetched with yt-dlp along with their captions and chapters, and other links are
+  imported by content type. Sources record `url.source`, `url.final` and `url.fetched`,
+  and the provenance page lists the URL. `--url-mode`, `--url-sub-langs`,
+  `--url-max-height`, `--url-max-mb`, `--url-timeout` and `--url-allow-private` (each
+  also an `ANYTOPDF_URL_*` variable) tune fetching; loopback and private addresses are
+  refused by default. `doctor` lists `yt-dlp` and `chrome`.
+- `convert --links FILE` converts every link in a text list, a browser bookmark export
+  (Netscape HTML) or Chrome's `Bookmarks` JSON; bookmark folders become nested PDF/A
+  bookmarks (`outline.title`, `outline.folders`, kept under `--profile share`) and an
+  unreachable link is skipped with `input.unreadable`.
+- The HTML importer keeps only the page's single `<main>` (or `<article>`) element
+  when one exists and records it as `html.content`.
+- The new `anytopdf-plugin-objects` runtime plugin detects objects in images and video
+  keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
+  pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
+  confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's
   interval, scene-change and dedupe sampling. `anytopdf doctor` adds a "Screen capture"
   section (`capture` in `--json`) with the grabber and, on macOS, the Screen Recording
   permission.
+- WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) chat exports become
+  conversation pages with a `time sender: text` line per message; attachments in the export
+  follow the message that sent them. New `--chat-date-order` and `--no-chat-attachments`.
+- Location enrichment (`--location on|gps|off`, default `on`). A GPS fix from EXIF,
+  XMP, QuickTime `GPSCoordinates` or an ISO 6709 `location` tag becomes a `location`
+  annotation reverse geocoded offline to "City, Region, Country" from an embedded
+  GeoNames `cities1000` table (CC BY 4.0). Place names in OCR text, captions,
+  transcripts and text pages become `location` annotations with
+  `attributes.source = text` and are searchable in the PDF's hidden layer.
+  GPS-derived locations never enter the hidden layer and `--profile share` drops
+  them, as before.
+- `anytopdf search` searches every PDF in a local SQLite (FTS5) index, printing the PDF,
+  page, time, kind, matching text and source file (`--kind`, `--person`, `--collection`,
+  `--limit`, `--json` with the new `anytopdf.search/1` schema). `convert --index`
+  records an output with every annotation; `anytopdf index add|list|remove` manages
+  existing PDFs from their embedded chunks (`anytopdf.index/1`). The index lives at
+  `ANYTOPDF_INDEX` or in the user data directory (`--index-db` overrides) and is never
+  written into a PDF. The MCP server gains a `search` tool and `queue serve --search`
+  a `GET /v1/search` endpoint.
+- `anytopdf ask <pdf-or-directory> "<question>"` and the MCP `ask` tool answer a
+  question from converted PDFs. Chunks are ranked with BM25 and returned as numbered
+  passages citing PDF, pages, time range and original file. With `ANYTOPDF_LLM_URL`
+  set to an OpenAI-compatible server the answer cites them as `[n]`; an unreachable
+  endpoint adds an `ask.llm-failed` warning and falls back to the passages. New
+  `anytopdf.ask/1` schema.
+- `anytopdf setup whisper [--model NAME] [--from FILE] [--base-url URL]` turns on
+  speech-to-text in one step: it downloads a whisper.cpp ggml model (default `base`)
+  into the user data folder (`ANYTOPDF_DATA_DIR`, or the platform's per-user data
+  folder), verifies the SHA-1 whisper.cpp publishes, records the model with its SHA-256
+  in `whisper/setup.json`, and says what else transcription still needs.
+- Bundled runtime plugins (`plugins/` beside the binary, Homebrew's `libexec/plugins`,
+  `<data dir>/plugins`) are found without `ANYTOPDF_PLUGIN_PATH` and run once their
+  manifest reports the new optional `ready: true`; `detail` explains what is missing.
+  The Whisper plugin is ready when an engine, a model and FFmpeg are all present.
+  `anytopdf doctor` gains a Transcription section (`transcription` in `--json`), and
+  `capabilities` lists idle bundled plugins with the step that turns them on.
+  `install.sh` now puts plugins in `<data dir>/plugins`.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

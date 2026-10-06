@@ -46,6 +46,12 @@ pub(crate) fn provenance_lines(
         lines.push(String::new());
         let name = basename(&source.path);
         lines.push(format!("Source: {name}"));
+        if let Some(url) = source.metadata.get("url.source") {
+            lines.push(format!("URL: {url}"));
+        }
+        if let Some(fetched) = source.metadata.get("url.fetched") {
+            lines.push(format!("Fetched: {fetched}"));
+        }
         if let Some(hash) = &source.sha256 {
             lines.push(format!("SHA-256: {hash}"));
         }
@@ -196,6 +202,28 @@ pub(crate) mod tests {
         );
         let notes = lines.iter().position(|l| l == "Source: notes.txt").unwrap();
         assert!(!lines[notes..at].iter().any(|l| l.starts_with("Print")));
+    }
+
+    #[test]
+    fn fetched_sources_show_their_url_and_fetch_time() {
+        let (mut graph, map) = prov_graph();
+        for (k, v) in [
+            ("url.source", "https://example.com/post"),
+            ("url.fetched", "2026-10-06T09:00:00Z"),
+        ] {
+            graph.sources[0].metadata.insert(k.into(), v.into());
+        }
+        let lines = provenance_lines(&graph, &map);
+        let at = lines.iter().position(|l| l == "Source: notes.txt").unwrap();
+        assert_eq!(
+            &lines[at + 1..at + 3],
+            [
+                "URL: https://example.com/post",
+                "Fetched: 2026-10-06T09:00:00Z"
+            ]
+        );
+        let scan = lines.iter().position(|l| l == "Source: scan.png").unwrap();
+        assert!(!lines[scan..].iter().any(|l| l.starts_with("URL:")));
     }
 
     #[test]

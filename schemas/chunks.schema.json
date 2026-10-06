@@ -26,7 +26,15 @@
             "required": ["first", "last"],
             "properties": {"first": {"type": "integer", "minimum": 1}, "last": {"type": "integer", "minimum": 1}}
           },
-          "providers": {"type": "array", "items": {"type": "string"}}
+          "providers": {"type": "array", "items": {"type": "string"}},
+          "entities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["kind", "value"],
+              "properties": {"kind": {"type": "string"}, "value": {"type": "string"}}
+            }
+          }
         }
       }
     }

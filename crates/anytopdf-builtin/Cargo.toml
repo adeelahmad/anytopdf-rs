@@ -16,12 +16,14 @@ apple-vision = [
 [dependencies]
 anyhow.workspace = true
 anytopdf-core = { path = "../anytopdf-core" }
+chrono.workspace = true
 image.workspace = true
 flate2.workspace = true
 infer.workspace = true
 lopdf.workspace = true
 mail-parser.workspace = true
 regex.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tar.workspace = true
 tiff.workspace = true

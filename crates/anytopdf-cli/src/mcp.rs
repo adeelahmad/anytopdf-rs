@@ -235,11 +235,12 @@ fn initialize(params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "anytopdf", "version": env!("CARGO_PKG_VERSION")},
-        "instructions": "Convert local media and documents into searchable PDFs and read \
-            back their embedded manifest and chunks. Paths are local to the machine running \
-            the server; relative paths resolve against the server's working directory, so \
-            prefer absolute paths. Outputs are never overwritten unless overwrite is true, \
-            and source files are always protected."
+        "instructions": "Convert local media and documents into searchable PDFs, read back \
+            their embedded manifest and chunks, search every PDF in the local search \
+            index, and ask questions about them. Paths are local to the machine running the server; relative paths \
+            resolve against the server's working directory, so prefer absolute paths. \
+            Outputs are never overwritten unless overwrite is true, and source files are \
+            always protected."
     })
 }
 
@@ -255,7 +256,7 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "inputs": {"type": "array", "items": {"type": "string"}, "minItems": 1,
-                        "description": "Files or directories to convert."},
+                        "description": "Files, directories or http(s) URLs to convert."},
                     "output": {"type": "string", "description": "Output PDF path. Defaults to a name derived from the first input."},
                     "output_dir": {"type": "string", "description": "Write one PDF per input into this directory instead of one merged PDF."},
                     "overwrite": {"type": "boolean", "description": "Replace an existing output; source files are always protected."},
@@ -271,7 +272,11 @@ fn tool_definitions() -> Value {
                     "draw_boxes": {"type": "string", "description": "Draw labelled boxes over image and video-frame pages: comma-separated objects, faces, ocr, or all."},
                     "video_interval": {"type": "number", "exclusiveMinimum": 0, "description": "Seconds between sampled video frames."},
                     "max_video_frames": {"type": "integer", "minimum": 0, "description": "Maximum video frames to keep (0 means unlimited)."},
-                    "max_image_frames": {"type": "integer", "minimum": 0, "description": "Maximum frames from a multi-frame TIFF or GIF (0 means unlimited)."}
+                    "max_image_frames": {"type": "integer", "minimum": 0, "description": "Maximum frames from a multi-frame TIFF or GIF (0 means unlimited)."},
+                    "raw_decode": {"type": "string", "enum": ["auto", "preview", "develop"], "description": "Camera RAW photos: embedded preview, developed RAW data, or auto."},
+                    "scan_mode": {"type": "string", "enum": ["auto", "on", "off"], "description": "Flatten and straighten photographed pages before OCR."},
+                    "index": {"type": "boolean", "description": "Also record the output in the local search index, for the search tool."},
+                    "collection": {"type": "string", "description": "With index: tag the output with this collection name."}
                 },
                 "required": ["inputs"],
                 "additionalProperties": false
@@ -292,6 +297,27 @@ fn tool_definitions() -> Value {
             "annotations": {"readOnlyHint": true, "openWorldHint": false}
         },
         {
+            "name": "ask",
+            "title": "Ask a question about converted files",
+            "description": "Answer a question from one PDF produced by anytopdf, or a directory \
+                of them. Retrieves the best-matching chunks and, when ANYTOPDF_LLM_URL points at \
+                an OpenAI-compatible server, answers with [n] citations; otherwise returns the \
+                ranked passages. Each passage carries its file, pages and time range. Returns \
+                the anytopdf.ask/1 document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "PDF produced by anytopdf, or a directory of them."},
+                    "question": {"type": "string", "description": "The question to answer."},
+                    "top": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Number of ranked passages to retrieve (default 8)."},
+                    "no_llm": {"type": "boolean", "description": "Return ranked passages only, even when an LLM endpoint is configured."}
+                },
+                "required": ["source", "question"],
+                "additionalProperties": false
+            },
+            "annotations": {"readOnlyHint": true, "openWorldHint": true}
+        },
+        {
             "name": "probe",
             "title": "Probe an input",
             "description": "Detect the format of a file and the importer that would handle it, \
@@ -300,6 +326,26 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {"input": {"type": "string", "description": "File to inspect."}},
                 "required": ["input"],
+                "additionalProperties": false
+            },
+            "annotations": {"readOnlyHint": true, "openWorldHint": false}
+        },
+        {
+            "name": "search",
+            "title": "Search indexed PDFs",
+            "description": "Search every PDF recorded in the local search index (by convert \
+                --index or index add) for words, or list faces, objects and other annotations by \
+                kind, person or collection. Returns the anytopdf.search/1 document: each hit names \
+                the PDF, page, time, region, kind and source file.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Words to find (all must match); \"quoted words\" match as a phrase and a trailing * matches a prefix."},
+                    "kind": {"type": "array", "items": {"type": "string", "enum": crate::cli::ENTRY_KINDS}, "description": "Only these kinds; chunk is a page's whole text."},
+                    "person": {"type": "string", "description": "Only faces recognised as this person."},
+                    "collection": {"type": "string", "description": "Only PDFs indexed into this collection."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "description": "Maximum results (default 20)."}
+                },
                 "additionalProperties": false
             },
             "annotations": {"readOnlyHint": true, "openWorldHint": false}
@@ -338,9 +384,15 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             "video_interval",
             "max_video_frames",
             "max_image_frames",
+            "raw_decode",
+            "scan_mode",
+            "index",
+            "collection",
         ],
         "extract" => &["pdf"],
+        "ask" => &["source", "question", "top", "no_llm"],
         "probe" => &["input"],
+        "search" => &["query", "kind", "person", "collection", "limit"],
         "capabilities" => &[],
         other => return Err(format!("unknown tool: {other}")),
     };
@@ -358,6 +410,8 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             argv.push(string(arguments, "input")?.ok_or("probe requires `input`")?);
         }
         "convert" => convert_argv(arguments, &mut argv)?,
+        "search" => search_argv(arguments, &mut argv)?,
+        "ask" => ask_argv(arguments, &mut argv)?,
         _ => {}
     }
     Ok(argv)
@@ -371,6 +425,9 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
         ("ocr", "--ocr"),
         ("lang", "--lang"),
         ("profile", "--profile"),
+        ("raw_decode", "--raw-decode"),
+        ("scan_mode", "--scan-mode"),
+        ("collection", "--collection"),
         ("draw_boxes", "--draw-boxes"),
     ] {
         if let Some(value) = string(arguments, key)? {
@@ -383,6 +440,7 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
         ("fail_fast", "--fail-fast"),
         ("include_hidden", "--include-hidden"),
         ("no_provenance_page", "--no-provenance-page"),
+        ("index", "--index"),
     ] {
         match arguments.get(key) {
             None | Some(Value::Null) | Some(Value::Bool(false)) => {}
@@ -420,6 +478,48 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
     }
     argv.push("--".into());
     argv.extend(inputs);
+    Ok(())
+}
+
+fn search_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Result<(), String> {
+    for kind in strings(arguments, "kind")? {
+        argv.push(format!("--kind={kind}"));
+    }
+    for (key, flag) in [("person", "--person"), ("collection", "--collection")] {
+        if let Some(value) = string(arguments, key)? {
+            argv.push(format!("{flag}={value}"));
+        }
+    }
+    if let Some(value) = arguments.get("limit").filter(|v| !v.is_null()) {
+        let n = value
+            .as_u64()
+            .filter(|n| *n >= 1)
+            .ok_or("`limit` must be a positive integer")?;
+        argv.push(format!("--limit={n}"));
+    }
+    if let Some(query) = string(arguments, "query")? {
+        argv.push("--".into());
+        argv.push(query);
+    }
+    Ok(())
+}
+
+fn ask_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Result<(), String> {
+    if let Some(value) = arguments.get("top").filter(|v| !v.is_null()) {
+        let top = value
+            .as_u64()
+            .filter(|n| (1..=100).contains(n))
+            .ok_or("`top` must be an integer from 1 to 100")?;
+        argv.push(format!("--top={top}"));
+    }
+    match arguments.get("no_llm") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => argv.push("--no-llm".into()),
+        Some(_) => return Err("`no_llm` must be a boolean".into()),
+    }
+    let source = string(arguments, "source")?.ok_or("ask requires `source`")?;
+    let question = string(arguments, "question")?.ok_or("ask requires `question`")?;
+    argv.extend(["--".into(), source, question]);
     Ok(())
 }
 
@@ -481,6 +581,55 @@ mod tests {
     }
 
     #[test]
+    fn convert_arguments_pass_raw_and_scan_modes() {
+        let argv = tool_argv(
+            "convert",
+            &args(json!({"inputs": ["a.nef"], "raw_decode": "develop", "scan_mode": "off"})),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "convert",
+                "--json",
+                "--raw-decode=develop",
+                "--scan-mode=off",
+                "--",
+                "a.nef"
+            ]
+        );
+    }
+
+    #[test]
+    fn search_arguments_keep_the_query_out_of_flag_position() {
+        let argv = tool_argv(
+            "search",
+            &args(json!({
+                "query": "--kind=face", "kind": ["face", "object"], "person": "Alice",
+                "limit": 5
+            })),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "search",
+                "--json",
+                "--kind=face",
+                "--kind=object",
+                "--person=Alice",
+                "--limit=5",
+                "--",
+                "--kind=face"
+            ]
+        );
+        assert_eq!(
+            tool_argv("search", &args(json!({"collection": "work"}))).unwrap(),
+            ["search", "--json", "--collection=work"]
+        );
+    }
+
+    #[test]
     fn tool_arguments_reject_unknown_and_mistyped_values() {
         for (tool, value) in [
             ("convert", json!({})),
@@ -493,8 +642,17 @@ mod tests {
                 json!({"inputs": ["a"], "dump_graph": "/tmp/g.json"}),
             ),
             ("extract", json!({})),
+            ("ask", json!({"source": "a.pdf"})),
+            ("ask", json!({"source": "a.pdf", "question": "q", "top": 0})),
+            (
+                "ask",
+                json!({"source": "a.pdf", "question": "q", "no_llm": 1}),
+            ),
             ("probe", json!({"input": 3})),
             ("capabilities", json!({"x": 1})),
+            ("search", json!({"limit": 0})),
+            ("search", json!({"kind": "face"})),
+            ("search", json!({"index_db": "/tmp/other.sqlite"})),
             ("shell", json!({})),
         ] {
             assert!(
@@ -502,6 +660,21 @@ mod tests {
                 "{tool} accepted {value}"
             );
         }
+    }
+
+    #[test]
+    fn ask_arguments_keep_question_and_source_positional() {
+        let argv = tool_argv(
+            "ask",
+            &args(json!({"source": "-a.pdf", "question": "--json?", "top": 3, "no_llm": true})),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "ask", "--json", "--top=3", "--no-llm", "--", "-a.pdf", "--json?"
+            ]
+        );
     }
 
     #[test]

@@ -69,7 +69,9 @@ fn doctor_json_reports_providers_and_validates() {
             "python3",
             "soffice",
             "pdftoppm",
-            "pdftotext"
+            "pdftotext",
+            "yt-dlp",
+            "chrome"
         ]
     );
     assert!(providers.iter().all(|p| p["available"] == false));

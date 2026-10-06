@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/search/v1",
+  "title": "anytopdf search results (anytopdf search --json, GET /v1/search)",
+  "type": "object",
+  "required": ["schema_version", "query", "hits"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "anytopdf.search/1"},
+    "index": {"type": "string", "description": "Index database path; omitted over HTTP."},
+    "query": {"type": ["string", "null"]},
+    "hits": {"type": "array", "items": {"$ref": "#/$defs/hit"}}
+  },
+  "$defs": {
+    "hit": {
+      "type": "object",
+      "required": ["pdf", "collection", "source", "unit_id", "unit_kind", "kind", "provider", "confidence", "text", "snippet", "pages", "time", "region", "frame", "attributes"],
+      "additionalProperties": false,
+      "properties": {
+        "pdf": {"type": "string"},
+        "collection": {"type": ["string", "null"]},
+        "source": {
+          "type": "object",
+          "required": ["id", "name", "path"],
+          "additionalProperties": false,
+          "properties": {
+            "id": {"type": "string"},
+            "name": {"type": ["string", "null"]},
+            "path": {"type": ["string", "null"]}
+          }
+        },
+        "unit_id": {"type": "string"},
+        "unit_kind": {"type": "string"},
+        "kind": {"type": "string", "enum": ["chunk", "ocr", "caption", "transcript", "metadata", "object", "face", "scene", "timestamp", "location", "barcode", "custom"]},
+        "provider": {"type": ["string", "null"]},
+        "confidence": {"type": ["number", "null"]},
+        "text": {"type": "string"},
+        "snippet": {"type": "string"},
+        "pages": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["first", "last"],
+              "additionalProperties": false,
+              "properties": {"first": {"type": "integer", "minimum": 1}, "last": {"type": "integer", "minimum": 1}}
+            }
+          ]
+        },
+        "time": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["start_seconds", "end_seconds"],
+              "additionalProperties": false,
+              "properties": {"start_seconds": {"type": "number", "minimum": 0}, "end_seconds": {"type": "number", "minimum": 0}}
+            }
+          ]
+        },
+        "region": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": ["x", "y", "width", "height"],
+              "additionalProperties": false,
+              "properties": {"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number"}, "height": {"type": "number"}}
+            }
+          ]
+        },
+        "frame": {"type": ["integer", "null"]},
+        "attributes": {"type": "object", "additionalProperties": {"type": "string"}}
+      }
+    }
+  }
+}

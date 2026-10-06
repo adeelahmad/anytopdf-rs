@@ -38,7 +38,9 @@ anytopdf-core = { path = "../anytopdf-core" }
 anytopdf-builtin = { path = "../anytopdf-builtin", default-features = false }
 anytopdf-pdf = { path = "../anytopdf-pdf" }
 anytopdf-imap = { path = "../anytopdf-imap", optional = true }
+anytopdf-index = { path = "../anytopdf-index" }
 anytopdf-print = { path = "../anytopdf-print" }
+anytopdf-plugin-whisper = { path = "../anytopdf-plugin-whisper" }
 rustls.workspace = true
 clap.workspace = true
 regex.workspace = true
@@ -51,6 +53,7 @@ hmac.workspace = true
 serde.workspace = true
 sha2.workspace = true
 ureq.workspace = true
+rustls-native-certs.workspace = true
 uuid.workspace = true
 
 [target.'cfg(unix)'.dependencies]

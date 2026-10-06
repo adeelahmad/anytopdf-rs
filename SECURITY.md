@@ -53,7 +53,7 @@ someone reading outputs shared under `--profile share`.
 
 The job queue, its signed webhooks and its HTTP upload listener (`anytopdf queue`,
 `anytopdf queue serve`), the IMAP watcher (`anytopdf watch imap`), the remote print front (`anytopdf print remote`), the MCP
-server (`anytopdf mcp`), the PAPPL printer helper and the HTML, email, Office,
+server (`anytopdf mcp`), URL inputs, the search index (`anytopdf search`, `queue serve --search`), question answering (`anytopdf ask`), the PAPPL printer helper and the HTML, email, Office,
 archive, PDF and HEIC importers shipped after this threat model was written. Reports
 against them are welcome and are triaged by the maintainer directly until the
 model is revised (threat model §1.16).
@@ -110,6 +110,21 @@ From the threat model's downstream responsibilities (§1.13):
   HTML, terminals, shells or databases; treat file names as attacker-chosen.
 - Keep outputs outside the directories you scan, and do not run two conversions
   to the same output at once.
+- URL inputs refuse loopback, private and link-local addresses unless
+  `--url-allow-private` is given. The check covers anytopdf's own requests and
+  every redirect it follows, but not DNS rebinding, and yt-dlp and the snapshot
+  browser fetch on their own after only the first URL is checked. Do not let
+  untrusted parties choose URLs (for example through `anytopdf mcp`) on a host
+  that can reach sensitive internal services.
+- The search index (`convert --index`, `index add`) holds the text, annotations
+  and source paths of every PDF recorded in it, and stays readable after a PDF
+  is deleted (remove it with `anytopdf index remove`). Keep it in your own user
+  data directory, and only enable `queue serve --search` for clients that may
+  read everything in it.
+- `anytopdf ask` sends the question and the retrieved passages to
+  `ANYTOPDF_LLM_URL` when it is set; point it at a local or trusted server.
+  Passage text comes from your files, so a crafted document can try to steer
+  the model's answer: check the cited passages before acting on an answer.
 - Install FFmpeg, ExifTool, Tesseract, Python and docTR from trusted sources.
   docTR may download model weights on first use; pre-install them or use
   `--ocr tesseract`/`--ocr off` on offline hosts.

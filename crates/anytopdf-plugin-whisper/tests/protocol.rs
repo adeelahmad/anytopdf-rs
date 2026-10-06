@@ -11,6 +11,11 @@ fn plugin() -> Command {
     ] {
         command.env_remove(name);
     }
+    // Keep a real `anytopdf setup whisper` on this machine out of the tests.
+    command.env(
+        "ANYTOPDF_DATA_DIR",
+        std::env::temp_dir().join("anytopdf-whisper-tests-no-data"),
+    );
     command
 }
 
@@ -59,6 +64,57 @@ fn manifest_declares_a_protocol_v1_graph_enricher() {
     assert_eq!(manifest["protocol"], 1);
     assert_eq!(manifest["name"], "whisper");
     assert_eq!(manifest["capabilities"][0]["kind"], "graph-enricher");
+}
+
+#[test]
+fn manifest_reports_what_is_missing_when_not_ready() {
+    let output = plugin()
+        .arg("--anytopdf-manifest")
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["ready"], false);
+    let detail = manifest["detail"].as_str().unwrap();
+    assert!(detail.contains("no Whisper engine"), "{detail}");
+    assert!(detail.contains("anytopdf setup whisper"), "{detail}");
+}
+
+#[cfg(unix)]
+#[test]
+fn manifest_is_ready_with_a_recorded_model_engine_and_ffmpeg() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    for tool in ["whisper-cli", "ffmpeg"] {
+        let path = bin.join(tool);
+        fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let data = dir.path().join("data");
+    let model = data.join("whisper/ggml-base.bin");
+    fs::create_dir_all(model.parent().unwrap()).unwrap();
+    fs::write(&model, b"model").unwrap();
+    fs::write(
+        data.join("whisper/setup.json"),
+        serde_json::to_vec(&json!({
+            "schema_version": "anytopdf.whisper-setup/1",
+            "model": "base", "path": model, "sha256": "00"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let output = plugin()
+        .arg("--anytopdf-manifest")
+        .env("PATH", &bin)
+        .env("ANYTOPDF_DATA_DIR", &data)
+        .output()
+        .unwrap();
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(manifest["ready"], true, "{manifest}");
+    let detail = manifest["detail"].as_str().unwrap();
+    assert!(detail.starts_with("whisper.cpp:ggml-base via "), "{detail}");
 }
 
 #[test]

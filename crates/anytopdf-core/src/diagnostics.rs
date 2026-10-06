@@ -26,6 +26,7 @@ pub enum DiagnosticCode {
     RenderWarning,
     ManifestSidecar,
     ExtractVersionMismatch,
+    AskLlmFailed,
     PluginWarning,
     PluginDiscovery,
 }
@@ -50,6 +51,7 @@ impl DiagnosticCode {
         Self::RenderWarning,
         Self::ManifestSidecar,
         Self::ExtractVersionMismatch,
+        Self::AskLlmFailed,
         Self::PluginWarning,
         Self::PluginDiscovery,
     ];
@@ -74,6 +76,7 @@ impl DiagnosticCode {
             Self::RenderWarning => "render.warning",
             Self::ManifestSidecar => "manifest.sidecar",
             Self::ExtractVersionMismatch => "extract.version-mismatch",
+            Self::AskLlmFailed => "ask.llm-failed",
             Self::PluginWarning => "plugin.warning",
             Self::PluginDiscovery => "plugin.discovery",
         }
@@ -181,7 +184,7 @@ mod tests {
 
     #[test]
     fn codes_have_unique_stable_strings() {
-        assert_eq!(DiagnosticCode::ALL.len(), 20);
+        assert_eq!(DiagnosticCode::ALL.len(), 21);
         let strings: Vec<&str> = DiagnosticCode::ALL.iter().map(|c| c.as_str()).collect();
         let unique: std::collections::BTreeSet<&str> = strings.iter().copied().collect();
         assert_eq!(unique.len(), strings.len(), "codes must be pairwise unique");
@@ -196,11 +199,12 @@ mod tests {
         assert_eq!(LossyDecode.as_str(), "input.lossy-decode");
         assert_eq!(TranscriptAmbiguous.as_str(), "transcript.ambiguous");
         assert_eq!(PluginWarning.as_str(), "plugin.warning");
+        assert_eq!(AskLlmFailed.as_str(), "ask.llm-failed");
     }
 
     #[test]
     fn only_optional_provider_notices_are_informational() {
-        assert_eq!(DiagnosticCode::ALL.len(), 20);
+        assert_eq!(DiagnosticCode::ALL.len(), 21);
         let info = [ProviderMissing, OcrFallback, ManifestSidecar];
         for code in DiagnosticCode::ALL {
             let expected = if info.contains(code) {
@@ -226,7 +230,7 @@ mod tests {
 
     #[test]
     fn wire_form_round_trips_every_code() {
-        assert_eq!(DiagnosticCode::ALL.len(), 20);
+        assert_eq!(DiagnosticCode::ALL.len(), 21);
         for code in DiagnosticCode::ALL {
             let wire = Diagnostic::new(*code, "msg with [brackets]").to_string();
             let parsed = Diagnostic::from_wire(&wire);

@@ -1,3 +1,5 @@
+mod stage;
+
 use crate::cli::ConvertArgs;
 use crate::events::{Event, EventWriter, RunStatus};
 use crate::exit::{CliError, ExitClass, Redactor, fail, tag};
@@ -5,18 +7,17 @@ use crate::naming;
 use crate::publish::{checked_destination, publish_output};
 use anyhow::{Context, Result};
 use anytopdf_builtin::{
-    BuiltinOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs, register_builtins,
+    BuiltinOptions, ChatOptions, DiscoveryOptions, OcrMode, PROVIDER_NAMES, URL_PROVIDERS,
+    detect_providers_named, discover_inputs, register_builtins,
 };
 use anytopdf_core::{
-    Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline,
-    PipelineEvent, PipelineObserver, PipelineRun, Profile, Registry, RuntimePluginPolicy, Severity,
-    Stage, register_runtime_plugins_with_policy, strip_workspace_paths,
+    Channel, Diagnostic, DocumentGraph, Pipeline, PipelineEvent, PipelineObserver, Profile,
+    Registry, RuntimePluginPolicy, Severity, Stage, register_runtime_plugins_with_policy,
+    strip_workspace_paths,
 };
-use anytopdf_pdf::{
-    CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, PdfARenderer, SearchablePdfRenderer, embed_files,
-    read_embedded_files,
-};
+use anytopdf_pdf::{PdfARenderer, SearchablePdfRenderer};
 use regex::Regex;
+use stage::stage_document;
 use std::{
     io::Stderr,
     path::{Path, PathBuf},
@@ -141,7 +142,9 @@ pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result
     for path in args
         .inputs
         .iter()
+        .filter(|p| !crate::fetch::is_url(p))
         .chain(&args.transcripts)
+        .chain(&args.url.links)
         .chain(args.output.iter())
         .chain(args.output_dir.iter())
         .chain(args.dump_graph.iter())
@@ -261,6 +264,16 @@ fn convert_inner(
             .context("invalid --filter regex"),
     )?;
 
+    let fetched = crate::fetch::fetch_inputs(
+        &args.inputs,
+        &args.url.links,
+        &args.url.options(),
+        !args.quiet && sink.is_none(),
+    )?;
+    if let Some(dir) = &fetched.dir {
+        redactor.add_dir(dir.path());
+    }
+
     emit(
         sink,
         Event::StageStarted {
@@ -270,7 +283,7 @@ fn convert_inner(
     let inputs = tag(
         ExitClass::Input,
         discover_inputs(
-            &args.inputs,
+            &fetched.inputs,
             &DiscoveryOptions {
                 include_hidden: args.include_hidden,
                 filter,
@@ -286,7 +299,7 @@ fn convert_inner(
     );
 
     // Keep command-line order (stable within a directory) so source order is predictable.
-    let roots: Vec<PathBuf> = args
+    let roots: Vec<PathBuf> = fetched
         .inputs
         .iter()
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
@@ -301,6 +314,7 @@ fn convert_inner(
     protected.extend(
         args.transcripts
             .iter()
+            .chain(&args.url.links)
             .map(|p| p.canonicalize())
             .collect::<std::io::Result<Vec<_>>>()?,
     );
@@ -310,7 +324,7 @@ fn convert_inner(
         let out_path = match args.output.clone() {
             Some(path) => path,
             None => {
-                let base = naming::default_output(&args.inputs, &std::env::current_dir()?);
+                let base = naming::default_output(&fetched.names, &std::env::current_dir()?);
                 if args.overwrite {
                     base
                 } else {
@@ -339,6 +353,11 @@ fn convert_inner(
         dump_dest = Some(graph);
     }
 
+    let mut index = args
+        .index
+        .then(|| crate::search::open_for_convert(args.index_db.as_deref()))
+        .transpose()?;
+
     let opts = BuiltinOptions {
         video_interval: args.video_interval,
         scene_threshold: args.scene_threshold,
@@ -349,7 +368,17 @@ fn convert_inner(
         ocr_language: args.lang,
         explicit_transcripts: args.transcripts,
         embedded_subtitles: !args.no_embedded_subtitles,
+        entities: !args.no_entities,
+        date_order: args.date_order.parse().map_err(anyhow::Error::msg)?,
         colors: args.colors,
+        chat: ChatOptions {
+            attachments: !args.no_chat_attachments,
+            date_order: args.chat_date_order,
+        },
+        raw_decode: args.raw_decode,
+        scan: args.scan_mode,
+        location: args.location,
+        ..BuiltinOptions::default()
     };
 
     let (registry, mut warnings) = registry(opts, policy);
@@ -363,6 +392,7 @@ fn convert_inner(
         pipeline.ingest_observed(&inputs, args.quiet, &mut observer),
     )?;
     run.warnings.append(&mut warnings);
+    run.warnings.extend(fetched.warnings.iter().cloned());
 
     redactor.add_dir(&run.context.workspace.join("x"));
     for executable in anytopdf_core::runtime_plugin_candidates(policy) {
@@ -430,7 +460,12 @@ fn convert_inner(
     if let Some(kinds) = &args.draw_boxes {
         metadata.insert(anytopdf_pdf::DRAW_BOXES_KEY.into(), kinds.clone());
     }
-    for p in detect_providers() {
+    let used = fetched.used_providers();
+    let names: Vec<&'static str> = PROVIDER_NAMES
+        .into_iter()
+        .filter(|n| !URL_PROVIDERS.contains(n) || used.contains(n))
+        .collect();
+    for p in detect_providers_named(&names) {
         if let Some(version) = p.version {
             metadata.insert(format!("provider.{}.version", p.name), version);
         }
@@ -439,6 +474,8 @@ fn convert_inner(
     for source in &mut run.graph.sources {
         source.metadata.extend(job.iter().cloned());
     }
+    let fetched_at = crate::queue::rfc3339(created.max(0) as u64);
+    crate::fetch::annotate(&mut run.graph, &fetched.origins, &fetched_at);
     let dump = args.dump_graph.as_ref().map(|_| {
         args.profile.filter(
             &strip_workspace_paths(&run.graph, &run.context.workspace),
@@ -492,7 +529,7 @@ fn convert_inner(
         let doc = stage_document(
             &pipeline,
             &run,
-            (&args.renderer, args.strict),
+            (&args.renderer, args.strict, index.is_some()),
             &staged,
             redactor,
             sink,
@@ -552,6 +589,14 @@ fn convert_inner(
             }
         }
     }
+    if let Some(index) = &mut index {
+        let docs = published
+            .iter()
+            .zip(&mut staged_docs)
+            .filter_map(|(out, (_, doc))| Some((out.clone(), doc.index.take()?)))
+            .collect();
+        crate::search::record(index, args.collection.as_deref(), docs)?;
+    }
     if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
         publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
         emit(
@@ -575,117 +620,6 @@ fn convert_inner(
         }
     }
     Ok(())
-}
-
-struct StagedDocument {
-    bytes: Vec<u8>,
-    pages: usize,
-    sources: Vec<serde_json::Value>,
-    sidecars: Option<(Vec<u8>, Vec<u8>)>,
-}
-
-fn stage_document(
-    pipeline: &Pipeline,
-    run: &PipelineRun,
-    (renderer, strict): (&str, bool),
-    staged: &Path,
-    redactor: &Redactor,
-    sink: &mut Sink,
-    profile: Profile,
-) -> Result<StagedDocument, CliError> {
-    let report = tag(ExitClass::Render, pipeline.render(run, renderer, staged))?;
-    for warning in &report.warnings {
-        report_diagnostic(
-            sink,
-            &Diagnostic::new(DiagnosticCode::RenderWarning, warning),
-            redactor,
-            profile,
-        );
-    }
-    if strict && !report.warnings.is_empty() {
-        return Err(fail(
-            ExitClass::Strict,
-            "strict conversion stopped on rendering warnings",
-        ));
-    }
-    let bytes = tag(
-        ExitClass::Render,
-        std::fs::read(staged).context("renderer did not produce output"),
-    )?;
-    if !bytes.starts_with(b"%PDF-") || report.pages == 0 {
-        return Err(fail(
-            ExitClass::Render,
-            "renderer did not produce a valid PDF",
-        ));
-    }
-    let built = Manifest::build(&run.graph, &report);
-    let sources: Vec<serde_json::Value> = built
-        .sources
-        .iter()
-        .map(|s| {
-            serde_json::json!({
-                "input": s.path.clone().unwrap_or_else(|| s.name.clone()),
-                "source_id": s.id.to_string(),
-                "sha256": s.sha256,
-            })
-        })
-        .collect();
-    let manifest = serde_json::to_vec_pretty(&built)?;
-    let chunks = serde_json::to_vec_pretty(&ChunkSet::build(&run.graph, &report))?;
-    let files = [
-        EmbeddedFile {
-            name: MANIFEST_FILE.into(),
-            mime_type: "application/json".into(),
-            bytes: manifest.clone(),
-        },
-        EmbeddedFile {
-            name: CHUNKS_FILE.into(),
-            mime_type: "application/json".into(),
-            bytes: chunks.clone(),
-        },
-    ];
-    // A renderer that wrote these exact attachments itself (pdfa stores them as
-    // PDF/A-3 associated files) must not be rewritten.
-    if already_embedded(&bytes, &files) {
-        return Ok(StagedDocument {
-            bytes,
-            pages: report.pages,
-            sources,
-            sidecars: None,
-        });
-    }
-    let (bytes, sidecars) = match embed_files(&bytes, &files) {
-        Ok(embedded) => (embedded, None),
-        Err(e) => {
-            report_diagnostic(
-                sink,
-                &Diagnostic::new(
-                    DiagnosticCode::ManifestSidecar,
-                    format!("could not embed manifest and chunks ({e}); writing sidecar files"),
-                ),
-                redactor,
-                profile,
-            );
-            (bytes, Some((manifest, chunks)))
-        }
-    };
-    Ok(StagedDocument {
-        bytes,
-        pages: report.pages,
-        sources,
-        sidecars,
-    })
-}
-
-fn already_embedded(pdf: &[u8], files: &[EmbeddedFile]) -> bool {
-    let Ok(present) = read_embedded_files(pdf) else {
-        return false;
-    };
-    files.iter().all(|want| {
-        present
-            .iter()
-            .any(|have| have.name == want.name && have.bytes == want.bytes)
-    })
 }
 
 pub(crate) fn print_diagnostic(d: &Diagnostic) {
@@ -714,6 +648,7 @@ fn exhausted_provider(warnings: &[Diagnostic], ocr: OcrMode) -> Option<&Diagnost
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anytopdf_core::DiagnosticCode;
 
     fn diag(code: DiagnosticCode, message: &str, marked: bool) -> Diagnostic {
         let mut d = Diagnostic::new(code, message);

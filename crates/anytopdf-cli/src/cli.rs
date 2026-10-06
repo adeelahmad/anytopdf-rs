@@ -1,7 +1,16 @@
-use anytopdf_builtin::OcrMode;
+mod capture;
+mod search;
+mod setup;
+mod url;
+
+use anytopdf_builtin::{ChatDateOrder, LocationMode, OcrMode, RawDecode, ScanMode};
 use anytopdf_core::{Profile, SandboxMode};
+pub(crate) use capture::{CaptureCommand, ScreenArgs};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
+pub(crate) use search::{ENTRY_KINDS, IndexCommand, SearchArgs};
+pub(crate) use setup::{SetupCommand, SetupWhisperArgs};
 use std::path::PathBuf;
+pub(crate) use url::UrlArgs;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -76,6 +85,23 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Answer a question from converted PDFs, citing file, page and time for each passage.
+    #[command(after_long_help = crate::ask::HELP_FOOTER)]
+    Ask {
+        /// PDF produced by anytopdf, or a directory of them.
+        source: PathBuf,
+        /// The question to answer.
+        question: String,
+        /// Number of ranked passages to retrieve.
+        #[arg(long, default_value = "8", value_parser = clap::value_parser!(u64).range(1..=100))]
+        top: u64,
+        /// Return the ranked passages only, even when an LLM endpoint is configured.
+        #[arg(long)]
+        no_llm: bool,
+        /// Emit one anytopdf.ask/1 JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
     /// Show what this binary and environment support, and how to enable or add more.
     #[command(after_long_help = crate::environment::HELP_FOOTER)]
     Capabilities {
@@ -103,7 +129,14 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: QueueCommand,
     },
-    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    /// Search every PDF recorded in the search index (by `convert --index` or `index add`).
+    Search(Box<SearchArgs>),
+    /// Add PDFs to, list or remove them from the cross-file search index.
+    Index {
+        #[command(subcommand)]
+        command: IndexCommand,
+    },
+    /// Serve convert, extract, ask, probe, search and capabilities as MCP tools over stdio.
     Mcp,
     /// Reach the print helper from other devices: TLS front, users and discovery.
     #[command(subcommand)]
@@ -111,50 +144,9 @@ pub(crate) enum Commands {
     /// Record a live source and convert the recording into a searchable PDF.
     #[command(subcommand)]
     Capture(CaptureCommand),
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum CaptureCommand {
-    /// Record the screen with FFmpeg until --duration or Ctrl-C, then convert it.
-    ///
-    /// Uses FFmpeg's platform grabber: avfoundation on macOS (needs the Screen
-    /// Recording permission), gdigrab or ddagrab on Windows, x11grab on Linux. Pages
-    /// are picked like any video: one frame every --interval seconds plus every scene
-    /// change, with near-duplicate frames dropped.
-    Screen(Box<ScreenArgs>),
-}
-
-#[derive(Debug, clap::Args)]
-pub(crate) struct ScreenArgs {
-    /// Screen to record: the macOS screen index, the Windows output index (ddagrab;
-    /// the whole desktop through gdigrab when omitted) or the X11 display number on
-    /// Linux ($DISPLAY when omitted).
-    #[arg(long)]
-    pub(crate) display: Option<u32>,
-    /// Seconds between sampled frames; scene changes are kept as well.
-    #[arg(long, default_value_t = 5.0)]
-    pub(crate) interval: f64,
-    /// Stop after this many seconds (default: record until Ctrl-C).
-    #[arg(long)]
-    pub(crate) duration: Option<f64>,
-    /// Frames recorded per second; scene changes shorter than a frame are missed.
-    #[arg(long, default_value_t = 2.0)]
-    pub(crate) framerate: f64,
-    /// FFmpeg input format to use instead of the platform grabber, e.g. kmsgrab.
-    #[arg(long, requires = "input")]
-    pub(crate) input_format: Option<String>,
-    /// FFmpeg input (`-i` value) for --input-format.
-    #[arg(long, requires = "input_format")]
-    pub(crate) input: Option<String>,
-    /// Keep the recording at this path (Matroska video) instead of deleting it.
-    #[arg(long)]
-    pub(crate) keep_recording: Option<PathBuf>,
-    /// Output PDF path (default: screen-<UTC time>.pdf in the current directory).
-    #[arg(short, long)]
-    pub(crate) output: Option<PathBuf>,
-    /// Convert options after `--`, for example `-- --ocr off --scene-threshold 0.2`.
-    #[arg(last = true)]
-    pub(crate) convert: Vec<String>,
+    /// Download and record what optional providers need, such as a Whisper model.
+    #[command(subcommand)]
+    Setup(SetupCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -307,6 +299,13 @@ pub(crate) struct QueueServeArgs {
     /// Suppress the server log on stderr.
     #[arg(short, long)]
     pub(crate) quiet: bool,
+    /// Also answer GET /v1/search from the search index.
+    #[arg(long)]
+    pub(crate) search: bool,
+    /// Index database for --search [default: ANYTOPDF_INDEX, else index.sqlite in the
+    /// user data directory].
+    #[arg(long, value_name = "PATH", requires = "search")]
+    pub(crate) index_db: Option<PathBuf>,
     /// Convert options for uploaded files after `--`, for example `-- --profile share`.
     #[arg(last = true)]
     pub(crate) convert: Vec<String>,
@@ -339,8 +338,8 @@ pub(crate) struct QueueWorkArgs {
 
 #[derive(Debug, clap::Args)]
 pub(crate) struct ConvertArgs {
-    /// Files or directories to convert.
-    #[arg(required = true)]
+    /// Files, directories or http(s) URLs to convert.
+    #[arg(required_unless_present = "links")]
     pub(crate) inputs: Vec<PathBuf>,
 
     /// Replace an existing output; source files are always protected.
@@ -386,6 +385,14 @@ pub(crate) struct ConvertArgs {
     ]).try_map(|s| s.parse::<OcrMode>()))]
     pub(crate) ocr: OcrMode,
 
+    /// Location enrichment: on (GPS fixes and place names in text), gps (GPS only) or off.
+    #[arg(long, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new([
+        clap::builder::PossibleValue::new("on"),
+        clap::builder::PossibleValue::new("gps"),
+        clap::builder::PossibleValue::new("off").alias("none"),
+    ]).try_map(|s| s.parse::<LocationMode>()))]
+    pub(crate) location: LocationMode,
+
     /// OCR language code.
     #[arg(long, default_value = "eng")]
     pub(crate) lang: String,
@@ -414,14 +421,43 @@ pub(crate) struct ConvertArgs {
     #[arg(long, default_value_t = 0)]
     pub(crate) max_image_frames: usize,
 
+    /// How camera RAW photos become pages: `auto` uses the embedded camera preview and
+    /// develops the RAW data when the preview is small, `preview` never runs a tool,
+    /// `develop` prefers a local developer (sips, dcraw_emu, dcraw or ImageMagick).
+    #[arg(long, env = "ANYTOPDF_RAW_DECODE", default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(["auto", "preview", "develop"]).try_map(|s| s.parse::<RawDecode>()))]
+    pub(crate) raw_decode: RawDecode,
+
+    /// Photographed-document cleanup before OCR: `auto` flattens and straightens photos
+    /// that clearly show a page, `on` crops to any detected sheet and straightens every
+    /// photo with text lines, `off` keeps images unchanged.
+    #[arg(long, env = "ANYTOPDF_SCAN_MODE", default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(["auto", "on", "off"]).try_map(|s| s.parse::<ScanMode>()))]
+    pub(crate) scan_mode: ScanMode,
+
     /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]
     pub(crate) no_embedded_subtitles: bool,
+
+    /// Skip extracting URLs, email addresses, domains, app names, dates and times from text.
+    #[arg(long)]
+    pub(crate) no_entities: bool,
+
+    /// Order of day and month in all-numeric dates such as 03/04/2024.
+    #[arg(long, default_value = "dmy", value_parser = ["dmy", "mdy"])]
+    pub(crate) date_order: String,
 
     /// Dominant-colour annotations on images and keyframes (searching "red" finds red frames).
     #[arg(long, action = clap::ArgAction::Set, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new(["on", "off"])
         .map(|s| s == "on"))]
     pub(crate) colors: bool,
+    /// How numeric dates in chat exports are read (auto picks day-first unless only month-first fits).
+    #[arg(long, default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(
+        ["auto", "dmy", "mdy", "ymd"]
+    ).try_map(|s| s.parse::<ChatDateOrder>()))]
+    pub(crate) chat_date_order: ChatDateOrder,
+
+    /// Name attachments in chat exports without importing them.
+    #[arg(long)]
+    pub(crate) no_chat_attachments: bool,
 
     /// Write the normalized document graph as JSON to this path.
     #[arg(long)]
@@ -461,6 +497,22 @@ pub(crate) struct ConvertArgs {
     /// Emit one JSON document on stdout.
     #[arg(long)]
     pub(crate) json: bool,
+
+    /// Also record the output in the cross-file search index (`anytopdf search`).
+    #[arg(long)]
+    pub(crate) index: bool,
+
+    /// Index database for --index [default: ANYTOPDF_INDEX, else index.sqlite in the
+    /// user data directory].
+    #[arg(long, value_name = "PATH", requires = "index")]
+    pub(crate) index_db: Option<PathBuf>,
+
+    /// Tag the indexed output with this collection name.
+    #[arg(long, requires = "index")]
+    pub(crate) collection: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) url: UrlArgs,
 }
 
 #[derive(Debug, Subcommand)]

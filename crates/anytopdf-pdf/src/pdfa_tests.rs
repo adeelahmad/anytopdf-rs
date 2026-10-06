@@ -456,6 +456,73 @@ fn ocr_words_are_stretched_to_their_boxes() {
     assert!(cm[0] > 0.0 && (cm[0] - 1.0).abs() > 0.01, "{cm:?}");
 }
 
+/// Outline titles depth-first, indented two spaces per level.
+fn outline_titles(
+    doc: &lopdf::Document,
+    first: Option<lopdf::ObjectId>,
+    depth: usize,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut item = first;
+    while let Some(id) = item {
+        let entry = doc.get_dictionary(id).unwrap();
+        let title = String::from_utf8_lossy(entry.get(b"Title").unwrap().as_str().unwrap());
+        out.push(format!("{}{title}", "  ".repeat(depth)));
+        let child = entry.get(b"First").and_then(|f| f.as_reference()).ok();
+        out.extend(outline_titles(doc, child, depth + 1));
+        item = entry.get(b"Next").and_then(|n| n.as_reference()).ok();
+    }
+    out
+}
+
+#[test]
+fn bookmark_folders_nest_sources_under_their_titles() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut graph = graph(dir.path());
+    let extra = SourceRecord::new(dir.path().join("third.txt"));
+    graph.units.push(Unit::text(extra.id, "third".into()));
+    graph.sources.push(extra);
+    for (i, (title, folders)) in [
+        ("Notes page", "Bookmarks bar\nResearch"),
+        ("Photo page", "Bookmarks bar"),
+        ("Third page", "Bookmarks bar\nResearch"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let meta = &mut graph.sources[i].metadata;
+        meta.insert("outline.title".into(), title.into());
+        meta.insert("outline.folders".into(), folders.into());
+    }
+    let (bytes, _) = render(dir.path(), &graph, "a.pdf");
+    let doc = lopdf::Document::load_mem(&bytes).unwrap();
+    let outlines = doc
+        .get_dictionary(
+            doc.catalog()
+                .unwrap()
+                .get(b"Outlines")
+                .unwrap()
+                .as_reference()
+                .unwrap(),
+        )
+        .unwrap()
+        .get(b"First")
+        .unwrap()
+        .as_reference()
+        .ok();
+    assert_eq!(
+        outline_titles(&doc, outlines, 0),
+        [
+            "Bookmarks bar",
+            "  Research",
+            "    Notes page",
+            "    Third page",
+            "  Photo page",
+            "Provenance",
+        ]
+    );
+}
+
 use crate::boxes::fixtures::with_detections;
 
 fn image_page_ops(bytes: &[u8]) -> Vec<lopdf::content::Operation> {

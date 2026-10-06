@@ -5,7 +5,7 @@ use anytopdf_builtin::{
     BuiltinOptions, OcrEnricher, OcrProviderStatus, ProviderVersion, detect_providers,
 };
 use anytopdf_core::{
-    PluginDescriptor, RuntimePlugin, RuntimePluginPolicy, discover_runtime_plugins_with_policy,
+    PluginDescriptor, RuntimePlugin, RuntimePluginPolicy, discover_runtime_plugins_detailed,
 };
 use std::fmt::Write;
 
@@ -65,6 +65,8 @@ pub(crate) struct Probe {
     pub(crate) ocr: Vec<OcrProviderStatus>,
     pub(crate) builtins: Vec<PluginDescriptor>,
     pub(crate) plugins: Vec<RuntimePlugin>,
+    /// Bundled plugins waiting on a dependency (manifest `ready: false`).
+    pub(crate) idle: Vec<RuntimePlugin>,
     pub(crate) ignored: Vec<String>,
     pub(crate) policy: RuntimePluginPolicy,
     pub(crate) plugin_path: Option<String>,
@@ -77,13 +79,14 @@ impl Probe {
             ..policy.clone()
         };
         let (registry, _) = registry(BuiltinOptions::default(), &disabled);
-        let (plugins, ignored) = discover_runtime_plugins_with_policy(policy);
+        let found = discover_runtime_plugins_detailed(policy);
         Probe {
             tools: detect_providers(),
             ocr: OcrEnricher::status(),
             builtins: registry.descriptors(),
-            plugins,
-            ignored,
+            plugins: found.plugins,
+            idle: found.idle,
+            ignored: found.warnings,
             policy: policy.clone(),
             plugin_path: std::env::var_os("ANYTOPDF_PLUGIN_PATH")
                 .map(|p| p.to_string_lossy().into_owned()),
@@ -103,6 +106,8 @@ fn install_hint(tool: &str) -> String {
         "python3" => ("python", "python3", "Python.Python.3.12"),
         "heif-convert" => ("libheif", "libheif-examples", "ImageMagick.ImageMagick"),
         "pdftoppm" => ("poppler", "poppler-utils", "oschwartz10612.Poppler"),
+        "yt-dlp" => ("yt-dlp", "yt-dlp", "yt-dlp.yt-dlp"),
+        "chrome" => ("--cask chromium", "chromium", "Google.Chrome"),
         other => return format!("install {other} and put it on PATH"),
     };
     let command = if cfg!(target_os = "macos") {
@@ -185,6 +190,25 @@ fn builtin_entry(probe: &Probe, d: &PluginDescriptor, hints: &mut Vec<String>) -
                 }
             }
         }
+        "camera-raw" => {
+            let developers: &[&str] = if cfg!(target_os = "macos") {
+                &["sips", "dcraw_emu", "dcraw", "magick", "convert"]
+            } else if cfg!(windows) {
+                &["dcraw_emu", "dcraw", "magick"]
+            } else {
+                &["dcraw_emu", "dcraw", "magick", "convert"]
+            };
+            // The embedded camera preview needs no tool; developing does.
+            let via = developers.iter().find(|c| which::which(c).is_ok()).map_or(
+                "embedded previews only; develop with LibRaw or ImageMagick",
+                |d| d,
+            );
+            (State::Available, format!("{exts}  (via {via})"))
+        }
+        "scan" => (
+            State::Available,
+            "unit    page detection, perspective and deskew".into(),
+        ),
         "pdf-input" => {
             if which::which("pdftoppm").is_ok() {
                 (
@@ -359,9 +383,39 @@ pub(crate) fn build(probe: &Probe) -> Report {
             });
         }
     }
+    for plugin in &probe.idle {
+        let detail = plugin
+            .manifest
+            .detail
+            .as_deref()
+            .unwrap_or("not ready in this environment");
+        for cap in &plugin.manifest.capabilities {
+            kinds[section_for(&cap.kind)].push(Entry {
+                state: State::Missing,
+                runtime: true,
+                name: format!("runtime:{}", plugin.manifest.name),
+                detail: format!(
+                    "{:<7} {} bundled, off until ready  [{}]",
+                    kind_label(&cap.kind),
+                    plugin.manifest.version,
+                    plugin.executable.display()
+                ),
+            });
+        }
+        hints.push(format!(
+            "turn on runtime:{}: {detail}",
+            plugin.manifest.name
+        ));
+    }
     let [importers, enrichers, renderers] = kinds;
     let ocr = probe.ocr.iter().map(|s| ocr_entry(s, &mut hints)).collect();
     let tools = probe.tools.iter().map(tool_entry).collect();
+    // URL inputs: yt-dlp fetches video and podcast links, Chrome snapshots web pages.
+    for tool in &probe.tools {
+        if matches!(tool.name, "yt-dlp" | "chrome") && !tool.available {
+            hints.push(install_hint(tool.name));
+        }
+    }
     let mut sections = vec![
         ("Importers", importers),
         ("Enrichers", enrichers),
@@ -387,7 +441,7 @@ pub(crate) fn build(probe: &Probe) -> Report {
         "runtime plugins: disabled by --no-plugins".to_string()
     } else {
         format!(
-            "runtime plugins: {} found in PATH and ANYTOPDF_PLUGIN_PATH ({})",
+            "runtime plugins: {} found in PATH, ANYTOPDF_PLUGIN_PATH ({}) and beside anytopdf",
             probe.plugins.len(),
             probe.plugin_path.as_deref().unwrap_or("unset")
         )
@@ -483,10 +537,18 @@ mod tests {
 
     fn probe(found: bool) -> Probe {
         Probe {
-            tools: ["ffmpeg", "ffprobe", "exiftool", "tesseract", "python3"]
-                .into_iter()
-                .map(|n| tool(n, found))
-                .collect(),
+            tools: [
+                "ffmpeg",
+                "ffprobe",
+                "exiftool",
+                "tesseract",
+                "python3",
+                "yt-dlp",
+                "chrome",
+            ]
+            .into_iter()
+            .map(|n| tool(n, found))
+            .collect(),
             ocr: vec![OcrProviderStatus {
                 name: "tesseract",
                 available: found,
@@ -500,6 +562,7 @@ mod tests {
                 descriptor("renderer", "pdf", &["pdf"]),
             ],
             plugins: vec![],
+            idle: vec![],
             ignored: vec![],
             policy: RuntimePluginPolicy::default(),
             plugin_path: None,
@@ -530,7 +593,7 @@ mod tests {
             entry(&report, "Enrichers", "ocr-auto").state,
             State::Missing
         );
-        for tool in ["ffmpeg", "exiftool", "tesseract"] {
+        for tool in ["ffmpeg", "exiftool", "tesseract", "yt-dlp", "chrome"] {
             assert!(
                 report
                     .hints
@@ -583,6 +646,8 @@ mod tests {
                         phase: None,
                     })
                     .collect(),
+                ready: true,
+                detail: None,
             },
         });
         let report = build(&probe);
@@ -594,6 +659,43 @@ mod tests {
         assert_eq!(enricher.state, State::Missing);
         assert!(enricher.detail.contains("blocked"), "{}", enricher.detail);
         assert!(render(&report).contains(" AR runtime:igl"));
+    }
+
+    #[test]
+    fn idle_bundled_plugins_say_what_turns_them_on() {
+        let mut probe = probe(true);
+        probe.idle.push(RuntimePlugin {
+            timeout: Duration::from_secs(1),
+            sandbox: Default::default(),
+            executable: PathBuf::from("/opt/anytopdf/plugins/anytopdf-plugin-whisper"),
+            manifest: RuntimePluginManifest {
+                protocol: 1,
+                name: "whisper".into(),
+                version: "0.2.0".into(),
+                capabilities: vec![RuntimeCapability {
+                    kind: "graph-enricher".into(),
+                    extensions: vec![],
+                    mime_types: vec!["audio/*".into()],
+                    priority: 50,
+                    phase: None,
+                }],
+                ready: false,
+                detail: Some("whisper.cpp has no ggml model; run `anytopdf setup whisper`".into()),
+            },
+        });
+        let report = build(&probe);
+        let entry = entry(&report, "Enrichers", "runtime:whisper");
+        assert_eq!(entry.state, State::Missing);
+        assert!(entry.detail.contains("off until ready"), "{}", entry.detail);
+        assert!(
+            report
+                .hints
+                .iter()
+                .any(|h| h.starts_with("turn on runtime:whisper:") && h.contains("setup whisper")),
+            "{:?}",
+            report.hints
+        );
+        assert!(render(&report).contains(" -R runtime:whisper"));
     }
 
     #[test]

@@ -51,6 +51,12 @@ into their native coordinate system.
 
 Find candidate paths. Discovery is intentionally separate from probing.
 
+URL arguments are fetched first (`crates/anytopdf-cli/src/fetch/`) into a temporary
+directory that lives for the conversion: a plain download (plus a headless-browser
+PDF snapshot for HTML pages) or a yt-dlp download whose captions are renamed to the
+media's sidecar name. The downloaded files replace the URL in the input list, so no
+importer knows about URLs; after import, each source from a URL gets `url.*` metadata.
+
 ### Probe
 
 Every importer can score an input. The registry chooses the highest-priority
@@ -61,14 +67,17 @@ container sniffing, and format-specific probing without modifying core.
 
 An importer emits normalized units. Examples:
 
-- image -> one visual unit
+- image -> one visual unit (camera RAW: its embedded preview or a developed render)
 - video -> keyframe visual units + timestamps
 - subtitle -> text/cue units
 - text -> visible text unit
+- JSON / JSON Lines -> one text unit per record (or an outline unit per document section)
 - future `.igl` -> arbitrary page/image/text units
 - email/archive -> its own units plus the units of each member file
+- chat export -> text units per conversation (split at about 12 KiB), each
+  followed by the units of the attachments its last message sent
 
-Containers (emails, archives) implement `Importer::import_with_members`. They
+Containers (emails, archives, chat exports) implement `Importer::import_with_members`. They
 write members into the job workspace under sanitized single-component names and
 hand each path to the pipeline's `MemberImporter`, which probes it against the
 registry like a top-level input. Member units are re-parented onto the container
@@ -80,6 +89,21 @@ input. Every top-level input carries one extraction budget
 (`MAX_MEMBERS_PER_INPUT`, `MAX_MEMBER_BYTES_PER_INPUT`) that extractors draw on
 through `MemberImporter::charge`, so nested archives cannot multiply it.
 Runtime plugins keep the plain `import` path.
+
+Structured data (`importers/structured.rs`, model in `structured/`) parses into a
+format-neutral `Node` tree, so YAML, TOML or CSV readers only need to produce a
+`Node`. Shape detection then decides the units. JSON Lines, a top-level array of
+objects, and (in a document too long for one outline) the longest record array
+one or two object levels down, as in API responses such as `{"data": [...]}`,
+become records: one text unit each, written
+as `path: value` lines so a full key path and its value are searchable together,
+with a `byte-range` anchor on the record's exact bytes and a
+`structured.pointer` (RFC 6901). An API envelope keeps its other members in one
+outline unit. Any other document becomes an indented outline, split into one
+unit per top-level member when it is long. A malformed JSON Lines line is kept as
+plain text with one `input.lossy-decode` warning; an invalid JSON document falls
+back to plain text. Recognizers for known shapes (chat exports, logs) can be
+added as importers that probe higher, without changing this one.
 
 ### Source enrichment
 
@@ -96,6 +120,34 @@ Extracted facts that have no dedicated `AnnotationKind` use `Custom` with an
 and `family`). The renderer puts `Custom` annotations into the hidden search
 layer only when they carry `entity`.
 
+Unit enrichers run in registration order, built-ins before runtime plugins. A
+late unit enricher (`Registry::register_late_unit_enricher`) runs after all of
+them, so it can read their output. The built-in `text-entities` enricher is one:
+it turns URLs, emails, domains and app names found in OCR, caption, transcript and
+visible text into `Custom` annotations with `attributes.entity`
+(`url|email|domain|app`) and `attributes.from` (`ocr|caption|transcript|text`);
+URLs and domains also carry `attributes.href`, a followable absolute URL; and
+dates and times into `Timestamp` annotations with `attributes.entity`
+(`date|time|datetime`), `attributes.iso` (ISO 8601) and `attributes.relative` when
+resolved against the source's capture date. Each keeps the time range of the cue
+or keyframe it came from. OCR words are rebuilt into lines first, so multi-word
+names, window titles and dates are found. The renderer adds these to the hidden
+text layer and the chunks list them under `entities` instead of repeating them in
+the chunk text.
+
+Unit enrichers run in registration order. The `scan` enricher runs before OCR
+and is the one built-in enricher that replaces a unit's image: for still photos
+it writes a flattened, deskewed derivative into the job workspace and records the
+original sheet corners (`scan.page`) and rotation (`scan.deskew-degrees`) on the
+unit, so OCR boxes and the rendered page refer to the same corrected image.
+
+The built-in `location` enricher is a late unit enricher (it runs after runtime
+plugins' unit enrichers) so it also reads captions that runtime unit enrichers
+add. It turns a source's GPS fix into one `location` annotation on the source's
+first unit, reverse geocoded against the embedded GeoNames table, and place names
+found in OCR text, captions, transcripts and text pages into `location`
+annotations with `attributes.source = text`.
+
 Graph enrichers run before unit enrichers by default (for example, Whisper adds a
 transcript unit that later enrichers can see). A graph enricher whose `phase()`
 is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs
@@ -105,7 +157,12 @@ writes video and scene summaries this way.
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text
-pages for text-only units. A future planner plugin can group contact sheets,
+pages for text-only units. A text unit whose metadata sets `layout.flow` to
+`continuous` continues on the page where the previous text unit of the same
+source ended (after a blank row) instead of starting a page; a unit that fits on
+one page moves to the next page rather than being split. Record importers use it
+so each record stays its own chunk without costing a page, and chunks of flowed
+units may share page numbers. A future planner plugin can group contact sheets,
 storyboards, or source-specific layouts.
 
 ### Rendering
@@ -163,12 +220,19 @@ to keep static distributions small.
 Runtime plugins are executable processes, not `.so`/`.dylib` Rust trait objects.
 This keeps the ABI stable and makes plugins language-agnostic.
 
-Discovery:
-- `PATH`: `anytopdf-plugin-*`
-- future config dirs:
-  - Linux: `$XDG_CONFIG_HOME/anytopdf/plugins`
-  - macOS: `~/Library/Application Support/anytopdf/plugins`
-  - Windows: `%APPDATA%\anytopdf\plugins`
+Discovery (details in `PLUGIN_PROTOCOL.md`):
+- `PATH` and `ANYTOPDF_PLUGIN_PATH`: `anytopdf-plugin-*`, always registered
+- bundled folders, registered only once the plugin's manifest reports
+  `ready: true` (so a shipped plugin with a missing dependency stays quiet):
+  - `plugins/` beside the executable, and `../libexec/plugins` (Homebrew)
+  - `<data dir>/plugins`, where `<data dir>` is `ANYTOPDF_DATA_DIR` or the
+    per-user data folder (`~/Library/Application Support/anytopdf`,
+    `%LOCALAPPDATA%\anytopdf`, `${XDG_DATA_HOME:-~/.local/share}/anytopdf`)
+
+`anytopdf setup whisper` installs a checksummed whisper.cpp model into
+`<data dir>/whisper/` and records it in `setup.json`; the bundled Whisper plugin
+reads that record, so engine + model + FFmpeg present is all it takes to turn
+transcription on.
 
 Protocol:
 - `plugin --anytopdf-manifest`
@@ -184,8 +248,9 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
+- `anytopdf-plugin-objects` (shipped in `crates/anytopdf-plugin-objects`; YOLO ONNX
+  models on the shared pure-Rust runtime in `crates/anytopdf-onnx`)
 - `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
-- `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`
 - `anytopdf-plugin-sharepoint`
@@ -216,6 +281,22 @@ copying derived assets. Runtime plugin policy and timeouts are documented in
 `PLUGIN_PROTOCOL.md`. OS-level sandboxing is opt-in through `--plugin-sandbox`
 (`src/sandbox.rs` in core, `docs/design/plugin-sandbox.md`); by default plugins run
 unconfined, except under `queue`, which defaults to `contain`.
+
+## Search index
+
+`crates/anytopdf-index` is a consumer of rendered output, not a pipeline stage.
+It keeps one SQLite database (bundled, FTS5) with `documents` (one per indexed
+PDF, with its SHA-256, origin, profile and optional collection), `sources`,
+`entries` and `embeddings`. `convert --index` records the graph each PDF was
+rendered from, after the output profile filter, plus its render report: one
+`chunk` entry per unit (the chunk text) and one entry per annotation with kind,
+provider, confidence, region, frame, time range, page range and attributes.
+`index add` records a PDF from its embedded manifest and chunks (chunk entries
+only). Entries are indexed by an external-content FTS5 table kept in sync by
+triggers; deleting a document cascades. `embeddings` stores one vector per unit
+and model for semantic search, ranked by cosine similarity. `PRAGMA
+user_version` versions the layout: an index from a newer anytopdf, or a database
+that is not an index, is refused rather than changed.
 
 ## Intake: mail watcher
 
@@ -248,6 +329,12 @@ layer holds content only; provenance is a visible back-matter page.
 
 The PDF embeds a manifest and attachment chunks describing the sources. The `extract`
 command recovers them.
+
+`ask` reads those chunks back (through `extract`), ranks them against a question
+with BM25, and optionally sends the top passages to an OpenAI-compatible chat
+endpoint (`ANYTOPDF_LLM_URL`). It is a consumer of the normalized output, like a
+RAG client, and never touches the pipeline; every passage keeps its PDF, page
+range and time-span anchor so answers stay traceable.
 
 ## CLI contract
 

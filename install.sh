@@ -6,7 +6,10 @@
 # Environment overrides:
 #   ANYTOPDF_VERSION       release to install, e.g. 0.2.0 (default: latest)
 #   ANYTOPDF_INSTALL_DIR   where the binary goes (default: $HOME/.local/bin)
-#   ANYTOPDF_PLUGIN_DIR    where bundled plugins go (default: $HOME/.local/share/anytopdf/plugins)
+#   ANYTOPDF_PLUGIN_DIR    where bundled plugins go (default: the plugins folder in
+#                          anytopdf's data folder, which anytopdf searches by itself:
+#                          ~/Library/Application Support/anytopdf/plugins on macOS,
+#                          ${XDG_DATA_HOME:-~/.local/share}/anytopdf/plugins elsewhere)
 #   ANYTOPDF_TARGET        Rust target triple to download (default: detected)
 #   ANYTOPDF_DOWNLOAD_URL  base URL holding v<version>/<archive> (default: GitHub releases)
 set -eu
@@ -14,7 +17,18 @@ set -eu
 REPO="adeelahmad/anytopdf-rs"
 BASE_URL="${ANYTOPDF_DOWNLOAD_URL:-https://github.com/$REPO/releases/download}"
 INSTALL_DIR="${ANYTOPDF_INSTALL_DIR:-$HOME/.local/bin}"
-PLUGIN_DIR="${ANYTOPDF_PLUGIN_DIR:-$HOME/.local/share/anytopdf/plugins}"
+# Mirrors anytopdf's user_data_dir(), so the binary finds these plugins unaided.
+if [ -n "${ANYTOPDF_DATA_DIR:-}" ]; then
+    DATA_DIR="$ANYTOPDF_DATA_DIR"
+elif [ "$(uname -s)" = Darwin ]; then
+    DATA_DIR="$HOME/Library/Application Support/anytopdf"
+else
+    case "${XDG_DATA_HOME:-}" in
+        /*) DATA_DIR="$XDG_DATA_HOME/anytopdf" ;;
+        *) DATA_DIR="$HOME/.local/share/anytopdf" ;;
+    esac
+fi
+PLUGIN_DIR="${ANYTOPDF_PLUGIN_DIR:-$DATA_DIR/plugins}"
 
 say() { printf 'anytopdf-install: %s\n' "$*" >&2; }
 die() { say "error: $*"; exit 1; }
@@ -94,7 +108,8 @@ say "installed $INSTALL_DIR/anytopdf ($version, $target)"
 if [ -d "$tmp/$name/plugins" ]; then
     mkdir -p "$PLUGIN_DIR"
     cp "$tmp/$name/plugins/"* "$PLUGIN_DIR/"
-    say "bundled plugins are in $PLUGIN_DIR (opt in with ANYTOPDF_PLUGIN_PATH=$PLUGIN_DIR)"
+    say "bundled plugins are in $PLUGIN_DIR"
+    say "transcription: run \`anytopdf setup whisper\` (anytopdf 0.2.0 needs ANYTOPDF_PLUGIN_PATH=\"$PLUGIN_DIR\" instead)"
 fi
 
 case ":$PATH:" in

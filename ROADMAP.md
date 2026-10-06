@@ -72,6 +72,9 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a container image
 - [x] Rust toolchain 1.92.0
+- [x] URL, email, domain, app-name and date/time entities from OCR, captions, transcripts and text
+- [ ] people, organisation and keyword entities (NER runtime plugin)
+- [x] cross-file search index: `convert --index`, `anytopdf index add|list|remove`, `anytopdf search` (kind, person and collection filters), an MCP `search` tool and `queue serve --search`
 
 ## Backlog
 
@@ -96,7 +99,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 
 ## Later media semantics
 - [ ] neutral face detection: presence/count/bounds
-- [ ] object detection provider (YOLO/DETR plugin)
+- [x] object detection provider (`anytopdf-plugin-objects`, YOLO ONNX on a pure-Rust runtime)
 - [x] keyframe captions, questions and activities, video and scene summaries, and a video category (`anytopdf-plugin-vlm`)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction

@@ -3,7 +3,7 @@ use std::{path::PathBuf, process::Command, time::Duration};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub const PROVIDER_NAMES: [&str; 8] = [
+pub const PROVIDER_NAMES: [&str; 10] = [
     "ffmpeg",
     "ffprobe",
     "exiftool",
@@ -12,7 +12,55 @@ pub const PROVIDER_NAMES: [&str; 8] = [
     "soffice",
     "pdftoppm",
     "pdftotext",
+    "yt-dlp",
+    "chrome",
 ];
+
+/// yt-dlp for video and podcast URLs: `ANYTOPDF_YT_DLP`, then `yt-dlp` on `PATH`.
+pub fn ytdlp_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("ANYTOPDF_YT_DLP").filter(|p| !p.is_empty()) {
+        let path = PathBuf::from(path);
+        return path.is_file().then_some(path);
+    }
+    which::which("yt-dlp").ok()
+}
+
+/// A Chrome-family browser for web page snapshots: `ANYTOPDF_CHROME`, then the usual
+/// names on `PATH`, then the standard install locations.
+pub fn chrome_path() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("ANYTOPDF_CHROME").filter(|p| !p.is_empty()) {
+        let path = PathBuf::from(path);
+        return path.is_file().then_some(path);
+    }
+    let names = [
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+        "chrome",
+        "msedge",
+        "microsoft-edge",
+    ];
+    if let Some(found) = names.iter().find_map(|n| which::which(n).ok()) {
+        return Some(found);
+    }
+    let mut known: Vec<PathBuf> = Vec::new();
+    if cfg!(target_os = "macos") {
+        for app in ["Google Chrome", "Chromium", "Microsoft Edge"] {
+            known.push(format!("/Applications/{app}.app/Contents/MacOS/{app}").into());
+        }
+    }
+    if cfg!(windows) {
+        for var in ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"] {
+            if let Some(base) = std::env::var_os(var) {
+                let base = PathBuf::from(base);
+                known.push(base.join(r"Google\Chrome\Application\chrome.exe"));
+                known.push(base.join(r"Microsoft\Edge\Application\msedge.exe"));
+            }
+        }
+    }
+    known.into_iter().find(|p| p.is_file())
+}
 
 #[derive(Debug, Clone)]
 pub struct ProviderVersion {
@@ -22,12 +70,23 @@ pub struct ProviderVersion {
     pub version: Option<String>,
 }
 
+/// Providers only URL inputs use; a conversion records their versions only when it
+/// used them.
+pub const URL_PROVIDERS: [&str; 2] = ["yt-dlp", "chrome"];
+
 pub fn detect_providers() -> Vec<ProviderVersion> {
-    PROVIDER_NAMES
+    detect_providers_named(&PROVIDER_NAMES)
+}
+
+/// Like [`detect_providers`], limited to `names` (entries of [`PROVIDER_NAMES`]).
+pub fn detect_providers_named(names: &[&'static str]) -> Vec<ProviderVersion> {
+    names
         .iter()
         .map(|&name| {
             let path = match name {
                 "soffice" => crate::importers::soffice_path(),
+                "yt-dlp" => ytdlp_path(),
+                "chrome" => chrome_path(),
                 _ => which::which(name).ok(),
             };
             let version = path.as_ref().and_then(|p| {
@@ -71,6 +130,9 @@ fn parse_version(name: &str, output: &str) -> Option<String> {
             .filter(|t| *t == "tesseract")
             .and(tokens.next()),
         "python3" => tokens.next().filter(|t| *t == "Python").and(tokens.next()),
+        "yt-dlp" => tokens.next(),
+        // "Chromium 141.0.7390.37", "Google Chrome 141.0…", "Microsoft Edge 141.0…".
+        "chrome" => tokens.find(|t| t.starts_with(|c: char| c.is_ascii_digit())),
         "soffice" => tokens
             .next()
             .filter(|t| t.starts_with("LibreOffice"))
@@ -124,6 +186,14 @@ mod tests {
         assert_eq!(
             parse_version("pdftoppm", "pdftoppm version 24.02.0\nCopyright\n").as_deref(),
             Some("24.02.0")
+        );
+        assert_eq!(
+            parse_version("yt-dlp", "2025.09.26\n").as_deref(),
+            Some("2025.09.26")
+        );
+        assert_eq!(
+            parse_version("chrome", "Google Chrome 141.0.7390.54 \n").as_deref(),
+            Some("141.0.7390.54")
         );
     }
 

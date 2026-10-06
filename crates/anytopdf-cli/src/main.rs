@@ -1,4 +1,5 @@
 mod argv;
+mod ask;
 mod capabilities;
 mod capture;
 mod cli;
@@ -8,15 +9,18 @@ mod environment;
 mod events;
 mod exit;
 mod extract;
+mod fetch;
 mod mcp;
 mod naming;
 mod print;
 mod publish;
 mod queue;
+mod search;
+mod setup;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
-use cli::{CaptureCommand, Cli, Commands, QueueCommand, WatchSource};
+use cli::{CaptureCommand, Cli, Commands, QueueCommand, SetupCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
 use exit::{CliError, ExitClass};
@@ -65,10 +69,11 @@ fn run(cli: Cli) -> Result<(), CliError> {
             mode: sandbox_mode,
             allow_read: cli.plugin_sandbox_allow_read,
         },
+        ..RuntimePluginPolicy::default()
     };
     match cli.command {
         Commands::Convert(args) => convert(*args, &policy),
-        Commands::Doctor { json } => Ok(doctor(json)?),
+        Commands::Doctor { json } => Ok(doctor(json, &policy)?),
         Commands::Plugins { json } => {
             check_sandbox(&policy)?;
             Ok(plugins(&policy, json)?)
@@ -77,6 +82,19 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let doc = extract::extract(&pdf)?;
             println!("{}", serde_json::to_string_pretty(&doc)?);
             Ok(())
+        }
+        Commands::Ask {
+            source,
+            question,
+            top,
+            no_llm,
+            json,
+        } => {
+            let options = ask::AskOptions {
+                top: top as usize,
+                no_llm,
+            };
+            ask::run(&source, &question, &options, json)
         }
         Commands::Capabilities { json: true } => {
             println!(
@@ -106,9 +124,12 @@ fn run(cli: Cli) -> Result<(), CliError> {
             }
             queue::run(command, forwarded.0)
         }
+        Commands::Search(args) => search::search(*args),
+        Commands::Index { command } => search::run_index(command),
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
         Commands::Print(command) => print::print(command),
         Commands::Capture(CaptureCommand::Screen(args)) => capture::screen(*args, &policy),
+        Commands::Setup(SetupCommand::Whisper(args)) => setup::whisper(args, &policy),
     }
 }
 

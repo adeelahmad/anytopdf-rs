@@ -17,7 +17,7 @@ pub use boxes::{BoxKind, DRAW_BOXES_KEY, box_kinds_value, parse_box_kinds};
 use fonts::{find_system_font, subset_document_font};
 use layout::{
     TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, annotation_line,
-    hidden_text_ops, is_searchable_content, search_layer, text_page_chunks, time_line,
+    flow_pages, flow_runs, hidden_text_ops, is_searchable_content, search_layer, time_line,
 };
 pub use pdfa::PdfARenderer;
 use provenance::provenance_pages;
@@ -118,9 +118,10 @@ impl Renderer for SearchablePdfRenderer {
         };
 
         let mut unit_pages = BTreeMap::new();
-        for unit in &graph.units {
-            let start = pages.len();
+        for run in flow_runs(&graph.units) {
+            let unit = &graph.units[run.start];
             if let Some(visual) = &unit.visual_path {
+                let start = pages.len();
                 match self.visual_page(
                     &mut doc,
                     graph,
@@ -144,17 +145,29 @@ impl Renderer for SearchablePdfRenderer {
                         own_warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }
                 }
-            } else if let Some(text) = &unit.visible_text {
-                pages.extend(self.text_pages(graph, unit, text, &font_handle, &measure));
-            }
-            if pages.len() > start {
-                unit_pages.insert(
-                    unit.id,
-                    PageRange {
-                        first: start + 1,
-                        last: pages.len(),
-                    },
-                );
+                if pages.len() > start {
+                    unit_pages.insert(
+                        unit.id,
+                        PageRange {
+                            first: start + 1,
+                            last: pages.len(),
+                        },
+                    );
+                }
+            } else if unit.visible_text.is_some() {
+                let units: Vec<&Unit> = graph.units[run].iter().collect();
+                let start = pages.len();
+                let (run_pages, ranges) = self.text_pages(&units, &font_handle, &measure);
+                pages.extend(run_pages);
+                for (unit, (first, last)) in units.iter().zip(ranges) {
+                    unit_pages.insert(
+                        unit.id,
+                        PageRange {
+                            first: start + first + 1,
+                            last: start + last + 1,
+                        },
+                    );
+                }
             }
         }
 
@@ -300,60 +313,48 @@ impl SearchablePdfRenderer {
         Ok(PdfPage::new(Mm(page_w_mm), Mm(page_h_mm), ops))
     }
 
+    /// Pages for a run of text units (see [`flow_pages`]) and each unit's first
+    /// and last page within the run.
     fn text_pages(
         &self,
-        _graph: &DocumentGraph,
-        unit: &Unit,
-        text: &str,
+        units: &[&Unit],
         font: &PdfFontHandle,
         measure: &impl Fn(char) -> f32,
-    ) -> Vec<PdfPage> {
+    ) -> (Vec<PdfPage>, Vec<(usize, usize)>) {
         let (page_w, page_h, margin) = (TEXT_PAGE_W_MM, TEXT_PAGE_H_MM, TEXT_MARGIN_MM);
-        let mut pages = Vec::new();
-
-        for (page_index, chunk) in text_page_chunks(text, measure).iter().enumerate() {
-            let first_page = page_index == 0;
-            let mut ops = vec![
-                Op::StartTextSection,
-                Op::SetTextRenderingMode {
-                    mode: TextRenderingMode::Fill,
-                },
-                Op::SetFont {
-                    font: font.clone(),
-                    size: Pt(TEXT_FONT_PT),
-                },
-                Op::SetLineHeight {
-                    lh: Pt(TEXT_LINE_PT),
-                },
-                Op::SetTextCursor {
-                    pos: Point::new(Mm(margin), Mm(page_h - margin)),
-                },
-            ];
-            for line in chunk {
-                ops.push(Op::ShowText {
-                    items: vec![TextItem::Text(line.clone())],
-                });
-                ops.push(Op::AddLineBreak);
-            }
-            ops.push(Op::EndTextSection);
-
-            let mut hidden_parts = Vec::new();
-            if first_page {
-                hidden_parts.extend(
-                    unit.annotations
-                        .iter()
-                        .filter(|a| is_searchable_content(a))
-                        .map(annotation_line),
-                );
-                if let Some(time) = unit.time_range {
-                    hidden_parts.push(time_line(time));
+        let layout = flow_pages(units, measure);
+        let pages = layout
+            .pages
+            .iter()
+            .map(|page| {
+                let mut ops = vec![
+                    Op::StartTextSection,
+                    Op::SetTextRenderingMode {
+                        mode: TextRenderingMode::Fill,
+                    },
+                    Op::SetFont {
+                        font: font.clone(),
+                        size: Pt(TEXT_FONT_PT),
+                    },
+                    Op::SetLineHeight {
+                        lh: Pt(TEXT_LINE_PT),
+                    },
+                    Op::SetTextCursor {
+                        pos: Point::new(Mm(margin), Mm(page_h - margin)),
+                    },
+                ];
+                for row in &page.rows {
+                    ops.push(Op::ShowText {
+                        items: vec![TextItem::Text(row.text.clone())],
+                    });
+                    ops.push(Op::AddLineBreak);
                 }
-            }
-            ops.extend(search_layer(&hidden_parts, page_w, page_h, font));
-
-            pages.push(PdfPage::new(Mm(page_w), Mm(page_h), ops));
-        }
-        pages
+                ops.push(Op::EndTextSection);
+                ops.extend(search_layer(&page.hidden, page_w, page_h, font));
+                PdfPage::new(Mm(page_w), Mm(page_h), ops)
+            })
+            .collect();
+        (pages, layout.unit_pages)
     }
 }
 
@@ -476,12 +477,7 @@ pub(crate) mod tests {
             "test",
             "spoken words marker",
         ));
-        let graph = DocumentGraph {
-            units: vec![unit.clone()],
-            sources: vec![source],
-            ..Default::default()
-        };
-        let pages = renderer().text_pages(&graph, &unit, "visible body", &helvetica(), &|_| 1.0);
+        let pages = renderer().text_pages(&[&unit], &helvetica(), &|_| 1.0).0;
         let hidden: Vec<String> = invisible_items(&pages).into_iter().flatten().collect();
         assert!(hidden.iter().any(|t| t.contains("spoken words marker")));
         let path_str = path.display().to_string();
@@ -581,18 +577,13 @@ pub(crate) mod tests {
     fn multi_page_text_unit_emits_annotation_block_once() {
         let text: String = (0..400).map(|i| format!("line {i:03}\n")).collect();
         let source = SourceRecord::new(PathBuf::from("long.txt"));
-        let mut unit = Unit::text(source.id, text.clone());
+        let mut unit = Unit::text(source.id, text);
         unit.annotations.push(Annotation::text(
             AnnotationKind::Caption,
             "test",
             "UNIQUE-ANNOTATION-MARKER",
         ));
-        let graph = DocumentGraph {
-            units: vec![unit.clone()],
-            sources: vec![source],
-            ..Default::default()
-        };
-        let pages = renderer().text_pages(&graph, &unit, &text, &helvetica(), &|_| 1.0);
+        let pages = renderer().text_pages(&[&unit], &helvetica(), &|_| 1.0).0;
         assert!(pages.len() >= 3, "expected >=3 pages, got {}", pages.len());
         let per_page: Vec<usize> = invisible_items(&pages)
             .iter()

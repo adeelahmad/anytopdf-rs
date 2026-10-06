@@ -6,8 +6,7 @@
 //! into the job workspace, and runs whisper.cpp or an OpenAI-compatible
 //! Whisper CLI. Sources that already carry a transcript are left alone.
 
-mod backend;
-mod transcript;
+use anytopdf_plugin_whisper::{backend, transcript};
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
@@ -54,11 +53,17 @@ fn main() -> ExitCode {
     }
 }
 
+/// The manifest reports readiness so anytopdf runs the bundled copy only once an
+/// engine, a model and FFmpeg are all present.
 fn manifest() -> Value {
+    let readiness =
+        backend::readiness(&backend::Config::from_env(), |name| which::which(name).ok());
     json!({
         "protocol": PROTOCOL,
         "name": "whisper",
         "version": env!("CARGO_PKG_VERSION"),
+        "ready": readiness.ready,
+        "detail": readiness.detail,
         "capabilities": [{
             "kind": "graph-enricher",
             "extensions": [],

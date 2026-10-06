@@ -43,7 +43,7 @@ per-page chunks is embedded in the PDF, which makes the file its own index.
 
 | | |
 | --- | --- |
-| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
+| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF, camera RAW) with phone-photo page flattening, scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, JSON and JSON Lines, HTML, `.eml`/`.mbox` email with attachments, WhatsApp/Telegram/Slack/iMessage chat exports, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
 | **Finds the words** | OCR through Apple Vision, docTR or Tesseract, kept word-aligned under the image; speech to text through the bundled Whisper plugin; video keyframes chosen by interval and scene change |
 | **Writes a real archive file** | Tagged PDF/A-3a with bookmarks, Arabic/Hebrew/CJK shaping, byte-reproducible output, and a provenance page |
 | **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes and page maps; `anytopdf extract --json` reads them back |
@@ -98,28 +98,48 @@ a private LibreOffice profile, so the original file is never opened in place.
 
 ### Whisper transcription
 
-`anytopdf-plugin-whisper` transcribes audio and video sources that have no
-sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
-one of these engines, adding a visible, timed transcript page whose segments are
-searchable `transcript` annotations:
-
-- whisper.cpp (`whisper-cli`) with `ANYTOPDF_WHISPER_MODEL` set to a ggml model
-  file, for example `ggml-base.en.bin`;
-- `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
-  `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
-
-Release archives ship the plugin in a `plugins/` folder beside `anytopdf`, and
-Homebrew installs it under `$(brew --prefix anytopdf)/libexec/plugins`. It stays
-off until `ANYTOPDF_PLUGIN_PATH` names that folder, so media conversions without
-a Whisper engine do not warn. The container image has a `WHISPER=cpp` build that
-includes whisper.cpp and enables it (see [docs/distribution.md](docs/distribution.md)).
-From source:
+Turn on speech-to-text in one step:
 
 ```bash
-cargo build --release -p anytopdf-plugin-whisper
-export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
-export ANYTOPDF_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
-anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
+anytopdf setup whisper              # downloads ggml-base.bin (142 MiB), checks its SHA-1
+anytopdf convert meeting.mp4 -o meeting.pdf
+```
+
+`anytopdf-plugin-whisper` transcribes audio and video sources that have no
+sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
+a Whisper engine, adding a visible, timed transcript page whose segments are
+searchable `transcript` annotations.
+
+`setup whisper` installs a whisper.cpp model into anytopdf's data folder
+(`ANYTOPDF_DATA_DIR`, or `~/Library/Application Support/anytopdf` on macOS,
+`%LOCALAPPDATA%\anytopdf` on Windows, `~/.local/share/anytopdf` elsewhere) and
+records it. Pick another model with `--model` (`tiny`, `base.en`, `small`,
+`large-v3-turbo`, …; `.en` models are English-only), install a file you already
+downloaded with `--from FILE`, or use a mirror with `--base-url URL`. Every file
+is checked against the checksum whisper.cpp publishes.
+
+The plugin ships with anytopdf (in `plugins/` beside the binary, or Homebrew's
+`libexec/plugins`) and turns itself on once all three of these are present:
+
+- a model: the one `setup whisper` recorded, or `ANYTOPDF_WHISPER_MODEL` set to
+  a ggml model file;
+- an engine: whisper.cpp's `whisper-cli` (`brew install whisper-cpp`; on Windows
+  `whisper-cli.exe` from the whisper.cpp release zip), or `whisper-ctranslate2`
+  (faster-whisper) / OpenAI `whisper` with `ANYTOPDF_WHISPER_MODEL` naming the
+  model (default `base`);
+- FFmpeg on `PATH`.
+
+Until then it stays off, so media conversions don't warn. `anytopdf doctor` (and
+`setup whisper` itself) says exactly which piece is missing. A plugin you put on
+`PATH` or `ANYTOPDF_PLUGIN_PATH` always runs and reports what it lacks as a
+warning. The container image has a `WHISPER=cpp` build that includes whisper.cpp
+(see [docs/distribution.md](docs/distribution.md)). From source:
+
+```bash
+cargo build --release -p anytopdf -p anytopdf-plugin-whisper
+mkdir -p target/release/plugins && cp target/release/anytopdf-plugin-whisper target/release/plugins/
+target/release/anytopdf setup whisper
+target/release/anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
 ```
 
 `ANYTOPDF_WHISPER_ENGINE` (`auto`, `whisper.cpp`, `openai-whisper`),
@@ -128,7 +148,9 @@ anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
 invocation transcribes every media source in the job, so raise
 `--plugin-timeout` (default 60 seconds) for long recordings. A missing engine,
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
-the PDF is still written.
+the PDF is still written. Under `--plugin-sandbox strict`, pass
+`--plugin-sandbox-allow-read` for the data folder (or the model file) so the
+plugin can load the model.
 
 ### Visual descriptions
 
@@ -178,6 +200,43 @@ loopback URL bypasses any HTTP proxy. `--plugin-sandbox strict` blocks network
 access and therefore this plugin. An unreachable endpoint, a slow frame or a bad
 answer becomes a `plugin.warning`, and the PDF is still written.
 
+### Object detection
+
+`anytopdf-plugin-objects` runs a YOLO object detector on every image and video
+keyframe. Each detection becomes a searchable `object` annotation with its label,
+confidence, normalized box and (for video) the frame's time, and each frame also
+gets a count such as `objects: 4 person, 1 bus`, so searching the PDF for "dog"
+finds the frames with a dog. Pages of PDF, Office and HTML documents are skipped.
+
+Inference runs on [tract](https://github.com/sonos/tract), a pure-Rust ONNX
+runtime, so the plugin needs no Python, CUDA or native library. It takes a YOLOv8
+or YOLO11 ONNX export (YOLOv5 exports work too); `yolo11n.onnx` from the
+[Ultralytics assets release](https://github.com/ultralytics/assets/releases/tag/v8.3.0)
+is a good default and labels the 80 COCO classes. From source:
+
+```bash
+cargo build --release -p anytopdf-plugin-objects
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_OBJECTS_MODEL="$HOME/models/yolo11n.onnx"
+anytopdf convert meeting.mp4 --plugin-timeout 600 -o meeting.pdf
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_OBJECTS_MODEL` | none (required) | YOLO `.onnx` file |
+| `ANYTOPDF_OBJECTS_LABELS` | model's `names`, else COCO | text file, one class name per line |
+| `ANYTOPDF_OBJECTS_CONFIDENCE` | `0.25` | minimum score kept |
+| `ANYTOPDF_OBJECTS_IOU` | `0.45` | overlap above which same-class boxes merge |
+| `ANYTOPDF_OBJECTS_CLASSES` | all | comma-separated labels to keep, e.g. `person,car` |
+| `ANYTOPDF_OBJECTS_INPUT_SIZE` | model's, else `640` | input size for models with dynamic shapes |
+| `ANYTOPDF_OBJECTS_MAX` | `100` | most detections per frame |
+| `ANYTOPDF_OBJECTS_DEVICE` | `cpu` | only `cpu`; other values warn and use the CPU |
+
+The model loads once per job and `yolo11n` takes well under a second per frame on
+a CPU, so raise `--plugin-timeout` (default 60 seconds) for
+long videos. A missing model, an unreadable frame or a bad setting becomes a
+`plugin.warning`; the PDF is still written.
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -221,8 +280,9 @@ Every fact becomes an `Annotation` with provenance:
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, colours, time ranges); source paths and file
-metadata are never written into it. Text/transcript units become normal
+(OCR, captions, transcripts, objects, barcodes, colours, time ranges, and place names
+read from that text); source paths and file metadata, including GPS-derived places,
+are never written into it. Text/transcript units become normal
 visible text pages.
 
 The built-in project intentionally limits face enrichment to neutral facts such
@@ -263,18 +323,34 @@ Importers:
 - raster images
 - existing PDFs: pages rendered by Poppler `pdftoppm` with their own text layer kept (OCR only for textless pages); text only without Poppler
 - HEIC/HEIF/AVIF photos, converted by `sips` (macOS), `heif-convert` (libheif) or ImageMagick
+- camera RAW photos (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF and more): the embedded
+  camera preview, found without any external tool; when it is missing or smaller than
+  1600 px on its long edge the RAW data is developed by `sips` (macOS), LibRaw's
+  `dcraw_emu`, `dcraw` or ImageMagick (`--raw-decode auto|preview|develop`)
 - PWG Raster and Apple Raster (URF) print jobs
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
+- JSON and JSON Lines (`.json`, `.jsonl`, `.ndjson`, or sniffed): one searchable chunk per record with its key paths, API envelopes such as `{"data": [...]}` split into records, other documents as an indented outline
 - HTML pages (readable text, title and image alt text; no network fetches)
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
+- chat exports: WhatsApp (`_chat.txt` or the exported `.zip`), Telegram Desktop JSON
+  (`result.json`, one chat or a whole account), Slack workspace exports (the `.zip`, or
+  extracted `YYYY-MM-DD.json` day files) and iMessage text from `imessage-exporter -f txt`.
+  Each conversation becomes text pages with a `time sender: text` line per message under
+  date headings; photos and files shipped inside the export are imported right after the
+  message that sent them (never from outside the export's folder, and once even when the
+  whole export folder is converted). Slack exports only link files, so those stay named
+  in the text. `--chat-date-order auto|dmy|mdy|ymd` reads
+  ambiguous WhatsApp dates; `--no-chat-attachments` names attachments without importing them
 - archives (`.zip`, `.tar`, `.tar.gz`/`.tgz`): an index page plus every member through its own importer, with zip-bomb and path-traversal limits
 - SRT / VTT captions
 - Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
   LibreOffice and Poppler
 
 Enrichment:
+- photographed pages: the sheet is found, perspective-corrected and deskewed before OCR
+  (`--scan-mode auto|on|off`, default `auto`)
 - ExifTool metadata
 - ffprobe media metadata
 - OCR provider chain:
@@ -283,9 +359,26 @@ Enrichment:
   - Tesseract CLI
 - sidecar captions / transcripts
 - video timestamps and scene-selection provenance
+- URLs, email addresses, domains, app names, dates and times from OCR, captions and
+  transcripts alike (`--no-entities` turns this off). App names come from a small
+  gazetteer, window titles such as `Budget.xlsx - Excel`, and URL domains
+  (`docs.google.com/spreadsheets` is Google Sheets), never from bare capitalized
+  words. Dates ("3 March 2024", "2024-03-03 14:05", "Tuesday at 5pm", "last
+  Friday") are normalized to ISO 8601; relative ones resolve against the capture
+  date from ExifTool or ffprobe when known, and each keeps the moment it was seen
+  or spoken. `--date-order dmy|mdy` (default `dmy`) reads `03/04/2024`
 - dominant colours of images and keyframes (up to five per page, named
   "red", "navy blue", ... with hex and share), so searching a colour finds
   the frames it dominates; `--colors off` disables it
+- location (`--location on|gps|off`, default `on`): the source's GPS fix (EXIF,
+  XMP, QuickTime `GPSCoordinates` or ISO 6709 `location` tags) becomes one
+  `location` annotation on its first unit, reverse geocoded offline to
+  "City, Region, Country" from an embedded GeoNames `cities1000` table. Place names
+  in OCR text, captions, transcripts and text pages (cities of 100,000 people or
+  more, countries, and a few aliases such as "USA" and "England") become
+  `location` annotations with `attributes.source = text` and are searchable in the
+  PDF. GPS-derived locations stay out of the hidden layer and `--profile share`
+  drops them; place names read from the text are kept.
 
 Rendering:
 - tagged PDF/A-3a with bookmarks via `krilla` (default, `--renderer pdfa`)
@@ -294,11 +387,13 @@ Rendering:
 Bundled runtime plugins (separate executables in this workspace):
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-objects`: YOLO object detection on images and video keyframes
+  through a pure-Rust ONNX runtime
 - `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
   scene summaries and a category through a local vision-language model
 
 External plugins are the intended route for model-heavy enrichers such as:
-- YOLO / DETR object detection
+- DETR / open-vocabulary object detection
 - scene classification
 - speech-to-text engines
 - format-specific decoders
@@ -327,12 +422,16 @@ anytopdf convert . -o archive.pdf
 anytopdf convert photo.jpg meeting.mp4 transcript.srt -o searchable.pdf
 anytopdf convert meeting.mp4 --transcript meeting.vtt -o meeting.pdf
 anytopdf convert . --filter 'invoice|receipt' -o receipts.pdf
+anytopdf convert https://example.com/post -o post.pdf
+anytopdf convert 'https://www.youtube.com/watch?v=…' -o talk.pdf
 
 anytopdf doctor
+anytopdf setup whisper
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
 anytopdf capture screen --duration 60 -o screen.pdf
+anytopdf ask archive.pdf "When is the Acme invoice due?"
 anytopdf mcp
 ```
 
@@ -345,6 +444,49 @@ anytopdf convert meeting.mp4 \
   --scene-threshold 0.30 \
   -o meeting.pdf
 ```
+
+### URL inputs
+
+Any `http://` or `https://` argument is downloaded before discovery and then handled
+by the normal importers:
+
+- **Web pages** become readable text (the page's `<main>` or single `<article>`
+  when it marks one, else the whole body), followed by a snapshot printed by headless
+  Chrome, Chromium or Edge. `--url-snapshot auto` (default) takes the snapshot when
+  such a browser and Poppler `pdftoppm` are installed; `on` always tries, `off` never.
+  Set `ANYTOPDF_CHROME` to choose the browser.
+- **Video and podcast links** on known hosts (YouTube, Vimeo, SoundCloud, Apple
+  Podcasts and others) are fetched with [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+  together with their captions (`--url-sub-langs`, default `en.*,en`), which become
+  timed caption annotations, and the video's chapters tag the frames inside them
+  (`chapter: …` scene annotations). Audio without captions needs the Whisper plugin for a
+  transcript. Set `ANYTOPDF_YT_DLP` to choose the yt-dlp executable.
+- **Anything else** (PDFs, images, audio, text) is saved with an extension from its
+  URL or `Content-Type` and probed like a local file.
+
+`--links FILE` (repeatable) converts every link in a list: a text file with one URL
+per line (text after the URL is its title, `#` starts a comment), a browser bookmark
+export (Chrome, Edge, Firefox or Safari "Export bookmarks" HTML) or Chrome's profile
+`Bookmarks` JSON. Bookmark folders become nested PDF bookmarks labelled with the
+bookmark titles, the default output is named after the list (`bookmarks.pdf`), and an
+unreachable link is skipped with `input.unreadable` instead of failing the run.
+
+```bash
+anytopdf convert --links reading-list.txt
+anytopdf convert --links ~/Downloads/bookmarks_10_6_26.html -o bookmarks.pdf
+```
+
+`--url-mode page|media` forces a plain download or yt-dlp for every URL. Each source
+records `url.source`, `url.fetched` and, for redirects, `url.final` in the manifest
+(dropped by `--profile share`), and the provenance page lists the URL. The default
+output is named after the URL, e.g. `example.com-post.pdf`.
+
+Downloads are capped by `--url-max-mb` (default 1024) and `--url-timeout` seconds
+(default 600). URLs on loopback, private and link-local addresses are refused unless
+`--url-allow-private` is given. Every URL option can also be set through its
+environment variable (`ANYTOPDF_URL_MODE`, `ANYTOPDF_URL_SNAPSHOT`,
+`ANYTOPDF_URL_SUB_LANGS`, `ANYTOPDF_URL_MAX_HEIGHT`, `ANYTOPDF_URL_MAX_MB`,
+`ANYTOPDF_URL_TIMEOUT`, `ANYTOPDF_URL_ALLOW_PRIVATE`).
 
 ### Screen capture
 
@@ -404,12 +546,32 @@ Output is reproducible under `SOURCE_DATE_EPOCH`. Text the bundled font covers r
 the same on every host; fallback fonts for other scripts come from the host, so such
 text can embed different fonts on different hosts.
 
+### Camera RAW and phone photos
+
+```bash
+anytopdf convert DSC_0042.NEF IMG_1234.CR3 -o shoot.pdf
+anytopdf convert receipt.jpg -o receipt.pdf              # page found, flattened, deskewed
+anytopdf convert scans/ --scan-mode off -o as-shot.pdf    # keep photos untouched
+```
+
+RAW files use the camera's embedded JPEG preview by default. `--raw-decode develop`
+prefers a local developer (`sips`, `dcraw_emu`, `dcraw`, ImageMagick) and falls back to
+the preview with an `input.lossy-decode` warning; `--raw-decode preview` never runs a tool.
+
+`--scan-mode auto` (the default) flattens a photo only when it clearly shows a sheet
+with text on a darker background, and straightens page-filling scans whose text lines
+are skewed; other photos are left as they are. `on` also crops sheets that touch the
+frame edges and straightens any photo with text lines. Both options can also be set
+with `ANYTOPDF_RAW_DECODE` and `ANYTOPDF_SCAN_MODE`.
+
 ### Embedded manifest and chunks
 
 Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
 (`anytopdf.manifest/1`: sources with SHA-256 and size, units, providers, profile)
 and `anytopdf-chunks.json` (`anytopdf.chunks/1`: one chunk per unit with page
-traceability). Schemas live in `schemas/`. The `share` profile omits absolute
+traceability, plus an optional `entities` list of `{kind, value}` such as
+`{"kind":"url","value":"https://example.com"}` with kinds `url`, `email`, `domain`,
+`app`, `date`, `time` and `datetime`; dates and times carry their ISO 8601 value). Schemas live in `schemas/`. The `share` profile omits absolute
 paths. If embedding fails, the same JSON is written beside the PDF as
 `<output>.manifest.json` and `<output>.chunks.json` and an informational
 `manifest.sidecar` notice is printed.
@@ -422,6 +584,71 @@ on stderr) but still exits 0. A version-matched manifest or chunks file that
 does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
+
+### Search across files
+
+`anytopdf convert … --index` also records the output in a local SQLite search
+index (FTS5, bundled; no server). `anytopdf search` then searches every indexed
+PDF at once and prints the PDF, page, time in the source, kind, the matching text
+and the source file:
+
+```bash
+anytopdf convert meeting.mp4 -o meeting.pdf --index --collection work
+anytopdf index add old-archive/*.pdf       # PDFs made earlier, from their embedded chunks
+anytopdf search budget review              # every word must match
+anytopdf search '"red car"' --kind object  # a phrase, only object detections
+anytopdf search --person Alice --json      # faces recognised as Alice
+anytopdf index list
+anytopdf index remove old-archive/a.pdf
+```
+
+The index lives at `ANYTOPDF_INDEX`, or `index.sqlite` in the per-user data
+directory (`~/.local/share/anytopdf` on Linux, `~/Library/Application
+Support/anytopdf` on macOS, `%LOCALAPPDATA%\anytopdf` on Windows); `--index-db`
+names another. It is never written into a PDF. `convert --index` records one
+`chunk` entry per unit (the unit's searchable text, as in `anytopdf-chunks.json`)
+and one entry per annotation with its kind (`ocr`, `caption`, `transcript`,
+`face`, `object`, `scene`, `location`, …), provider, confidence, region, time
+range and attributes, so `--kind` and `--person` (faces whose `person` attribute
+names someone) can narrow a search. It records what the PDF holds, after the
+output profile is applied. `index add` reads existing PDFs back from their
+embedded chunks, so they only have `chunk` entries; an unchanged PDF that
+`convert --index` already recorded keeps its richer record. A unit's `chunk`
+entry is left out of results when one of its annotations matched on its own,
+because the annotation carries the region and time. `--collection NAME` tags
+PDFs (on `convert` and `index add`) and filters searches. Re-indexing a PDF
+replaces its entries.
+
+Words are matched case- and accent-insensitively; `"quoted words"` match as a
+phrase and a trailing `*` matches a prefix. `search --json` prints one
+`anytopdf.search/1` document (`schemas/search.schema.json`) and `index add|list
+--json` one `anytopdf.index/1` document. Searching without an index exits 3. The
+index has room for per-unit embeddings for semantic search.
+### Asking questions
+
+`anytopdf ask <pdf-or-directory> "<question>"` answers a question from PDFs that
+anytopdf produced. It reads each PDF's embedded chunks (every `*.pdf` directly in
+a directory), ranks them with BM25 and keeps the best `--top N` (default 8) as
+numbered passages. Each passage cites its PDF, pages, time range for audio and
+video, and the original file name.
+
+With no LLM configured, ask prints those passages. To get a written answer that
+cites them as `[n]`, point it at any OpenAI-compatible server such as llama.cpp,
+Ollama, vLLM or LM Studio:
+
+```bash
+export ANYTOPDF_LLM_URL=http://127.0.0.1:11434/v1   # POSTs to $URL/chat/completions
+export ANYTOPDF_LLM_MODEL=llama3.2                  # optional: ANYTOPDF_LLM_API_KEY, ANYTOPDF_LLM_TIMEOUT
+anytopdf ask meeting.pdf "What did we decide about the launch date?"
+```
+
+The question and the retrieved passages are sent to that URL, so use a local
+server for private files. If the endpoint fails, ask prints an `ask.llm-failed`
+warning and returns the passages, still exiting 0. `--no-llm` skips the endpoint.
+`--json` prints one `anytopdf.ask/1` document (`schemas/ask.schema.json`):
+`mode` (`llm` or `retrieval`), `answer`, `cited` passage numbers, `passages` and
+`warnings`. A missing or unreadable PDF exits 3, an empty question or a
+non-HTTP `ANYTOPDF_LLM_URL` exits 2.
 
 ### Watching a mailbox (IMAP)
 
@@ -533,10 +760,13 @@ curl -H "Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN" \
 | `POST /v1/jobs?filename=NAME` with the file as the body | `202` and the job (`job_id`, `state`, `origin`, `inputs`) |
 | `GET /v1/jobs/<job_id>` | `200` and the job, with `output`, `status`, `exit_code` and `pages` once finished |
 | `GET /v1/jobs/<job_id>/output` | `200` and the PDF, or `409` until the job has succeeded |
+| `GET /v1/search?q=WORDS&kind=K&person=P&collection=C&limit=N` | with `--search`: `200` and an `anytopdf.search/1` document (without the index path); `404` otherwise |
 
 Uploaded names are reduced to a plain file name inside the job's work directory.
 Clients cannot pass convert options; the server's options after `--` apply.
 Errors are JSON `{"error": "..."}` with `401`, `411`, `413`, `404` or `405`.
+`--search` (with `--index-db`, default as for `anytopdf search`) opens the search
+endpoint; have the worker record conversions with `queue work QUEUE -- --index`.
 
 ### Remote printing
 
@@ -578,7 +808,9 @@ as tools:
 | --- | --- | --- |
 | `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
 | `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
+| `ask` | `anytopdf ask --json` | `anytopdf.ask/1` answer and cited passages |
 | `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
+| `search` | `anytopdf search --json` | `anytopdf.search/1` document |
 | `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
 
 Each call re-runs the same executable, so tools keep the CLI's validation,
@@ -629,6 +861,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] `--json` for convert, probe, doctor and plugins, with capabilities and published JSON Schemas
 - [x] Help text on every flag
 - [x] NDJSON progress events
+- [x] `anytopdf ask` answers questions with cited passages (MCP `ask` tool)
 
 ### Evidence file and provenance
 - [x] Content-derived source and unit IDs with SHA-256 and size
@@ -640,6 +873,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
+- [x] Cross-file search index: `convert --index`, `index add`, `search` (also over MCP and `queue serve --search`)
 - [x] PDF/A-3a output (`--renderer pdfa`)
 - [x] Tagged PDF and bookmarks (`--renderer pdfa`)
 
@@ -654,15 +888,19 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Input formats
 - [x] PDF input: Poppler renders each page and `pdftotext -bbox-layout` lines become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
-- [ ] URL snapshot
+- [x] URL inputs: web pages become readable text plus a headless-Chrome snapshot, video and podcast links go through yt-dlp with their captions, other links are imported by content type
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
+- [x] Chat exports: WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) conversations with speakers, timestamps and attachments inline
 - [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
+- [x] Camera RAW importer: largest embedded JPEG preview (lossless sensor streams skipped, container orientation applied), developed by `sips`, `dcraw_emu`, `dcraw` or ImageMagick when the preview is missing or small
+- [x] Phone-photo scans: page detection, perspective correction and deskew before OCR
 - [x] Office documents through LibreOffice and Poppler
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 
 ### Media enrichment
 - [x] Whisper transcription as a runtime plugin
+- [x] Location: offline reverse geocoding of GPS fixes and place names in text
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
 - [x] Dominant colours per image and keyframe
@@ -930,4 +1168,8 @@ Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
 [MIT license](LICENSE-MIT) at your option. The bundled DejaVu Sans font ships
-under its own [license](crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt).
+under its own [license](crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt). The embedded
+gazetteer (`crates/anytopdf-builtin/data/geonames-cities1000.tsv.gz`) contains data
+from [GeoNames](https://www.geonames.org/), licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); location annotations
+name it in `attributes.gazetteer`.

@@ -17,22 +17,32 @@ the container image on GHCR.
 ## Bundled plugins
 
 Every archive carries the workspace's runtime plugins (`PLUGINS` in the
-Makefile, currently `anytopdf-plugin-whisper`) in a `plugins/` folder. They are
-opt-in: anytopdf runs them only once `ANYTOPDF_PLUGIN_PATH` names that folder,
-because an enabled Whisper plugin without an engine warns on every audio or
-video conversion and would fail `--strict` runs. `make package` checks that each
-plugin answers `--anytopdf-manifest` on the build runner before archiving.
+Makefile, currently `anytopdf-plugin-whisper`) in a `plugins/` folder. anytopdf
+finds them there (and in Homebrew's `libexec/plugins` and `<data dir>/plugins`)
+without `ANYTOPDF_PLUGIN_PATH`, but runs a bundled plugin only once its manifest
+reports `ready: true`: an enabled Whisper plugin without an engine would warn on
+every audio or video conversion and fail `--strict` runs. `make package` checks
+that each plugin answers `--anytopdf-manifest` on the build runner before
+archiving.
 
-| Channel | Plugin location | Enable with |
+| Channel | Plugin location | Turned on by |
 | --- | --- | --- |
-| Archive | `<archive>/plugins/` | `ANYTOPDF_PLUGIN_PATH=<archive>/plugins` |
-| Homebrew | `$(brew --prefix anytopdf)/libexec/plugins` | `ANYTOPDF_PLUGIN_PATH=$(brew --prefix anytopdf)/libexec/plugins` |
-| Scoop | `$(scoop prefix anytopdf)\plugins` | `ANYTOPDF_PLUGIN_PATH` to that folder |
+| Archive | `<archive>/plugins/` | found automatically; `anytopdf setup whisper` |
+| `install.sh` | `<data dir>/plugins` | found automatically; `anytopdf setup whisper` |
+| Homebrew | `$(brew --prefix anytopdf)/libexec/plugins` | found automatically; `anytopdf setup whisper` |
+| Scoop | `$(scoop prefix anytopdf)\plugins` | found automatically; `anytopdf setup whisper` |
 | Container | `/opt/anytopdf/plugins` | `-e ANYTOPDF_PLUGIN_PATH=/opt/anytopdf/plugins`, or the `WHISPER=cpp` build |
 | cargo-binstall | not installed | `cargo install --git … anytopdf-plugin-whisper` |
 
-Whisper also needs an engine and a model: `brew install whisper-cpp` plus a ggml
-model in `ANYTOPDF_WHISPER_MODEL`, or the container's `WHISPER=cpp` build.
+Whisper also needs an engine and a model: `brew install whisper-cpp` (or
+whisper.cpp's Windows release zip) plus `anytopdf setup whisper`, which
+downloads a checksummed ggml model into the user data folder. The container's
+`WHISPER=cpp` build includes the engine; mount a model as described below.
+`anytopdf doctor` lists whatever is still missing.
+
+The Homebrew caveats and Scoop notes are rendered for the latest release and still
+describe the 0.2.0 opt-in (`ANYTOPDF_PLUGIN_PATH` plus `ANYTOPDF_WHISPER_MODEL`),
+which keeps working; update them in `scripts/distribution.py` with the next release.
 
 ## Homebrew tap
 
