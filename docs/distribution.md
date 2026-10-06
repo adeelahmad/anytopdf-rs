@@ -17,7 +17,8 @@ the container image on GHCR.
 ## Bundled plugins
 
 Every archive carries the workspace's runtime plugins (`PLUGINS` in the
-Makefile, currently `anytopdf-plugin-whisper`) in a `plugins/` folder. They are
+Makefile, currently `anytopdf-plugin-whisper` and `anytopdf-plugin-audio-events`)
+in a `plugins/` folder. They are
 opt-in: anytopdf runs them only once `ANYTOPDF_PLUGIN_PATH` names that folder,
 because an enabled Whisper plugin without an engine warns on every audio or
 video conversion and would fail `--strict` runs. `make package` checks that each
@@ -29,7 +30,7 @@ plugin answers `--anytopdf-manifest` on the build runner before archiving.
 | Homebrew | `$(brew --prefix anytopdf)/libexec/plugins` | `ANYTOPDF_PLUGIN_PATH=$(brew --prefix anytopdf)/libexec/plugins` |
 | Scoop | `$(scoop prefix anytopdf)\plugins` | `ANYTOPDF_PLUGIN_PATH` to that folder |
 | Container | `/opt/anytopdf/plugins` | `-e ANYTOPDF_PLUGIN_PATH=/opt/anytopdf/plugins`, or the `WHISPER=cpp` build |
-| cargo-binstall | not installed | `cargo install --git … anytopdf-plugin-whisper` |
+| cargo-binstall | not installed | `cargo install --git … anytopdf-plugin-whisper` (or `anytopdf-plugin-audio-events`) |
 
 Whisper also needs an engine and a model: `brew install whisper-cpp` plus a ggml
 model in `ANYTOPDF_WHISPER_MODEL`, or the container's `WHISPER=cpp` build.

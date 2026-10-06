@@ -130,6 +130,43 @@ invocation transcribes every media source in the job, so raise
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
 the PDF is still written.
 
+### Audio events
+
+`anytopdf-plugin-audio-events` adds an "Audio events" page to every audio and
+video source: a compact timeline (`00:12 applause · 03:40 music · 05:02 laughter`)
+and every event with its time range. Each event is also a `custom` annotation
+with `entity = audio-event`, a `label`, a time range and, from a model, a
+confidence, so it lands in the chunks JSON. It decodes the audio with FFmpeg and
+looks at it one second at a time:
+
+- **Without a model** it reports `speech`, `music`, `noise` and `silence`
+  segments from the signal itself (level, low-energy and zero-crossing
+  patterns), and `raised-voice` where the BS.1770 loudness of speech is at
+  least `ANYTOPDF_AUDIO_EVENTS_RAISED_LU` (default 8) LU above the file's
+  median speech level. That is a measured level jump, not a guess at anyone's
+  mood.
+- **With an AudioSet model** (YAMNet, PANNs CNN14 or any ONNX export that takes
+  a 16 kHz waveform) it also reports `laughter`, `applause`, `cheering`,
+  `singing`, `crying-baby`, `dog`, `siren`, `alarm`, `gunshot`, `explosion`,
+  `vehicle`, `car-horn`, `door`, `knock`, `keyboard-typing`, `telephone` and
+  `glass-breaking`, and the model decides speech versus music. Set
+  `ANYTOPDF_AUDIO_EVENTS_MODEL` to the `.onnx` file and
+  `ANYTOPDF_AUDIO_EVENTS_LABELS` to its class map CSV (found automatically as
+  `<model>_class_map.csv` or `class_labels_indices.csv` beside it). ONNX
+  Runtime is loaded at run time from `ORT_DYLIB_PATH` or the system library
+  path; `ANYTOPDF_AUDIO_EVENTS_DEVICE` picks `cpu` (default), `cuda` or
+  `coreml`, and `ANYTOPDF_AUDIO_EVENTS_THRESHOLD` (default 0.3) the minimum
+  score.
+
+The plugin never labels how a person feels: AudioSet classes such as crying,
+sobbing or screaming by adults are not reported, and there is no voice emotion,
+age or gender analysis. It ships beside the Whisper plugin and is turned on the
+same way (`ANYTOPDF_PLUGIN_PATH`). The Linux release binaries are static and
+cannot load ONNX Runtime, so for a model on Linux build the plugin from source
+(`cargo build --release -p anytopdf-plugin-audio-events`); signal analysis works
+in every build. A missing or broken model becomes a `plugin.warning` and the
+signal results are still written.
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -243,6 +280,9 @@ Rendering:
 Bundled runtime plugins (separate executables in this workspace):
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-audio-events`: speech, music, silence and raised-voice
+  segments, plus laughter, applause and other sound events with an AudioSet
+  ONNX model
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -588,6 +628,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Media enrichment
 - [x] Whisper transcription as a runtime plugin
+- [x] Audio events: speech, music, silence, raised voices, and laughter, applause and other sounds with an AudioSet model
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
 - [ ] Barcode and QR extraction

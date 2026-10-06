@@ -23,7 +23,7 @@ HOMEBREW = {
 SCOOP = {"64bit": "x86_64-pc-windows-msvc"}
 # Runtime plugins shipped in each archive's plugins/ folder. They stay opt-in:
 # anytopdf only runs them once ANYTOPDF_PLUGIN_PATH names that folder.
-PLUGINS = ["anytopdf-plugin-whisper"]
+PLUGINS = ["anytopdf-plugin-whisper", "anytopdf-plugin-audio-events"]
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 
 

@@ -166,6 +166,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
+- `anytopdf-plugin-audio-events` (shipped in `crates/anytopdf-plugin-audio-events`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`

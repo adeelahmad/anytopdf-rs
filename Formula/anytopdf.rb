@@ -52,5 +52,7 @@ class Anytopdf < Formula
                  shell_output("#{bin}/anytopdf --no-plugins capabilities --json")
     assert_match "\"protocol\":1",
                  shell_output("#{libexec}/plugins/anytopdf-plugin-whisper --anytopdf-manifest")
+    assert_match "\"protocol\":1",
+                 shell_output("#{libexec}/plugins/anytopdf-plugin-audio-events --anytopdf-manifest")
   end
 end
