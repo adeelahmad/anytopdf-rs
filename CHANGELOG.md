@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- JSON and JSON Lines inputs (`.json`, `.jsonl`, `.ndjson`, or sniffed). Each record of a
+  JSON Lines file, top-level array or long API response (`{"data": [...]}`) becomes its own
+  searchable chunk of `path: value` lines anchored to its exact bytes, and records share
+  pages instead of taking one each. Other documents render as an indented outline. A
+  malformed line is kept as text with one `input.lossy-decode` warning.
+
 ## 0.2.0
 
 Searchable-PDF fidelity, identity, and CLI contract release.
