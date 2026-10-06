@@ -10,6 +10,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
   pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
   confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
+- `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
+  gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
+  until `--duration` or Ctrl-C, then converts the recording with the video importer's
+  interval, scene-change and dedupe sampling. `anytopdf doctor` adds a "Screen capture"
+  section (`capture` in `--json`) with the grabber and, on macOS, the Screen Recording
+  permission.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

@@ -148,6 +148,7 @@ dependencies = [
  "clap",
  "hmac",
  "infer",
+ "libc",
  "printpdf",
  "regex",
  "rustls",
@@ -158,6 +159,7 @@ dependencies = [
  "ureq",
  "uuid",
  "which",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
