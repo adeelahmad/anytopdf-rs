@@ -18,10 +18,17 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
     ]
 }
 
+/// Content annotations that belong in the hidden search layer. `Custom` and
+/// `Timestamp` annotations count only when they name an extracted `entity` (a
+/// colour, a URL, a sentiment, a date, ...); other custom notes, video frame
+/// timestamps and file metadata stay out.
 pub(crate) fn is_searchable_content(a: &Annotation) -> bool {
     use AnnotationKind::*;
-    matches!(a.kind, Ocr | Caption | Transcript | Object | Barcode)
-        || (matches!(a.kind, Custom | Timestamp) && a.attributes.contains_key("entity"))
+    match a.kind {
+        Ocr | Caption | Transcript | Object | Barcode => true,
+        Custom | Timestamp => a.attributes.contains_key("entity"),
+        _ => false,
+    }
 }
 
 pub(crate) fn annotation_line(a: &Annotation) -> String {
@@ -155,6 +162,16 @@ pub(crate) fn unit_dpi(unit: &anytopdf_core::Unit, default: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::tests::{helvetica, invisible_items};
+
+    #[test]
+    fn custom_annotations_are_searchable_only_with_an_entity() {
+        let mut color = Annotation::text(AnnotationKind::Custom, "colors", "color red");
+        assert!(!is_searchable_content(&color));
+        color.attributes.insert("entity".into(), "color".into());
+        assert!(is_searchable_content(&color));
+        let metadata = Annotation::text(AnnotationKind::Metadata, "exiftool", "/home/a.jpg");
+        assert!(!is_searchable_content(&metadata));
+    }
 
     #[test]
     fn wraps_long_tokens_without_losing_characters() {

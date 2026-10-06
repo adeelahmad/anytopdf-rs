@@ -418,6 +418,11 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) no_embedded_subtitles: bool,
 
+    /// Dominant-colour annotations on images and keyframes (searching "red" finds red frames).
+    #[arg(long, action = clap::ArgAction::Set, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new(["on", "off"])
+        .map(|s| s == "on"))]
+    pub(crate) colors: bool,
+
     /// Write the normalized document graph as JSON to this path.
     #[arg(long)]
     pub(crate) dump_graph: Option<PathBuf>,
@@ -619,6 +624,29 @@ mod tests {
         assert_eq!(
             mode(&["--plugin-sandbox", "contain", "convert", "a.txt"]),
             SandboxMode::Contain
+        );
+    }
+
+    fn colors(args: &[&str]) -> bool {
+        let cli = Cli::try_parse_from(
+            ["anytopdf", "convert", "a.png"]
+                .into_iter()
+                .chain(args.iter().copied()),
+        )
+        .unwrap();
+        match cli.command {
+            Commands::Convert(args) => args.colors,
+            _ => panic!("expected convert"),
+        }
+    }
+
+    #[test]
+    fn dominant_colors_default_on_and_take_on_or_off() {
+        assert!(colors(&[]));
+        assert!(!colors(&["--colors", "off"]));
+        assert!(colors(&["--colors=on"]));
+        assert!(
+            Cli::try_parse_from(["anytopdf", "convert", "a.png", "--colors", "maybe"]).is_err()
         );
     }
 }
