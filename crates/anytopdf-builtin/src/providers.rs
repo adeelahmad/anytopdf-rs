@@ -70,8 +70,17 @@ pub struct ProviderVersion {
     pub version: Option<String>,
 }
 
+/// Providers only URL inputs use; a conversion records their versions only when it
+/// used them.
+pub const URL_PROVIDERS: [&str; 2] = ["yt-dlp", "chrome"];
+
 pub fn detect_providers() -> Vec<ProviderVersion> {
-    PROVIDER_NAMES
+    detect_providers_named(&PROVIDER_NAMES)
+}
+
+/// Like [`detect_providers`], limited to `names` (entries of [`PROVIDER_NAMES`]).
+pub fn detect_providers_named(names: &[&'static str]) -> Vec<ProviderVersion> {
+    names
         .iter()
         .map(|&name| {
             let path = match name {

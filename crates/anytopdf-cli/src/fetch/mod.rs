@@ -150,6 +150,25 @@ pub(crate) fn fetch_inputs(
 }
 
 impl Fetched {
+    /// The URL-only providers this run used: yt-dlp for media, Chrome for snapshots.
+    pub(crate) fn used_providers(&self) -> Vec<&'static str> {
+        let kind = |k: &str| {
+            self.origins.iter().any(|o| {
+                o.metadata
+                    .iter()
+                    .any(|(key, v)| key == "url.kind" && v == k)
+            })
+        };
+        let mut used = Vec::new();
+        if kind("media") {
+            used.push("yt-dlp");
+        }
+        if kind("snapshot") {
+            used.push("chrome");
+        }
+        used
+    }
+
     fn add(&mut self, origins: Vec<Origin>) {
         for origin in origins {
             self.inputs.push(origin.path.clone());

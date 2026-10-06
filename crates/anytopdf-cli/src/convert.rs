@@ -5,7 +5,8 @@ use crate::naming;
 use crate::publish::{checked_destination, publish_output};
 use anyhow::{Context, Result};
 use anytopdf_builtin::{
-    BuiltinOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs, register_builtins,
+    BuiltinOptions, DiscoveryOptions, OcrMode, PROVIDER_NAMES, URL_PROVIDERS,
+    detect_providers_named, discover_inputs, register_builtins,
 };
 use anytopdf_core::{
     Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline,
@@ -437,7 +438,12 @@ fn convert_inner(
     if args.no_provenance_page {
         metadata.insert("anytopdf.provenance-page".into(), "off".into());
     }
-    for p in detect_providers() {
+    let used = fetched.used_providers();
+    let names: Vec<&'static str> = PROVIDER_NAMES
+        .into_iter()
+        .filter(|n| !URL_PROVIDERS.contains(n) || used.contains(n))
+        .collect();
+    for p in detect_providers_named(&names) {
         if let Some(version) = p.version {
             metadata.insert(format!("provider.{}.version", p.name), version);
         }
