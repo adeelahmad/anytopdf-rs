@@ -3,6 +3,7 @@
 //! selection and perceptual dedupe pick the pages exactly as for any video file.
 
 use crate::cli::{Cli, Commands, ScreenArgs};
+use crate::config::Resolved;
 use crate::exit::{CliError, ExitClass, fail, tag};
 use crate::{convert::convert, naming, publish::checked_destination};
 use anyhow::Context;
@@ -10,13 +11,16 @@ use anytopdf_builtin::capture::{
     CapturePlatform, Encoder, PERMISSION_HINT, ScreenGrabber, request_screen_recording,
     screen_recording_permitted,
 };
-use anytopdf_core::RuntimePluginPolicy;
-use clap::Parser;
+use anytopdf_core::{PluginOptions, RuntimePluginPolicy};
+use clap::FromArgMatches;
 use std::{
     io::Write,
     path::Path,
     process::{Command, ExitStatus, Stdio},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant, SystemTime},
 };
 
@@ -27,7 +31,11 @@ const DURATION_SLACK: Duration = Duration::from_secs(30);
 
 static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn screen(args: ScreenArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+pub(crate) fn screen(
+    args: ScreenArgs,
+    policy: &RuntimePluginPolicy,
+    resolved: &Resolved,
+) -> Result<(), CliError> {
     validate(&args)?;
     let passthrough_has = |flag: &str| {
         args.convert
@@ -71,12 +79,17 @@ pub(crate) fn screen(args: ScreenArgs, policy: &RuntimePluginPolicy) -> Result<(
         ExitClass::Usage,
         checked_destination(&output, &[], overwrite),
     )?;
-    let convert_args = convert_args(
+    let (convert_args, options) = convert_args(
         &args,
         &recording,
         &output,
         passthrough_has("--video-interval"),
+        resolved,
     )?;
+    let policy = &RuntimePluginPolicy {
+        options: Arc::new(options),
+        ..policy.clone()
+    };
 
     let ffmpeg = tag(
         ExitClass::Provider,
@@ -153,13 +166,15 @@ fn validate(args: &ScreenArgs) -> Result<(), CliError> {
 }
 
 /// Parses the `convert` run for the recording up front, so bad options fail before
-/// anything is recorded.
+/// anything is recorded. Per-type options given after `--` are layered over the
+/// configuration this run already resolved.
 fn convert_args(
     args: &ScreenArgs,
     recording: &Path,
     output: &Path,
     interval_given: bool,
-) -> Result<crate::cli::ConvertArgs, CliError> {
+    resolved: &Resolved,
+) -> Result<(crate::cli::ConvertArgs, PluginOptions), CliError> {
     let mut argv: Vec<std::ffi::OsString> = vec!["anytopdf".into(), "convert".into()];
     argv.push(recording.into());
     argv.push("--output".into());
@@ -169,14 +184,22 @@ fn convert_args(
         argv.push(args.interval.to_string().into());
     }
     argv.extend(args.convert.iter().map(Into::into));
-    let cli = Cli::try_parse_from(argv).map_err(|e| {
+    let invalid = |e: &dyn std::fmt::Display| {
         fail(
             ExitClass::Usage,
             format!("invalid convert options after `--`: {e}"),
         )
-    })?;
+    };
+    let matches = crate::cli::command()
+        .try_get_matches_from(argv)
+        .map_err(|e| invalid(&e))?;
+    let mut cli = Cli::from_arg_matches(&matches).map_err(|e| invalid(&e))?;
+    let options = resolved
+        .with_convert(&mut cli, &matches)
+        .map_err(|e| invalid(&format!("{e:#}")))?
+        .tables();
     match cli.command {
-        Commands::Convert(convert) => Ok(*convert),
+        Commands::Convert(convert) => Ok((*convert, options)),
         _ => Err(fail(
             ExitClass::Internal,
             "capture did not build a convert run",
@@ -316,11 +339,12 @@ fn utc_stamp(time: SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anytopdf_builtin::{BuiltinOptions, OcrMode};
     use std::path::PathBuf;
 
     fn screen_args(extra: &[&str]) -> ScreenArgs {
         let argv = ["anytopdf", "capture", "screen"].iter().chain(extra);
-        match Cli::try_parse_from(argv).unwrap().command {
+        match crate::cli::try_parse_from(argv).unwrap().command {
             Commands::Capture(crate::cli::CaptureCommand::Screen(args)) => *args,
             other => panic!("parsed {other:?}"),
         }
@@ -334,23 +358,47 @@ mod tests {
         assert_eq!(at(951_782_400), "20000229-000000");
     }
 
+    fn parse(extra: &[&str], interval_given: bool) -> (crate::cli::ConvertArgs, BuiltinOptions) {
+        let args = screen_args(extra);
+        let (parsed, options) = convert_args(
+            &args,
+            Path::new("rec.mkv"),
+            Path::new("o.pdf"),
+            interval_given,
+            &Resolved::defaults(),
+        )
+        .unwrap();
+        (parsed, BuiltinOptions::from_tables(&options).unwrap())
+    }
+
     #[test]
     fn capture_interval_becomes_the_video_interval_unless_overridden() {
-        let args = screen_args(&["--interval", "2.5", "--", "--ocr", "off"]);
-        let parsed = convert_args(&args, Path::new("rec.mkv"), Path::new("o.pdf"), false).unwrap();
-        assert_eq!(parsed.video_interval, 2.5);
+        let (parsed, options) = parse(&["--interval", "2.5", "--", "--ocr", "off"], false);
+        assert_eq!(options.video.interval, 2.5);
+        assert_eq!(options.ocr.mode, OcrMode::Off);
         assert_eq!(parsed.inputs, [PathBuf::from("rec.mkv")]);
         assert_eq!(parsed.output, Some(PathBuf::from("o.pdf")));
-        let args = screen_args(&["--", "--video-interval", "9"]);
-        let parsed = convert_args(&args, Path::new("rec.mkv"), Path::new("o.pdf"), true).unwrap();
-        assert_eq!(parsed.video_interval, 9.0);
+        let (_, options) = parse(&["--", "--video-interval", "9"], true);
+        assert_eq!(options.video.interval, 9.0);
     }
 
     #[test]
     fn bad_convert_options_fail_before_recording() {
-        let args = screen_args(&["--", "--no-such-flag"]);
-        let err = convert_args(&args, Path::new("rec.mkv"), Path::new("o.pdf"), false).unwrap_err();
-        assert_eq!(err.class, ExitClass::Usage);
+        for extra in [
+            &["--", "--no-such-flag"][..],
+            &["--", "--video-interval=-1"],
+        ] {
+            let args = screen_args(extra);
+            let err = convert_args(
+                &args,
+                Path::new("rec.mkv"),
+                Path::new("o.pdf"),
+                true,
+                &Resolved::defaults(),
+            )
+            .unwrap_err();
+            assert_eq!(err.class, ExitClass::Usage, "{extra:?}");
+        }
     }
 
     #[test]

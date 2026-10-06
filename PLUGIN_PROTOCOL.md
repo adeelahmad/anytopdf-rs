@@ -89,6 +89,21 @@ The core writes a JSON request into the job workspace:
 }
 ```
 
+Requests may carry an optional `options` object: the plugin's table from the
+configuration (`[NAME]` in the config file, where `NAME` is the manifest name and
+`-` matches `_`; `ANYTOPDF_NAME_KEY` or `ANYTOPDF_NAME__KEY` in the environment;
+`--set NAME.KEY=VALUE` on the command line). Every capability of the plugin gets
+the same table. It is omitted when no table is configured; plugins supply their
+own defaults. Additive; the protocol stays at `"protocol": 1`.
+
+```json
+{
+  "protocol": 1,
+  "operation": "import",
+  "options": {"layers": ["walls"], "dpi": 300}
+}
+```
+
 Invocation:
 
 ```bash

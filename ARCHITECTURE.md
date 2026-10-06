@@ -253,6 +253,21 @@ Protocol:
 
 Large data is exchanged through workspace file paths rather than base64 JSON.
 
+### Configuration
+
+`anytopdf-cli/src/config/` layers built-in defaults, a TOML file, `ANYTOPDF_*`
+variables, flags and `--set` into one document shaped like
+`schemas/config-file.schema.json`, validates it, and writes the global values back
+into the parsed command line. The schema is the single definition of every
+built-in option: its title, description, type and default generate the
+`--TABLE-KEY` flag (grouped by type in `convert --help`) and the
+`ANYTOPDF_TABLE_KEY` variable, so the file key, variable and flag cannot drift.
+Top-level tables become `anytopdf_core::PluginOptions`: built-ins read typed
+structs from `anytopdf-builtin/src/options.rs` (a test keeps their defaults equal
+to the schema's), and runtime plugins get the table named after them as the
+request's `options`. Child conversions (queue, MCP, mail watcher) receive the same
+`--config`, `--no-config` and `--set` flags.
+
 ## Future plugin examples
 
 - `anytopdf-plugin-igl`

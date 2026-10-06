@@ -673,6 +673,65 @@ environment variable (`ANYTOPDF_URL_MODE`, `ANYTOPDF_URL_SNAPSHOT`,
 `ANYTOPDF_URL_SUB_LANGS`, `ANYTOPDF_URL_MAX_HEIGHT`, `ANYTOPDF_URL_MAX_MB`,
 `ANYTOPDF_URL_TIMEOUT`, `ANYTOPDF_URL_ALLOW_PRIVATE`).
 
+### Configuration file
+
+Every option has three equivalent spellings, rclone-style, all derived from one
+definition: `interval` under `[video]` in the config file is
+`ANYTOPDF_VIDEO_INTERVAL` in the environment and `--video-interval` on
+`anytopdf convert`. `anytopdf convert --help` lists every option grouped by type
+(Video importer, OCR enricher, …) with its environment variable and default.
+Later layers win:
+
+1. built-in defaults
+2. `~/.config/anytopdf/config.toml` (`$XDG_CONFIG_HOME` if set;
+   `%APPDATA%\anytopdf\config.toml` on Windows), or instead the files named by
+   `--config PATH` (repeatable) or `ANYTOPDF_CONFIG`; `--no-config` or
+   `ANYTOPDF_NO_CONFIG=1` skips files
+3. environment variables: `ANYTOPDF_PROFILE=share`, `ANYTOPDF_VIDEO_INTERVAL=2`;
+   lists are comma-separated
+4. flags: `--profile share`, `--video-interval 2`
+5. `--set TABLE.KEY=VALUE` (repeatable), e.g. `--set whisper.model=base`
+
+```toml
+# ~/.config/anytopdf/config.toml
+profile = "share"
+renderer = "pdfa"
+plugin_timeout = 120
+
+[video]                    # ANYTOPDF_VIDEO_*, --video-*
+interval = 2.0
+max_frames = 200
+
+[ocr]                      # ANYTOPDF_OCR_*, --ocr-*
+mode = "tesseract"
+lang = "eng+deu"
+
+[whisper]                  # a runtime plugin's table, passed to it as `options`
+model = "base"
+```
+
+Top-level keys are global settings. `[image]`, `[video]`, `[ocr]` and `[captions]`
+are the built-in tables and reject unknown keys; any other table is passed to the
+runtime plugin with that manifest name (`-` and `_` match) in the `options` field
+of each request. A runtime plugin's keys are set with `--set whisper.model=base`,
+or `ANYTOPDF_WHISPER_MODEL` once `[whisper]` is in a config file
+(`ANYTOPDF_WHISPER__MODEL` always works). The older flag names (`--ocr`, `--lang`,
+`--scene-threshold`, `--dedupe-distance`, `--max-video-frames`,
+`--max-image-frames`, `--no-embedded-subtitles`) still work.
+Options that are not in a table yet, such as `--colors`, `--location`,
+`--no-entities`, `--raw-decode` and `--scan-mode`, are set by flag (some also by
+their own `ANYTOPDF_*` variable) and do not appear in `anytopdf config`.
+
+`anytopdf config` prints the effective settings with the file, variable or flag
+each came from (`--json` emits `anytopdf.config/1`); `anytopdf config --defaults`
+prints a starter file; values under keys such as `api_key`, `token` or `password`
+are shown as `<redacted>`. The file format is `schemas/config-file.schema.json`. An
+invalid value exits 2 and names the key and where it was set. Secrets
+(`ANYTOPDF_WEBHOOK_SECRET`, `ANYTOPDF_QUEUE_TOKEN`, `ANYTOPDF_IMAP_*`) and
+`ANYTOPDF_PLUGIN_PATH` stay environment-only and are never read as settings, and
+no file is read from the current directory, so a folder you convert cannot change
+how plugins run.
+
 ### Screen capture
 
 `anytopdf capture screen` records the screen with FFmpeg and converts the

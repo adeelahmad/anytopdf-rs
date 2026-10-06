@@ -70,6 +70,16 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `ANYTOPDF_SENTIMENT_LLM_MODEL` use a local OpenAI-compatible endpoint instead,
   falling back to the lexicon with a warning. Text only: nothing is inferred from
   faces or voices.
+
+- Every option can be set three equivalent ways, rclone-style: `[video] interval` in a
+  TOML config file (`~/.config/anytopdf/config.toml`, or `--config PATH`),
+  `ANYTOPDF_VIDEO_INTERVAL`, or `--video-interval`, with `--set TABLE.KEY=VALUE` on top;
+  later layers win. Each built-in type has a table (`[image]`, `[video]`, `[ocr]`,
+  `[captions]`) whose options are generated as `--TABLE-KEY` flags, grouped by type in
+  `anytopdf convert --help`; older flag names stay as aliases. Runtime plugins receive
+  their table in a new optional `options` request field (protocol stays 1).
+  `anytopdf config` shows the effective settings and where each came from; new
+  `anytopdf.config/1` and config-file schemas.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

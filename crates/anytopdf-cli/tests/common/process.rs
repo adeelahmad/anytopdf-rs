@@ -7,6 +7,7 @@ pub fn command() -> Command {
         .arg("--no-plugins")
         .env("PATH", "")
         .env("ANYTOPDF_CHROME", "anytopdf-test-no-chrome")
-        .env("ANYTOPDF_YT_DLP", "anytopdf-test-no-yt-dlp");
+        .env("ANYTOPDF_YT_DLP", "anytopdf-test-no-yt-dlp")
+        .env("ANYTOPDF_NO_CONFIG", "1");
     command
 }

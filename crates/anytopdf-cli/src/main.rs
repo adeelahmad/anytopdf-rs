@@ -4,6 +4,7 @@ mod capabilities;
 mod capture;
 mod cli;
 mod commands;
+mod config;
 mod convert;
 mod environment;
 mod events;
@@ -20,7 +21,7 @@ mod search;
 mod setup;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
-use clap::Parser;
+use clap::FromArgMatches;
 use cli::{CaptureCommand, Cli, Commands, QueueCommand, SetupCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
@@ -28,8 +29,11 @@ use exit::{CliError, ExitClass};
 use std::{process::ExitCode, time::Duration};
 
 fn main() -> ExitCode {
-    let cli = match Cli::try_parse_from(argv::normalize_args(std::env::args_os().collect())) {
-        Ok(cli) => cli,
+    let parsed = cli::command()
+        .try_get_matches_from(argv::normalize_args(std::env::args_os().collect()))
+        .and_then(|matches| Ok((Cli::from_arg_matches(&matches)?, matches)));
+    let (mut cli, matches) = match parsed {
+        Ok(parsed) => parsed,
         Err(e) => {
             let class = if e.use_stderr() {
                 ExitClass::Usage
@@ -45,7 +49,8 @@ fn main() -> ExitCode {
         Commands::Capture(CaptureCommand::Screen(a)) => a.convert.iter().any(|x| x == "--events"),
         _ => false,
     };
-    match run(cli) {
+    let configured = configure(&mut cli, &matches);
+    match configured.and_then(|resolved| run(cli, resolved)) {
         Ok(()) => ExitCode::from(ExitClass::Success.code()),
         Err(e) => {
             if !events {
@@ -57,8 +62,19 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<(), CliError> {
+/// Resolves the layered configuration and writes it into `cli`.
+fn configure(cli: &mut Cli, matches: &clap::ArgMatches) -> Result<config::Resolved, CliError> {
+    let resolved = exit::tag(
+        ExitClass::Usage,
+        config::Resolved::load(cli, matches, &config::Environment::current()),
+    )?;
+    exit::tag(ExitClass::Usage, config::apply(cli, matches, &resolved))?;
+    Ok(resolved)
+}
+
+fn run(cli: Cli, resolved: config::Resolved) -> Result<(), CliError> {
     let forwarded = mcp::Forwarded::from_cli(&cli);
+    let config_flags = config::forward_flags(&cli);
     let sandbox_mode = cli.sandbox_mode();
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
@@ -70,6 +86,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             mode: sandbox_mode,
             allow_read: cli.plugin_sandbox_allow_read,
         },
+        options: std::sync::Arc::new(resolved.tables()),
         ..RuntimePluginPolicy::default()
     };
     match cli.command {
@@ -117,7 +134,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             source: WatchSource::Imap(args),
         } => {
             check_sandbox(&policy)?;
-            watch::watch_imap(*args, &policy)
+            watch::watch_imap(*args, &policy, config_flags)
         }
         Commands::Queue { command } => {
             if matches!(command, QueueCommand::Work(_)) {
@@ -128,8 +145,23 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Search(args) => search::search(*args),
         Commands::Index { command } => search::run_index(command),
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
+        Commands::Config { json: true, .. } => {
+            println!("{}", serde_json::to_string_pretty(&resolved.report())?);
+            Ok(())
+        }
+        Commands::Config { defaults, .. } => {
+            let shown = if defaults {
+                config::Resolved::defaults()
+            } else {
+                resolved
+            };
+            print!("{}", shown.render(!defaults));
+            Ok(())
+        }
         Commands::Print(command) => print::print(command),
-        Commands::Capture(CaptureCommand::Screen(args)) => capture::screen(*args, &policy),
+        Commands::Capture(CaptureCommand::Screen(args)) => {
+            capture::screen(*args, &policy, &resolved)
+        }
         Commands::Setup(SetupCommand::Whisper(args)) => setup::whisper(args, &policy),
         Commands::Faces(args) => {
             check_sandbox(&policy)?;
@@ -162,7 +194,9 @@ mod tests {
     #[test]
     fn no_arguments_shows_help_without_converting_current_directory() {
         assert_eq!(
-            Cli::try_parse_from(["anytopdf"]).unwrap_err().kind(),
+            <Cli as clap::Parser>::try_parse_from(["anytopdf"])
+                .unwrap_err()
+                .kind(),
             clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
         );
     }
@@ -203,9 +237,8 @@ mod tests {
 
     #[test]
     fn every_subcommand_and_argument_has_help() {
-        use clap::CommandFactory;
         let mut offenders = Vec::new();
-        help_offenders(&Cli::command(), "anytopdf", &mut offenders);
+        help_offenders(&cli::command(), "anytopdf", &mut offenders);
         assert!(
             offenders.is_empty(),
             "missing help text: {}",

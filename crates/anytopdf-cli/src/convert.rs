@@ -218,13 +218,34 @@ fn convert_inner(
             anytopdf_core::validate_sandbox_policy(&policy.sandbox),
         )?;
     }
-    if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
+    let opts = BuiltinOptions {
+        explicit_transcripts: args.transcripts.clone(),
+        entities: !args.no_entities,
+        date_order: tag(
+            ExitClass::Usage,
+            args.date_order.parse().map_err(anyhow::Error::msg),
+        )?,
+        colors: args.colors,
+        chat: ChatOptions {
+            attachments: !args.no_chat_attachments,
+            date_order: args.chat_date_order,
+        },
+        raw_decode: args.raw_decode,
+        scan: args.scan_mode,
+        location: args.location,
+        ..tag(
+            ExitClass::Usage,
+            BuiltinOptions::from_tables(&policy.options),
+        )?
+    };
+    let video = &opts.video;
+    if !video.interval.is_finite() || video.interval <= 0.0 {
         return Err(fail(
             ExitClass::Usage,
             "--video-interval must be finite and greater than zero",
         ));
     }
-    if !args.scene_threshold.is_finite() || !(0.0..=1.0).contains(&args.scene_threshold) {
+    if !video.scene_threshold.is_finite() || !(0.0..=1.0).contains(&video.scene_threshold) {
         return Err(fail(
             ExitClass::Usage,
             "--scene-threshold must be between 0 and 1",
@@ -236,7 +257,7 @@ fn convert_inner(
             "--face-threshold must be between -1 and 1",
         ));
     }
-    if args.dedupe_distance > 64 {
+    if video.dedupe_distance > 64 {
         return Err(fail(
             ExitClass::Usage,
             "--dedupe-distance must be between 0 and 64",
@@ -364,29 +385,7 @@ fn convert_inner(
         .then(|| crate::search::open_for_convert(args.index_db.as_deref()))
         .transpose()?;
 
-    let opts = BuiltinOptions {
-        video_interval: args.video_interval,
-        scene_threshold: args.scene_threshold,
-        dedupe_distance: args.dedupe_distance,
-        max_video_frames: args.max_video_frames,
-        max_image_frames: args.max_image_frames,
-        ocr: args.ocr,
-        ocr_language: args.lang,
-        explicit_transcripts: args.transcripts,
-        embedded_subtitles: !args.no_embedded_subtitles,
-        entities: !args.no_entities,
-        date_order: args.date_order.parse().map_err(anyhow::Error::msg)?,
-        colors: args.colors,
-        chat: ChatOptions {
-            attachments: !args.no_chat_attachments,
-            date_order: args.chat_date_order,
-        },
-        raw_decode: args.raw_decode,
-        scan: args.scan_mode,
-        location: args.location,
-        ..BuiltinOptions::default()
-    };
-
+    let ocr_mode = opts.ocr.mode;
     let (registry, mut warnings) = registry(opts, policy);
     let pipeline = Pipeline::new(registry);
     let mut observer = EventObserver {
@@ -458,7 +457,7 @@ fn convert_inner(
         }
     }
 
-    if let Some(d) = exhausted_provider(&run.warnings, args.ocr) {
+    if let Some(d) = exhausted_provider(&run.warnings, ocr_mode) {
         return Err(fail(ExitClass::Provider, &d.message));
     }
     if run.graph.units.is_empty() {

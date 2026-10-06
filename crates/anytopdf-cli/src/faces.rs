@@ -287,7 +287,10 @@ fn embed_photos(
         }
     }
     let opts = BuiltinOptions {
-        ocr: OcrMode::Off,
+        ocr: anytopdf_builtin::OcrOptions {
+            mode: OcrMode::Off,
+            ..Default::default()
+        },
         ..BuiltinOptions::default()
     };
     let (registry, _) = registry(opts, policy);

@@ -6,11 +6,10 @@ mod time;
 mod webhook;
 mod worker;
 
-use crate::cli::{Cli, Commands, QueueCommand, QueueServeArgs};
+use crate::cli::{Commands, QueueCommand, QueueServeArgs};
 use crate::exit::{CliError, ExitClass, fail, tag};
 use anyhow::{Context, Result};
 use anytopdf_core::atomic_write;
-use clap::Parser;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -295,7 +294,8 @@ pub(crate) fn check_convert_args(args: &[String]) -> Result<(), CliError> {
     argv.push("placeholder-input".into());
     let cli = tag(
         ExitClass::Usage,
-        Cli::try_parse_from(&argv).map_err(|e| anyhow::anyhow!("invalid convert options: {e}")),
+        crate::cli::try_parse_from(&argv)
+            .map_err(|e| anyhow::anyhow!("invalid convert options: {e}")),
     )?;
     let Commands::Convert(convert) = cli.command else {
         return Err(fail(ExitClass::Usage, "invalid convert options"));

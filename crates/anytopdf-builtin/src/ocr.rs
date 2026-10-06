@@ -4,7 +4,8 @@ use image::GenericImageView;
 use serde_json::Value;
 use std::{path::Path, process::Command};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub enum OcrMode {
     Auto,
     Vision,
@@ -24,6 +25,31 @@ impl std::str::FromStr for OcrMode {
             "off" | "none" => Ok(Self::Off),
             _ => Err(format!("unknown OCR mode: {s}")),
         }
+    }
+}
+
+impl OcrMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Vision => "vision",
+            Self::DocTr => "doctr",
+            Self::Tesseract => "tesseract",
+            Self::Off => "off",
+        }
+    }
+}
+
+impl TryFrom<String> for OcrMode {
+    type Error = String;
+    fn try_from(s: String) -> std::result::Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl From<OcrMode> for String {
+    fn from(mode: OcrMode) -> Self {
+        mode.as_str().to_string()
     }
 }
 

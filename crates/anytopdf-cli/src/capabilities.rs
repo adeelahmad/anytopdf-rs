@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::exit::ExitClass;
 
-const SCHEMAS: [(&str, &str); 14] = [
+const SCHEMAS: [(&str, &str); 16] = [
     (
         "convert",
         include_str!("../../../schemas/convert.schema.json"),
@@ -49,6 +49,14 @@ const SCHEMAS: [(&str, &str); 14] = [
         include_str!("../../../schemas/search.schema.json"),
     ),
     ("index", include_str!("../../../schemas/index.schema.json")),
+    (
+        "config",
+        include_str!("../../../schemas/config.schema.json"),
+    ),
+    (
+        "config-file",
+        include_str!("../../../schemas/config-file.schema.json"),
+    ),
 ];
 
 pub(crate) fn schema_text(name: &str) -> Option<&'static str> {

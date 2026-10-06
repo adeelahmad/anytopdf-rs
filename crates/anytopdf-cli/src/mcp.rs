@@ -42,6 +42,11 @@ impl Forwarded {
         for path in &cli.plugin_sandbox_allow_read {
             flags.push(format!("--plugin-sandbox-allow-read={}", path.display()));
         }
+        flags.extend(
+            crate::config::forward_flags(cli)
+                .into_iter()
+                .map(|flag| flag.to_string_lossy().into_owned()),
+        );
         Forwarded(flags)
     }
 }
