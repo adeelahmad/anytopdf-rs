@@ -1,7 +1,7 @@
 use crate::convert::registry;
 use crate::exit::{CliError, ExitClass, fail, tag};
 use anyhow::{Context, Result};
-use anytopdf_builtin::{BuiltinOptions, OcrEnricher, detect_providers};
+use anytopdf_builtin::{BuiltinOptions, OcrEnricher, capture::capture_status, detect_providers};
 use anytopdf_core::RuntimePluginPolicy;
 use std::path::Path;
 
@@ -31,11 +31,15 @@ pub(crate) fn doctor(json: bool) -> Result<()> {
                 })
             })
             .collect();
+        let capture: Vec<_> = capture_status()
+            .into_iter()
+            .map(|s| serde_json::json!({"name": s.name, "available": s.available, "detail": s.detail}))
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": "anytopdf.doctor/1", "providers": providers, "ocr": ocr,
-                "printing": printing
+                "printing": printing, "capture": capture
             }))?
         );
         return Ok(());
@@ -77,6 +81,17 @@ pub(crate) fn doctor(json: bool) -> Result<()> {
                 .path
                 .map(|p| format!("{} ", p.display()))
                 .unwrap_or_default(),
+            status.detail
+        );
+    }
+
+    println!();
+    println!("Screen capture:");
+    for status in capture_status() {
+        println!(
+            "{} {:<10} {}",
+            if status.available { "[ok]  " } else { "[miss]" },
+            status.name,
             status.detail
         );
     }
