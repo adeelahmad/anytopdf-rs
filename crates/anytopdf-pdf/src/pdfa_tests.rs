@@ -522,3 +522,55 @@ fn bookmark_folders_nest_sources_under_their_titles() {
         ]
     );
 }
+
+use crate::boxes::fixtures::with_detections;
+
+fn image_page_ops(bytes: &[u8]) -> Vec<lopdf::content::Operation> {
+    let doc = lopdf::Document::load_mem(bytes).unwrap();
+    let page = *doc.get_pages().get(&2).unwrap();
+    lopdf::content::Content::decode(&doc.get_page_content(page))
+        .unwrap()
+        .operations
+}
+
+#[test]
+fn draw_boxes_strokes_labelled_artifacts_over_the_frame() {
+    let dir = tempfile::tempdir().unwrap();
+    let plain = with_detections(graph(dir.path()), None);
+    let (bytes, report) = render(dir.path(), &plain, "plain.pdf");
+    assert!(
+        !image_page_ops(&bytes).iter().any(|op| op.operator == "S"),
+        "boxes drawn without --draw-boxes"
+    );
+    assert!(!page_texts(&bytes)[1].contains("Alicemarker"));
+
+    let boxed = with_detections(graph(dir.path()), Some("objects,faces"));
+    let (bytes, boxed_report) = render(dir.path(), &boxed, "boxed.pdf");
+    // The overlay adds no pages and keeps the document valid PDF/A-3a (krilla
+    // validates on export).
+    assert_eq!(report.pages, boxed_report.pages);
+    let ops = image_page_ops(&bytes);
+    let strokes = ops.iter().filter(|op| op.operator == "S").count();
+    assert_eq!(strokes, 2, "one stroked rectangle per selected detection");
+    let image_at = ops.iter().position(|op| op.operator == "Do").unwrap();
+    let stroke_at = ops.iter().position(|op| op.operator == "S").unwrap();
+    assert!(image_at < stroke_at, "boxes are drawn over the image");
+    assert!(
+        ops.iter()
+            .any(|op| (op.operator == "BDC" || op.operator == "BMC")
+                && op.operands.first().and_then(|o| o.as_name().ok()) == Some(b"Artifact")),
+        "overlay must be tagged as an artifact"
+    );
+    let text = &page_texts(&bytes)[1];
+    assert!(text.contains("Alicemarker"), "face label: {text:?}");
+    assert!(text.contains("90%"), "object label: {text:?}");
+
+    // Only the selected kinds are drawn.
+    let faces = with_detections(graph(dir.path()), Some("faces"));
+    let (bytes, _) = render(dir.path(), &faces, "faces.pdf");
+    let strokes = image_page_ops(&bytes)
+        .iter()
+        .filter(|op| op.operator == "S")
+        .count();
+    assert_eq!(strokes, 1);
+}

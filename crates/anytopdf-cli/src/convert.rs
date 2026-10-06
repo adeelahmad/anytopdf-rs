@@ -438,6 +438,9 @@ fn convert_inner(
     if args.no_provenance_page {
         metadata.insert("anytopdf.provenance-page".into(), "off".into());
     }
+    if let Some(kinds) = &args.draw_boxes {
+        metadata.insert(anytopdf_pdf::DRAW_BOXES_KEY.into(), kinds.clone());
+    }
     let used = fetched.used_providers();
     let names: Vec<&'static str> = PROVIDER_NAMES
         .into_iter()
