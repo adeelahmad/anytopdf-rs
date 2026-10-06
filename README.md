@@ -307,7 +307,8 @@ by the normal importers:
 - **Video and podcast links** on known hosts (YouTube, Vimeo, SoundCloud, Apple
   Podcasts and others) are fetched with [yt-dlp](https://github.com/yt-dlp/yt-dlp)
   together with their captions (`--url-sub-langs`, default `en.*,en`), which become
-  timed caption annotations. Audio without captions needs the Whisper plugin for a
+  timed caption annotations, and the video's chapters tag the frames inside them
+  (`chapter: …` scene annotations). Audio without captions needs the Whisper plugin for a
   transcript. Set `ANYTOPDF_YT_DLP` to choose the yt-dlp executable.
 - **Anything else** (PDFs, images, audio, text) is saved with an extension from its
   URL or `Content-Type` and probed like a local file.

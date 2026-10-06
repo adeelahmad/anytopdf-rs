@@ -8,7 +8,7 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 - `convert` accepts `http://` and `https://` URLs. Web pages become readable text plus
   a headless Chrome/Chromium/Edge snapshot (`--url-snapshot auto|on|off`), video and
-  podcast links are fetched with yt-dlp along with their captions, and other links are
+  podcast links are fetched with yt-dlp along with their captions and chapters, and other links are
   imported by content type. Sources record `url.source`, `url.final` and `url.fetched`,
   and the provenance page lists the URL. `--url-mode`, `--url-sub-langs`,
   `--url-max-height`, `--url-max-mb`, `--url-timeout` and `--url-allow-private` (each

@@ -2,7 +2,7 @@
 
 use super::UrlOptions;
 use anyhow::{Context, Result, bail};
-use anytopdf_core::{CommandExt, contain_process_tree};
+use anytopdf_core::{CommandExt, TimeRange, contain_process_tree};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -34,9 +34,17 @@ pub(super) fn is_media_host(host: &str) -> bool {
             .any(|h| host == *h || host.ends_with(&format!(".{h}")))
 }
 
+/// A chapter from the video page, start and end in seconds.
+#[derive(Debug, Clone)]
+pub(crate) struct Chapter {
+    pub(crate) range: TimeRange,
+    pub(crate) title: String,
+}
+
 pub(super) struct MediaDownload {
     pub(super) path: PathBuf,
     pub(super) metadata: Vec<(String, String)>,
+    pub(super) chapters: Vec<Chapter>,
 }
 
 pub(super) fn download(
@@ -104,8 +112,12 @@ pub(super) fn download(
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
     attach_captions(&path, &stem, dir)?;
-    let metadata = read_info(&dir.join(format!("{stem}.info.json")));
-    Ok(MediaDownload { path, metadata })
+    let (metadata, chapters) = read_info(&dir.join(format!("{stem}.info.json")));
+    Ok(MediaDownload {
+        path,
+        metadata,
+        chapters,
+    })
 }
 
 /// Rename the first downloaded caption (`<stem>.<lang>.vtt`) to `<stem>.vtt` so the
@@ -134,13 +146,14 @@ fn attach_captions(media: &Path, stem: &str, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Title, uploader and date from yt-dlp's info JSON, as `url.*` source metadata.
-fn read_info(path: &Path) -> Vec<(String, String)> {
+/// Title, uploader and date from yt-dlp's info JSON as `url.*` source metadata, and
+/// the page's chapters.
+fn read_info(path: &Path) -> (Vec<(String, String)>, Vec<Chapter>) {
     let Some(info) = fs::read(path)
         .ok()
         .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
     else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let _ = fs::remove_file(path);
     let mut out = Vec::new();
@@ -159,7 +172,24 @@ fn read_info(path: &Path) -> Vec<(String, String)> {
     if let Some(duration) = info["duration"].as_f64() {
         out.push(("url.duration".into(), format!("{duration}")));
     }
-    out
+    let chapters = info["chapters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| {
+            let start = c["start_time"].as_f64()?;
+            let end = c["end_time"].as_f64()?;
+            let title = c["title"].as_str()?.trim();
+            (start.is_finite() && end > start && !title.is_empty()).then(|| Chapter {
+                range: TimeRange {
+                    start_seconds: start,
+                    end_seconds: end,
+                },
+                title: title.to_string(),
+            })
+        })
+        .collect();
+    (out, chapters)
 }
 
 #[cfg(test)]
@@ -205,10 +235,14 @@ mod tests {
         let path = tmp.path().join("x.info.json");
         fs::write(
             &path,
-            r#"{"title":"A talk","uploader":"Someone","upload_date":"20250101","duration":61.5}"#,
+            r#"{"title":"A talk","uploader":"Someone","upload_date":"20250101","duration":61.5,
+                "chapters":[{"start_time":0,"end_time":30,"title":"Intro"},
+                            {"start_time":30,"end_time":30,"title":"empty"}]}"#,
         )
         .unwrap();
-        let meta = read_info(&path);
+        let (meta, chapters) = read_info(&path);
+        assert_eq!(chapters.len(), 1);
+        assert_eq!(chapters[0].title, "Intro");
         assert!(meta.contains(&("url.title".into(), "A talk".into())));
         assert!(meta.contains(&("url.upload-date".into(), "20250101".into())));
         assert!(meta.contains(&("url.duration".into(), "61.5".into())));

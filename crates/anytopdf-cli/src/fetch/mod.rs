@@ -10,11 +10,12 @@ mod snapshot;
 
 use crate::exit::{CliError, ExitClass, fail, tag};
 use anytopdf_builtin::{chrome_path, ytdlp_path};
-use anytopdf_core::{Diagnostic, DiagnosticCode, DocumentGraph};
+use anytopdf_core::{Annotation, AnnotationKind, Diagnostic, DiagnosticCode, DocumentGraph, Unit};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tempfile::TempDir;
 use ureq::http::Uri;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum UrlMode {
@@ -51,6 +52,8 @@ pub(crate) struct UrlOptions {
 pub(crate) struct Origin {
     pub(crate) path: PathBuf,
     pub(crate) metadata: Vec<(String, String)>,
+    /// Video chapters, added as scene annotations on the units they cover.
+    pub(crate) chapters: Vec<media::Chapter>,
 }
 
 pub(crate) struct Fetched {
@@ -226,6 +229,7 @@ fn fetch_one(
             vec![Origin {
                 path: got.path,
                 metadata,
+                chapters: got.chapters,
             }],
         ));
     }
@@ -244,6 +248,7 @@ fn fetch_one(
             Ok(()) => origins.push(Origin {
                 path: canonical(out),
                 metadata: source("snapshot"),
+                chapters: Vec::new(),
             }),
             Err(e) => warnings.push(Diagnostic::new(
                 DiagnosticCode::ProviderFailed,
@@ -263,6 +268,7 @@ fn fetch_one(
         Origin {
             path: canonical(got.path),
             metadata,
+            chapters: Vec::new(),
         },
     );
     Ok((name, origins))
@@ -348,6 +354,36 @@ pub(crate) fn annotate(graph: &mut DocumentGraph, origins: &[Origin], fetched_at
             source
                 .metadata
                 .insert("url.fetched".into(), fetched_at.to_string());
+            let id = source.id;
+            add_chapters(graph_units(&mut graph.units, id), &origin.chapters);
+        }
+    }
+}
+
+fn graph_units(units: &mut [Unit], source: Uuid) -> impl Iterator<Item = &mut Unit> {
+    units.iter_mut().filter(move |u| u.source_id == source)
+}
+
+/// Tag each timed unit with the chapter it falls in.
+fn add_chapters<'a>(units: impl Iterator<Item = &'a mut Unit>, chapters: &[media::Chapter]) {
+    if chapters.is_empty() {
+        return;
+    }
+    for unit in units {
+        let Some(at) = unit.time_range.as_ref().map(|t| t.start_seconds) else {
+            continue;
+        };
+        let chapter = chapters
+            .iter()
+            .find(|c| c.range.start_seconds <= at && at < c.range.end_seconds);
+        if let Some(chapter) = chapter {
+            let mut note = Annotation::text(
+                AnnotationKind::Scene,
+                "yt-dlp",
+                format!("chapter: {}", chapter.title),
+            );
+            note.time_range = Some(chapter.range);
+            unit.annotations.push(note);
         }
     }
 }
@@ -394,5 +430,45 @@ mod tests {
             .unwrap();
         assert_eq!(fetched.inputs, inputs);
         assert!(fetched.dir.is_none());
+    }
+
+    #[test]
+    fn chapters_tag_the_units_they_cover() {
+        use anytopdf_core::TimeRange;
+        let source = Uuid::new_v4();
+        let mut units: Vec<Unit> = [0.0, 40.0, 95.0]
+            .into_iter()
+            .map(|t| {
+                let mut u = Unit::text(source, String::new());
+                u.time_range = Some(TimeRange {
+                    start_seconds: t,
+                    end_seconds: t + 1.0,
+                });
+                u
+            })
+            .collect();
+        units.push(Unit::text(source, "untimed".into()));
+        let chapters =
+            [("Intro", 0.0, 30.0), ("Demo", 30.0, 90.0)].map(|(t, s, e)| media::Chapter {
+                range: TimeRange {
+                    start_seconds: s,
+                    end_seconds: e,
+                },
+                title: t.into(),
+            });
+        add_chapters(units.iter_mut(), &chapters);
+        let texts: Vec<Vec<&str>> = units
+            .iter()
+            .map(|u| u.annotations.iter().map(|a| a.text.as_str()).collect())
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                vec!["chapter: Intro"],
+                vec!["chapter: Demo"],
+                vec![],
+                vec![]
+            ]
+        );
     }
 }
