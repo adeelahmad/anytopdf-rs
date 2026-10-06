@@ -62,6 +62,7 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `anytopdf queue serve`: HTTP upload intake with a bearer token, localhost by default, TLS for any other address, 100 MB default upload cap
 - [x] archive importer (zip, tar, tar.gz) with path-traversal and zip-bomb limits
 - [x] Whisper transcription runtime plugin
+- [x] Audio events runtime plugin (speech/music/silence, raised voices; laughter, applause and other sounds with an AudioSet ONNX model)
 - [x] `anytopdf watch imap`: IMAP watcher with IDLE or polling, a sender allowlist with a DMARC check, XOAUTH2 and queue hand-off
 - [x] `--plugin-sandbox off|contain|strict`: opt-in process containment for runtime plugins on every platform, plus a filesystem and network sandbox on Linux and macOS
 - [x] PDF importer (Poppler page images plus the PDF's own text as the hidden layer; OCR only for textless pages) and HEIC/HEIF/AVIF importer

@@ -12,6 +12,7 @@ members = [
   "crates/anytopdf-plugin-faces",
   "crates/anytopdf-plugin-objects",
   "crates/anytopdf-plugin-sentiment",
+  "crates/anytopdf-plugin-audio-events",
   "crates/anytopdf-plugin-vlm",
   "crates/anytopdf-plugin-whisper",
   "crates/anytopdf-print",
@@ -70,6 +71,8 @@ hmac = "0.13"
 ureq = { version = "3.1", default-features = false, features = ["rustls"] }
 argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "std"] }
 base64ct = { version = "1.6", features = ["alloc"] }
+# load-dynamic: ONNX Runtime is loaded at run time, so builds never download it.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "cuda", "coreml"] }
 mdns-sd = { version = "0.21", default-features = false }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-pki-types = { version = "1.9", features = ["std"] }
