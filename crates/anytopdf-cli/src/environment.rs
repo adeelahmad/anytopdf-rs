@@ -103,6 +103,8 @@ fn install_hint(tool: &str) -> String {
         "python3" => ("python", "python3", "Python.Python.3.12"),
         "heif-convert" => ("libheif", "libheif-examples", "ImageMagick.ImageMagick"),
         "pdftoppm" => ("poppler", "poppler-utils", "oschwartz10612.Poppler"),
+        "yt-dlp" => ("yt-dlp", "yt-dlp", "yt-dlp.yt-dlp"),
+        "chrome" => ("--cask chromium", "chromium", "Google.Chrome"),
         other => return format!("install {other} and put it on PATH"),
     };
     let command = if cfg!(target_os = "macos") {
@@ -381,6 +383,12 @@ pub(crate) fn build(probe: &Probe) -> Report {
     let [importers, enrichers, renderers] = kinds;
     let ocr = probe.ocr.iter().map(|s| ocr_entry(s, &mut hints)).collect();
     let tools = probe.tools.iter().map(tool_entry).collect();
+    // URL inputs: yt-dlp fetches video and podcast links, Chrome snapshots web pages.
+    for tool in &probe.tools {
+        if matches!(tool.name, "yt-dlp" | "chrome") && !tool.available {
+            hints.push(install_hint(tool.name));
+        }
+    }
     let mut sections = vec![
         ("Importers", importers),
         ("Enrichers", enrichers),
@@ -502,10 +510,18 @@ mod tests {
 
     fn probe(found: bool) -> Probe {
         Probe {
-            tools: ["ffmpeg", "ffprobe", "exiftool", "tesseract", "python3"]
-                .into_iter()
-                .map(|n| tool(n, found))
-                .collect(),
+            tools: [
+                "ffmpeg",
+                "ffprobe",
+                "exiftool",
+                "tesseract",
+                "python3",
+                "yt-dlp",
+                "chrome",
+            ]
+            .into_iter()
+            .map(|n| tool(n, found))
+            .collect(),
             ocr: vec![OcrProviderStatus {
                 name: "tesseract",
                 available: found,
@@ -549,7 +565,7 @@ mod tests {
             entry(&report, "Enrichers", "ocr-auto").state,
             State::Missing
         );
-        for tool in ["ffmpeg", "exiftool", "tesseract"] {
+        for tool in ["ffmpeg", "exiftool", "tesseract", "yt-dlp", "chrome"] {
             assert!(
                 report
                     .hints

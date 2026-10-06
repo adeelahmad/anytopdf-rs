@@ -33,6 +33,20 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `ANYTOPDF_SCAN_MODE`, default `auto`). `auto` only changes photos that clearly show a
   page with text on a distinct background, or a page-filling scan with skewed lines;
   the unit records `scan.page` corners and `scan.deskew-degrees`.
+- `convert` accepts `http://` and `https://` URLs. Web pages become readable text plus
+  a headless Chrome/Chromium/Edge snapshot (`--url-snapshot auto|on|off`), video and
+  podcast links are fetched with yt-dlp along with their captions and chapters, and other links are
+  imported by content type. Sources record `url.source`, `url.final` and `url.fetched`,
+  and the provenance page lists the URL. `--url-mode`, `--url-sub-langs`,
+  `--url-max-height`, `--url-max-mb`, `--url-timeout` and `--url-allow-private` (each
+  also an `ANYTOPDF_URL_*` variable) tune fetching; loopback and private addresses are
+  refused by default. `doctor` lists `yt-dlp` and `chrome`.
+- `convert --links FILE` converts every link in a text list, a browser bookmark export
+  (Netscape HTML) or Chrome's `Bookmarks` JSON; bookmark folders become nested PDF/A
+  bookmarks (`outline.title`, `outline.folders`, kept under `--profile share`) and an
+  unreachable link is skipped with `input.unreadable`.
+- The HTML importer keeps only the page's single `<main>` (or `<article>`) element
+  when one exists and records it as `html.content`.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

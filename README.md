@@ -351,6 +351,8 @@ anytopdf convert . -o archive.pdf
 anytopdf convert photo.jpg meeting.mp4 transcript.srt -o searchable.pdf
 anytopdf convert meeting.mp4 --transcript meeting.vtt -o meeting.pdf
 anytopdf convert . --filter 'invoice|receipt' -o receipts.pdf
+anytopdf convert https://example.com/post -o post.pdf
+anytopdf convert 'https://www.youtube.com/watch?v=…' -o talk.pdf
 
 anytopdf doctor
 anytopdf plugins
@@ -369,6 +371,49 @@ anytopdf convert meeting.mp4 \
   --scene-threshold 0.30 \
   -o meeting.pdf
 ```
+
+### URL inputs
+
+Any `http://` or `https://` argument is downloaded before discovery and then handled
+by the normal importers:
+
+- **Web pages** become readable text (the page's `<main>` or single `<article>`
+  when it marks one, else the whole body), followed by a snapshot printed by headless
+  Chrome, Chromium or Edge. `--url-snapshot auto` (default) takes the snapshot when
+  such a browser and Poppler `pdftoppm` are installed; `on` always tries, `off` never.
+  Set `ANYTOPDF_CHROME` to choose the browser.
+- **Video and podcast links** on known hosts (YouTube, Vimeo, SoundCloud, Apple
+  Podcasts and others) are fetched with [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+  together with their captions (`--url-sub-langs`, default `en.*,en`), which become
+  timed caption annotations, and the video's chapters tag the frames inside them
+  (`chapter: …` scene annotations). Audio without captions needs the Whisper plugin for a
+  transcript. Set `ANYTOPDF_YT_DLP` to choose the yt-dlp executable.
+- **Anything else** (PDFs, images, audio, text) is saved with an extension from its
+  URL or `Content-Type` and probed like a local file.
+
+`--links FILE` (repeatable) converts every link in a list: a text file with one URL
+per line (text after the URL is its title, `#` starts a comment), a browser bookmark
+export (Chrome, Edge, Firefox or Safari "Export bookmarks" HTML) or Chrome's profile
+`Bookmarks` JSON. Bookmark folders become nested PDF bookmarks labelled with the
+bookmark titles, the default output is named after the list (`bookmarks.pdf`), and an
+unreachable link is skipped with `input.unreadable` instead of failing the run.
+
+```bash
+anytopdf convert --links reading-list.txt
+anytopdf convert --links ~/Downloads/bookmarks_10_6_26.html -o bookmarks.pdf
+```
+
+`--url-mode page|media` forces a plain download or yt-dlp for every URL. Each source
+records `url.source`, `url.fetched` and, for redirects, `url.final` in the manifest
+(dropped by `--profile share`), and the provenance page lists the URL. The default
+output is named after the URL, e.g. `example.com-post.pdf`.
+
+Downloads are capped by `--url-max-mb` (default 1024) and `--url-timeout` seconds
+(default 600). URLs on loopback, private and link-local addresses are refused unless
+`--url-allow-private` is given. Every URL option can also be set through its
+environment variable (`ANYTOPDF_URL_MODE`, `ANYTOPDF_URL_SNAPSHOT`,
+`ANYTOPDF_URL_SUB_LANGS`, `ANYTOPDF_URL_MAX_HEIGHT`, `ANYTOPDF_URL_MAX_MB`,
+`ANYTOPDF_URL_TIMEOUT`, `ANYTOPDF_URL_ALLOW_PRIVATE`).
 
 ### Screen capture
 
@@ -698,7 +743,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Input formats
 - [x] PDF input: Poppler renders each page and `pdftotext -bbox-layout` lines become the hidden text layer, so only textless pages are OCR'd; without Poppler the page text is imported as text pages with a `provider.missing` notice
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
-- [ ] URL snapshot
+- [x] URL inputs: web pages become readable text plus a headless-Chrome snapshot, video and podcast links go through yt-dlp with their captions, other links are imported by content type
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] Chat exports: WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) conversations with speakers, timestamps and attachments inline
 - [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting

@@ -8,6 +8,7 @@ mod environment;
 mod events;
 mod exit;
 mod extract;
+mod fetch;
 mod mcp;
 mod naming;
 mod print;

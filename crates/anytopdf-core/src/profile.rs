@@ -58,6 +58,9 @@ fn keep_key(profile: Profile, channel: Channel, key: &str) -> bool {
             !volatile
                 && (key == "source.filename"
                     || key == "fs.size-bytes"
+                    // Bookmark titles and folders label the PDF outline.
+                    || key == "outline.title"
+                    || key == "outline.folders"
                     || SHARE_SUFFIXES.contains(&key_suffix(key)))
         }
     }

@@ -5,8 +5,8 @@ use crate::naming;
 use crate::publish::{checked_destination, publish_output};
 use anyhow::{Context, Result};
 use anytopdf_builtin::{
-    BuiltinOptions, ChatOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs,
-    register_builtins,
+    BuiltinOptions, ChatOptions, DiscoveryOptions, OcrMode, PROVIDER_NAMES, URL_PROVIDERS,
+    detect_providers_named, discover_inputs, register_builtins,
 };
 use anytopdf_core::{
     Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline,
@@ -142,7 +142,9 @@ pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result
     for path in args
         .inputs
         .iter()
+        .filter(|p| !crate::fetch::is_url(p))
         .chain(&args.transcripts)
+        .chain(&args.url.links)
         .chain(args.output.iter())
         .chain(args.output_dir.iter())
         .chain(args.dump_graph.iter())
@@ -262,6 +264,16 @@ fn convert_inner(
             .context("invalid --filter regex"),
     )?;
 
+    let fetched = crate::fetch::fetch_inputs(
+        &args.inputs,
+        &args.url.links,
+        &args.url.options(),
+        !args.quiet && sink.is_none(),
+    )?;
+    if let Some(dir) = &fetched.dir {
+        redactor.add_dir(dir.path());
+    }
+
     emit(
         sink,
         Event::StageStarted {
@@ -271,7 +283,7 @@ fn convert_inner(
     let inputs = tag(
         ExitClass::Input,
         discover_inputs(
-            &args.inputs,
+            &fetched.inputs,
             &DiscoveryOptions {
                 include_hidden: args.include_hidden,
                 filter,
@@ -287,7 +299,7 @@ fn convert_inner(
     );
 
     // Keep command-line order (stable within a directory) so source order is predictable.
-    let roots: Vec<PathBuf> = args
+    let roots: Vec<PathBuf> = fetched
         .inputs
         .iter()
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
@@ -302,6 +314,7 @@ fn convert_inner(
     protected.extend(
         args.transcripts
             .iter()
+            .chain(&args.url.links)
             .map(|p| p.canonicalize())
             .collect::<std::io::Result<Vec<_>>>()?,
     );
@@ -311,7 +324,7 @@ fn convert_inner(
         let out_path = match args.output.clone() {
             Some(path) => path,
             None => {
-                let base = naming::default_output(&args.inputs, &std::env::current_dir()?);
+                let base = naming::default_output(&fetched.names, &std::env::current_dir()?);
                 if args.overwrite {
                     base
                 } else {
@@ -373,6 +386,7 @@ fn convert_inner(
         pipeline.ingest_observed(&inputs, args.quiet, &mut observer),
     )?;
     run.warnings.append(&mut warnings);
+    run.warnings.extend(fetched.warnings.iter().cloned());
 
     redactor.add_dir(&run.context.workspace.join("x"));
     for executable in anytopdf_core::runtime_plugin_candidates(policy) {
@@ -440,7 +454,12 @@ fn convert_inner(
     if let Some(kinds) = &args.draw_boxes {
         metadata.insert(anytopdf_pdf::DRAW_BOXES_KEY.into(), kinds.clone());
     }
-    for p in detect_providers() {
+    let used = fetched.used_providers();
+    let names: Vec<&'static str> = PROVIDER_NAMES
+        .into_iter()
+        .filter(|n| !URL_PROVIDERS.contains(n) || used.contains(n))
+        .collect();
+    for p in detect_providers_named(&names) {
         if let Some(version) = p.version {
             metadata.insert(format!("provider.{}.version", p.name), version);
         }
@@ -449,6 +468,8 @@ fn convert_inner(
     for source in &mut run.graph.sources {
         source.metadata.extend(job.iter().cloned());
     }
+    let fetched_at = crate::queue::rfc3339(created.max(0) as u64);
+    crate::fetch::annotate(&mut run.graph, &fetched.origins, &fetched_at);
     let dump = args.dump_graph.as_ref().map(|_| {
         args.profile.filter(
             &strip_workspace_paths(&run.graph, &run.context.workspace),
