@@ -273,6 +273,7 @@ fn tool_definitions() -> Value {
                     "transcripts": {"type": "array", "items": {"type": "string"}, "description": "Transcript files to attach to media."},
                     "profile": {"type": "string", "enum": ["archive", "share"], "description": "archive keeps provenance detail, share strips local paths."},
                     "no_provenance_page": {"type": "boolean", "description": "Omit the provenance page."},
+                    "draw_boxes": {"type": "string", "description": "Draw labelled boxes over image and video-frame pages: comma-separated objects, faces, ocr, or all."},
                     "video_interval": {"type": "number", "exclusiveMinimum": 0, "description": "Seconds between sampled video frames."},
                     "max_video_frames": {"type": "integer", "minimum": 0, "description": "Maximum video frames to keep (0 means unlimited)."},
                     "max_image_frames": {"type": "integer", "minimum": 0, "description": "Maximum frames from a multi-frame TIFF or GIF (0 means unlimited)."}
@@ -338,6 +339,7 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             "transcripts",
             "profile",
             "no_provenance_page",
+            "draw_boxes",
             "video_interval",
             "max_video_frames",
             "max_image_frames",
@@ -374,6 +376,7 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
         ("ocr", "--ocr"),
         ("lang", "--lang"),
         ("profile", "--profile"),
+        ("draw_boxes", "--draw-boxes"),
     ] {
         if let Some(value) = string(arguments, key)? {
             argv.push(format!("{flag}={value}"));
