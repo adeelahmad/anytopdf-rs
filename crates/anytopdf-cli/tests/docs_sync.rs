@@ -11,6 +11,15 @@ fn missing<'a>(text: &str, needles: &[&'a str]) -> Vec<&'a str> {
         .collect()
 }
 
+/// The 0.2.0 section, which records the sprint 2-4 behaviour changes these
+/// tests pin; later releases add their own sections above it.
+fn sprint_section(changelog: &str) -> &str {
+    changelog
+        .split("\n## ")
+        .find(|section| section.starts_with("0.2.0"))
+        .expect("CHANGELOG.md has a `## 0.2.0` section")
+}
+
 fn semver(text: &str) -> Option<(u64, u64, u64)> {
     let core = text.trim().split(['-', '+']).next()?;
     let mut parts = core.split('.').map(|p| p.parse::<u64>());
@@ -25,15 +34,12 @@ fn semver(text: &str) -> Option<(u64, u64, u64)> {
 #[test]
 fn changelog_documents_every_sprint_behaviour_change() {
     let changelog = repo_file("CHANGELOG.md");
-    let section = changelog
-        .split("\n## ")
-        .nth(1)
-        .expect("CHANGELOG.md has a `## ` section");
+    let section = sprint_section(&changelog);
     let (heading, _) = section.split_once('\n').unwrap_or((section, ""));
     let version = semver(heading).unwrap_or_else(|| panic!("heading is not SemVer: {heading:?}"));
     assert!(
         version > (0, 1, 0),
-        "first CHANGELOG section must be newer than 0.1.0, got {heading:?}"
+        "CHANGELOG sprint section must be newer than 0.1.0, got {heading:?}"
     );
     let absent = missing(
         section,
@@ -130,11 +136,11 @@ fn events_are_documented_in_readme_changelog_and_architecture() {
         assert!(readme.contains(needle), "README.md missing {needle:?}");
     }
     let changelog = repo_file("CHANGELOG.md");
-    let first = changelog.split("\n## ").nth(1).unwrap_or("");
+    let first = sprint_section(&changelog);
     for needle in ["--events", "NDJSON"] {
         assert!(
             first.contains(needle),
-            "CHANGELOG first section missing {needle:?}"
+            "CHANGELOG 0.2.0 section missing {needle:?}"
         );
     }
     let arch = repo_file("ARCHITECTURE.md");
@@ -152,11 +158,11 @@ fn frames_are_documented_in_readme_and_changelog() {
         "README still says first frame only"
     );
     let changelog = repo_file("CHANGELOG.md");
-    let first = changelog.split("\n## ").nth(1).unwrap_or("");
+    let first = sprint_section(&changelog);
     for needle in ["--max-image-frames", "frame"] {
         assert!(
             first.contains(needle),
-            "CHANGELOG first section missing {needle:?}"
+            "CHANGELOG 0.2.0 section missing {needle:?}"
         );
     }
 }
@@ -165,7 +171,7 @@ fn frames_are_documented_in_readme_and_changelog() {
 fn extract_schema_rejection_is_documented() {
     let readme = repo_file("README.md");
     let changelog = repo_file("CHANGELOG.md");
-    let first = changelog.split("\n## ").nth(1).unwrap_or("");
+    let first = sprint_section(&changelog);
     let needle = ["does not match its schema"];
     assert!(
         missing(&readme, &needle).is_empty(),
@@ -173,7 +179,7 @@ fn extract_schema_rejection_is_documented() {
     );
     assert!(
         missing(first, &needle).is_empty(),
-        "CHANGELOG first section missing {needle:?}"
+        "CHANGELOG 0.2.0 section missing {needle:?}"
     );
     assert!(
         readme.contains("extract.version-mismatch"),
