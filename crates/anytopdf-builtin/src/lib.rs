@@ -1,4 +1,5 @@
 mod captions;
+mod colors;
 mod containers;
 mod discovery;
 pub mod email;
@@ -12,6 +13,7 @@ mod scene;
 use anytopdf_core::Registry;
 use std::sync::Arc;
 
+pub use colors::{DominantColor, dominant_colors};
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
@@ -28,6 +30,8 @@ pub struct BuiltinOptions {
     pub ocr_language: String,
     pub explicit_transcripts: Vec<std::path::PathBuf>,
     pub embedded_subtitles: bool,
+    /// Annotate visual units with their dominant colours.
+    pub colors: bool,
 }
 
 impl Default for BuiltinOptions {
@@ -42,6 +46,7 @@ impl Default for BuiltinOptions {
             ocr_language: "eng".to_string(),
             explicit_transcripts: Vec::new(),
             embedded_subtitles: true,
+            colors: true,
         }
     }
 }
@@ -76,5 +81,6 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.explicit_transcripts,
         opts.embedded_subtitles,
     )));
+    registry.register_unit_enricher(Arc::new(colors::ColorEnricher::new(opts.colors)));
     registry.register_unit_enricher(Arc::new(scene::SceneAnnotationEnricher));
 }
