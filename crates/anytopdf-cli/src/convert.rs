@@ -357,6 +357,8 @@ fn convert_inner(
             attachments: !args.no_chat_attachments,
             date_order: args.chat_date_order,
         },
+        raw_decode: args.raw_decode,
+        scan: args.scan_mode,
         ..BuiltinOptions::default()
     };
 

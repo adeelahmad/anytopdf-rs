@@ -23,6 +23,16 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   searchable chunk of `path: value` lines anchored to its exact bytes, and records share
   pages instead of taking one each. Other documents render as an indented outline. A
   malformed line is kept as text with one `input.lossy-decode` warning.
+- Camera RAW photos (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF and more) import as
+  image pages from their embedded camera preview, with no external tool. A missing or
+  small preview is developed by `sips`, `dcraw_emu`, `dcraw` or ImageMagick
+  (`--raw-decode auto|preview|develop`, `ANYTOPDF_RAW_DECODE`). TIFF-based RAW files no
+  longer fall through to the TIFF importer, which decoded only a thumbnail.
+- Photographed pages are flattened before OCR: the sheet is found, its perspective
+  corrected and skewed text lines straightened (`--scan-mode auto|on|off`,
+  `ANYTOPDF_SCAN_MODE`, default `auto`). `auto` only changes photos that clearly show a
+  page with text on a distinct background, or a page-filling scan with skewed lines;
+  the unit records `scan.page` corners and `scan.deskew-degrees`.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

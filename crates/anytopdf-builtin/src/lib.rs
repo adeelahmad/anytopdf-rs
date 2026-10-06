@@ -12,6 +12,7 @@ mod importers;
 mod metadata;
 mod ocr;
 mod providers;
+mod scan;
 mod scene;
 mod structured;
 
@@ -27,9 +28,11 @@ pub use colors::{DominantColor, dominant_colors};
 pub use dates::DateOrder;
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
+pub use importers::RawDecode;
 pub use importers::StructuredOptions;
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{ProviderVersion, detect_providers};
+pub use scan::ScanMode;
 
 #[derive(Debug, Clone)]
 pub struct BuiltinOptions {
@@ -51,6 +54,8 @@ pub struct BuiltinOptions {
     /// JSON / JSON Lines importer options (`[importer.structured]`).
     pub structured: StructuredOptions,
     pub chat: ChatOptions,
+    pub raw_decode: RawDecode,
+    pub scan: ScanMode,
 }
 
 impl Default for BuiltinOptions {
@@ -70,6 +75,8 @@ impl Default for BuiltinOptions {
             colors: true,
             structured: StructuredOptions::default(),
             chat: ChatOptions::default(),
+            raw_decode: RawDecode::Auto,
+            scan: ScanMode::Auto,
         }
     }
 }
@@ -81,6 +88,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_image_frames,
     )));
     registry.register_importer(Arc::new(importers::HeifImporter));
+    registry.register_importer(Arc::new(importers::CameraRawImporter::new(opts.raw_decode)));
     registry.register_importer(Arc::new(importers::PdfInputImporter));
     registry.register_importer(Arc::new(importers::RasterImporter::new(
         opts.max_image_frames,
@@ -107,6 +115,8 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         chat_attachments.clone(),
     )));
 
+    // Page detection and deskew must change the page image before OCR reads it.
+    registry.register_unit_enricher(Arc::new(scan::ScanEnricher::new(opts.scan)));
     registry.register_unit_enricher(Arc::new(ocr::OcrEnricher::new(opts.ocr, opts.ocr_language)));
     registry.register_graph_enricher(Arc::new(importers::ChatAttachmentDedupe::new(
         chat_attachments,

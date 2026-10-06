@@ -61,7 +61,7 @@ container sniffing, and format-specific probing without modifying core.
 
 An importer emits normalized units. Examples:
 
-- image -> one visual unit
+- image -> one visual unit (camera RAW: its embedded preview or a developed render)
 - video -> keyframe visual units + timestamps
 - subtitle -> text/cue units
 - text -> visible text unit
@@ -128,6 +128,12 @@ or keyframe it came from. OCR words are rebuilt into lines first, so multi-word
 names, window titles and dates are found. The renderer adds these to the hidden
 text layer and the chunks list them under `entities` instead of repeating them in
 the chunk text.
+
+Unit enrichers run in registration order. The `scan` enricher runs before OCR
+and is the one built-in enricher that replaces a unit's image: for still photos
+it writes a flattened, deskewed derivative into the job workspace and records the
+original sheet corners (`scan.page`) and rotation (`scan.deskew-degrees`) on the
+unit, so OCR boxes and the rendered page refer to the same corrected image.
 
 Graph enrichers run before unit enrichers by default (for example, Whisper adds a
 transcript unit that later enrichers can see). A graph enricher whose `phase()`

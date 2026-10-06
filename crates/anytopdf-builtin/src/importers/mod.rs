@@ -1,5 +1,6 @@
 mod archive;
 mod audio;
+mod camera_raw;
 mod chat;
 mod email;
 mod heif;
@@ -15,6 +16,8 @@ mod video;
 
 pub use archive::ArchiveImporter;
 pub use audio::AudioImporter;
+pub(crate) use camera_raw::is_raw_extension;
+pub use camera_raw::{CameraRawImporter, RawDecode};
 pub use chat::{ChatAttachmentDedupe, ChatImporter, ImportedAttachments};
 pub use email::EmailImporter;
 pub use heif::HeifImporter;
