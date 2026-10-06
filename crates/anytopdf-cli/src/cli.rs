@@ -536,6 +536,10 @@ pub(crate) struct ImapArgs {
     pub(crate) convert_args: Vec<std::ffi::OsString>,
 }
 
+fn parse_draw_boxes(value: &str) -> Result<String, String> {
+    anytopdf_pdf::parse_box_kinds(value).map(|kinds| anytopdf_pdf::box_kinds_value(&kinds))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -570,8 +574,4 @@ mod tests {
             SandboxMode::Contain
         );
     }
-}
-
-fn parse_draw_boxes(value: &str) -> Result<String, String> {
-    anytopdf_pdf::parse_box_kinds(value).map(|kinds| anytopdf_pdf::box_kinds_value(&kinds))
 }

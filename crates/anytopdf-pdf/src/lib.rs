@@ -125,10 +125,19 @@ impl Renderer for SearchablePdfRenderer {
                     unit,
                     visual,
                     &font_handle,
-                    &measure,
                     &mut pdf_warnings,
                 ) {
-                    Ok(page) => pages.push(page),
+                    Ok(mut page) => {
+                        let (w, h) = (page.media_box.width.0, page.media_box.height.0);
+                        page.ops.extend(boxes::printpdf_ops(
+                            graph,
+                            unit,
+                            (w, h),
+                            &font_handle,
+                            &measure,
+                        ));
+                        pages.push(page)
+                    }
                     Err(e) => {
                         own_warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }
@@ -216,11 +225,10 @@ impl SearchablePdfRenderer {
     fn visual_page(
         &self,
         doc: &mut PdfDocument,
-        graph: &DocumentGraph,
+        _graph: &DocumentGraph,
         unit: &Unit,
         visual: &Path,
         font: &PdfFontHandle,
-        measure: &dyn Fn(char) -> f32,
         warnings: &mut Vec<PdfWarnMsg>,
     ) -> Result<PdfPage> {
         let bytes = fs::read(visual)?;
@@ -245,9 +253,6 @@ impl SearchablePdfRenderer {
                 ..Default::default()
             },
         }];
-        ops.extend(boxes::printpdf_ops(
-            graph, unit, page_w_mm, page_h_mm, font, measure,
-        ));
 
         // Positioned OCR layer.
         for annotation in unit
@@ -521,7 +526,6 @@ pub(crate) mod tests {
                 &unit,
                 &visual,
                 &helvetica(),
-                &|_| 0.6,
                 &mut warnings,
             )
             .unwrap();
@@ -555,7 +559,6 @@ pub(crate) mod tests {
                     &unit,
                     &visual,
                     &helvetica(),
-                    &|_| 0.6,
                     &mut Vec::new(),
                 )
                 .unwrap();

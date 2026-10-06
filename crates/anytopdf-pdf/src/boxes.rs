@@ -247,17 +247,16 @@ pub(crate) fn overlay_boxes(
     boxes
 }
 
-/// Vector overlay for `--draw-boxes`, drawn over the image and under the hidden text.
+/// Vector overlay for `--draw-boxes` on a printpdf page of `page_w` x `page_h` points.
+/// It sets its own fill mode, so it may follow the invisible text layer.
 pub(crate) fn printpdf_ops(
     graph: &DocumentGraph,
     unit: &Unit,
-    page_w_mm: f32,
-    page_h_mm: f32,
+    (page_w, page_h): (f32, f32),
     font: &PdfFontHandle,
     measure: &dyn Fn(char) -> f32,
 ) -> Vec<Op> {
     let kinds = requested_kinds(graph);
-    let (page_w, page_h) = (Mm(page_w_mm).into_pt().0, Mm(page_h_mm).into_pt().0);
     let width = |text: &str| text.chars().map(measure).sum::<f32>();
     let overlay = overlay_boxes(&kinds, unit, page_w, page_h, &width);
     if overlay.is_empty() {
