@@ -270,7 +270,9 @@ fn tool_definitions() -> Value {
                     "no_provenance_page": {"type": "boolean", "description": "Omit the provenance page."},
                     "video_interval": {"type": "number", "exclusiveMinimum": 0, "description": "Seconds between sampled video frames."},
                     "max_video_frames": {"type": "integer", "minimum": 0, "description": "Maximum video frames to keep (0 means unlimited)."},
-                    "max_image_frames": {"type": "integer", "minimum": 0, "description": "Maximum frames from a multi-frame TIFF or GIF (0 means unlimited)."}
+                    "max_image_frames": {"type": "integer", "minimum": 0, "description": "Maximum frames from a multi-frame TIFF or GIF (0 means unlimited)."},
+                    "raw_decode": {"type": "string", "enum": ["auto", "preview", "develop"], "description": "Camera RAW photos: embedded preview, developed RAW data, or auto."},
+                    "scan_mode": {"type": "string", "enum": ["auto", "on", "off"], "description": "Flatten and straighten photographed pages before OCR."}
                 },
                 "required": ["inputs"],
                 "additionalProperties": false
@@ -336,6 +338,8 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             "video_interval",
             "max_video_frames",
             "max_image_frames",
+            "raw_decode",
+            "scan_mode",
         ],
         "extract" => &["pdf"],
         "probe" => &["input"],
@@ -369,6 +373,8 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
         ("ocr", "--ocr"),
         ("lang", "--lang"),
         ("profile", "--profile"),
+        ("raw_decode", "--raw-decode"),
+        ("scan_mode", "--scan-mode"),
     ] {
         if let Some(value) = string(arguments, key)? {
             argv.push(format!("{flag}={value}"));
@@ -473,6 +479,26 @@ mod tests {
                 "--",
                 "-rf",
                 "b.txt"
+            ]
+        );
+    }
+
+    #[test]
+    fn convert_arguments_pass_raw_and_scan_modes() {
+        let argv = tool_argv(
+            "convert",
+            &args(json!({"inputs": ["a.nef"], "raw_decode": "develop", "scan_mode": "off"})),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "convert",
+                "--json",
+                "--raw-decode=develop",
+                "--scan-mode=off",
+                "--",
+                "a.nef"
             ]
         );
     }

@@ -185,6 +185,25 @@ fn builtin_entry(probe: &Probe, d: &PluginDescriptor, hints: &mut Vec<String>) -
                 }
             }
         }
+        "camera-raw" => {
+            let developers: &[&str] = if cfg!(target_os = "macos") {
+                &["sips", "dcraw_emu", "dcraw", "magick", "convert"]
+            } else if cfg!(windows) {
+                &["dcraw_emu", "dcraw", "magick"]
+            } else {
+                &["dcraw_emu", "dcraw", "magick", "convert"]
+            };
+            // The embedded camera preview needs no tool; developing does.
+            let via = developers.iter().find(|c| which::which(c).is_ok()).map_or(
+                "embedded previews only; develop with LibRaw or ImageMagick",
+                |d| d,
+            );
+            (State::Available, format!("{exts}  (via {via})"))
+        }
+        "scan" => (
+            State::Available,
+            "unit    page detection, perspective and deskew".into(),
+        ),
         "pdf-input" => {
             if which::which("pdftoppm").is_ok() {
                 (

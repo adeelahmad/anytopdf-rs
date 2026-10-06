@@ -43,7 +43,7 @@ per-page chunks is embedded in the PDF, which makes the file its own index.
 
 | | |
 | --- | --- |
-| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
+| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF, camera RAW) with phone-photo page flattening, scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
 | **Finds the words** | OCR through Apple Vision, docTR or Tesseract, kept word-aligned under the image; speech to text through the bundled Whisper plugin; video keyframes chosen by interval and scene change |
 | **Writes a real archive file** | Tagged PDF/A-3a with bookmarks, Arabic/Hebrew/CJK shaping, byte-reproducible output, and a provenance page |
 | **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes and page maps; `anytopdf extract --json` reads them back |
@@ -215,6 +215,10 @@ Importers:
 - raster images
 - existing PDFs: pages rendered by Poppler `pdftoppm` with their own text layer kept (OCR only for textless pages); text only without Poppler
 - HEIC/HEIF/AVIF photos, converted by `sips` (macOS), `heif-convert` (libheif) or ImageMagick
+- camera RAW photos (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF and more): the embedded
+  camera preview, found without any external tool; when it is missing or smaller than
+  1600 px on its long edge the RAW data is developed by `sips` (macOS), LibRaw's
+  `dcraw_emu`, `dcraw` or ImageMagick (`--raw-decode auto|preview|develop`)
 - PWG Raster and Apple Raster (URF) print jobs
 - video through FFmpeg
 - audio container placeholder units
@@ -227,6 +231,8 @@ Importers:
   LibreOffice and Poppler
 
 Enrichment:
+- photographed pages: the sheet is found, perspective-corrected and deskewed before OCR
+  (`--scan-mode auto|on|off`, default `auto`)
 - ExifTool metadata
 - ffprobe media metadata
 - OCR provider chain:
@@ -329,6 +335,24 @@ the embedded manifest and chunks are the same with both. On top of that, `pdfa`:
 Output is reproducible under `SOURCE_DATE_EPOCH`. Text the bundled font covers renders
 the same on every host; fallback fonts for other scripts come from the host, so such
 text can embed different fonts on different hosts.
+
+### Camera RAW and phone photos
+
+```bash
+anytopdf convert DSC_0042.NEF IMG_1234.CR3 -o shoot.pdf
+anytopdf convert receipt.jpg -o receipt.pdf              # page found, flattened, deskewed
+anytopdf convert scans/ --scan-mode off -o as-shot.pdf    # keep photos untouched
+```
+
+RAW files use the camera's embedded JPEG preview by default. `--raw-decode develop`
+prefers a local developer (`sips`, `dcraw_emu`, `dcraw`, ImageMagick) and falls back to
+the preview with an `input.lossy-decode` warning; `--raw-decode preview` never runs a tool.
+
+`--scan-mode auto` (the default) flattens a photo only when it clearly shows a sheet
+with text on a darker background, and straightens page-filling scans whose text lines
+are skewed; other photos are left as they are. `on` also crops sheets that touch the
+frame edges and straightens any photo with text lines. Both options can also be set
+with `ANYTOPDF_RAW_DECODE` and `ANYTOPDF_SCAN_MODE`.
 
 ### Embedded manifest and chunks
 
@@ -583,6 +607,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
 - [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
+- [x] Camera RAW importer: largest embedded JPEG preview (lossless sensor streams skipped, container orientation applied), developed by `sips`, `dcraw_emu`, `dcraw` or ImageMagick when the preview is missing or small
+- [x] Phone-photo scans: page detection, perspective correction and deskew before OCR
 - [x] Office documents through LibreOffice and Poppler
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 

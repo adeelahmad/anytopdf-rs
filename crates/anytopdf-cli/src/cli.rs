@@ -1,4 +1,4 @@
-use anytopdf_builtin::OcrMode;
+use anytopdf_builtin::{OcrMode, RawDecode, ScanMode};
 use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
 use std::path::PathBuf;
@@ -366,6 +366,18 @@ pub(crate) struct ConvertArgs {
     /// Maximum frames to import from a multi-frame TIFF or GIF (0 means unlimited).
     #[arg(long, default_value_t = 0)]
     pub(crate) max_image_frames: usize,
+
+    /// How camera RAW photos become pages: `auto` uses the embedded camera preview and
+    /// develops the RAW data when the preview is small, `preview` never runs a tool,
+    /// `develop` prefers a local developer (sips, dcraw_emu, dcraw or ImageMagick).
+    #[arg(long, env = "ANYTOPDF_RAW_DECODE", default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(["auto", "preview", "develop"]).try_map(|s| s.parse::<RawDecode>()))]
+    pub(crate) raw_decode: RawDecode,
+
+    /// Photographed-document cleanup before OCR: `auto` flattens and straightens photos
+    /// that clearly show a page, `on` crops to any detected sheet and straightens every
+    /// photo with text lines, `off` keeps images unchanged.
+    #[arg(long, env = "ANYTOPDF_SCAN_MODE", default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(["auto", "on", "off"]).try_map(|s| s.parse::<ScanMode>()))]
+    pub(crate) scan_mode: ScanMode,
 
     /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]

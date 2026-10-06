@@ -6,6 +6,16 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- Camera RAW photos (CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2, PEF and more) import as
+  image pages from their embedded camera preview, with no external tool. A missing or
+  small preview is developed by `sips`, `dcraw_emu`, `dcraw` or ImageMagick
+  (`--raw-decode auto|preview|develop`, `ANYTOPDF_RAW_DECODE`). TIFF-based RAW files no
+  longer fall through to the TIFF importer, which decoded only a thumbnail.
+- Photographed pages are flattened before OCR: the sheet is found, its perspective
+  corrected and skewed text lines straightened (`--scan-mode auto|on|off`,
+  `ANYTOPDF_SCAN_MODE`, default `auto`). `auto` only changes photos that clearly show a
+  page with text on a distinct background, or a page-filling scan with skewed lines;
+  the unit records `scan.page` corners and `scan.deskew-degrees`.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

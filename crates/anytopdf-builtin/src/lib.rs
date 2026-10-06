@@ -7,6 +7,7 @@ mod importers;
 mod metadata;
 mod ocr;
 mod providers;
+mod scan;
 mod scene;
 
 use anytopdf_core::Registry;
@@ -14,8 +15,10 @@ use std::sync::Arc;
 
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
+pub use importers::RawDecode;
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{ProviderVersion, detect_providers};
+pub use scan::ScanMode;
 
 #[derive(Debug, Clone)]
 pub struct BuiltinOptions {
@@ -28,6 +31,8 @@ pub struct BuiltinOptions {
     pub ocr_language: String,
     pub explicit_transcripts: Vec<std::path::PathBuf>,
     pub embedded_subtitles: bool,
+    pub raw_decode: RawDecode,
+    pub scan: ScanMode,
 }
 
 impl Default for BuiltinOptions {
@@ -42,6 +47,8 @@ impl Default for BuiltinOptions {
             ocr_language: "eng".to_string(),
             explicit_transcripts: Vec::new(),
             embedded_subtitles: true,
+            raw_decode: RawDecode::Auto,
+            scan: ScanMode::Auto,
         }
     }
 }
@@ -53,6 +60,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_image_frames,
     )));
     registry.register_importer(Arc::new(importers::HeifImporter));
+    registry.register_importer(Arc::new(importers::CameraRawImporter::new(opts.raw_decode)));
     registry.register_importer(Arc::new(importers::PdfInputImporter));
     registry.register_importer(Arc::new(importers::RasterImporter::new(
         opts.max_image_frames,
@@ -71,6 +79,8 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_importer(Arc::new(importers::AudioImporter));
     registry.register_importer(Arc::new(importers::OfficeImporter));
 
+    // Page detection and deskew must change the page image before OCR reads it.
+    registry.register_unit_enricher(Arc::new(scan::ScanEnricher::new(opts.scan)));
     registry.register_unit_enricher(Arc::new(ocr::OcrEnricher::new(opts.ocr, opts.ocr_language)));
     registry.register_graph_enricher(Arc::new(captions::CaptionEnricher::new(
         opts.explicit_transcripts,
