@@ -4,7 +4,7 @@ Checked items describe implemented code on `main`, not release certification. Se
 `RELEASING.md` for validation evidence and release procedures, `CHANGELOG.md` for
 per-release behaviour changes, and the README roadmap for the feature-level view.
 
-Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" merged the same day.
+Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" merged the same day and shipped in 0.2.0. The work under "Media analysis and more inputs" merged on 2026-10-06 and ships in 0.3.0.
 
 ## 0.1 — architecture + searchable media core
 - [x] staged registry
@@ -77,6 +77,21 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [ ] people, organisation and keyword entities (NER runtime plugin)
 - [x] cross-file search index: `convert --index`, `anytopdf index add|list|remove`, `anytopdf search` (kind, person and collection filters), an MCP `search` tool and `queue serve --search`
 
+## Media analysis and more inputs (merged 2026-10-06, 0.3.0)
+- [x] JSON and JSON Lines importer: one searchable chunk per record
+- [x] WhatsApp, Telegram, Slack and iMessage chat exports
+- [x] camera RAW photos and phone-photo page flattening (`--scan-mode`)
+- [x] URL inputs, link lists and browser bookmark exports (`--links`)
+- [x] dominant colours per image and keyframe (`--colors`)
+- [x] offline reverse geocoding and place names in text (`--location`)
+- [x] `anytopdf ask`: cited answers from converted PDFs, optionally through a local LLM
+- [x] `anytopdf capture screen`: record the screen and convert the recording
+- [x] one definition per option: TOML config file, `ANYTOPDF_*` variables and flags; `anytopdf config`
+- [x] `anytopdf setup whisper` and bundled plugins that turn on once their manifest reports `ready`
+- [x] `install.sh` installer and Homebrew tap and Scoop bucket served from this repository
+- [x] sentiment and tone of text (`anytopdf-plugin-sentiment`) and audio events (`anytopdf-plugin-audio-events`)
+- [x] every workspace runtime plugin bundled in release archives, packages and the container
+
 ## Backlog
 
 Priority order as of sprint 4 sign-off, with status on `main`.
@@ -84,11 +99,11 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 1. Webhooks and a job queue: done, including the HTTP upload input.
 2. IMAP mail watcher: done (`anytopdf watch imap`: IDLE or polling, sender allowlist with DMARC check, OAuth2 XOAUTH2 tokens, job-queue hand-off, shipped in release builds); richer rules and a quarantine folder still open.
 3. PAPPL print server: done as the optional `helpers/anytopdf-printer` IPP Everywhere helper with a print-raster importer; AirPrint and Mopria certification still open.
-4. Remote printing: done; signed-in user stamps and print receipts in progress.
+4. Remote printing: done, including signed-in user stamps and print receipts.
 5. New renderer and PDF/A-3: done. Tagged PDF/A-3a through krilla is the default renderer, with bookmarks, bidi shaping, font fallback and a bundled DejaVu Sans font; `--renderer pdf` keeps printpdf.
 6. More inputs: done (HTML, email, zip/tar archives, PDF with its own text layer, HEIC/HEIF/AVIF).
 7. Office documents and Whisper transcription: done (Whisper as a runtime plugin).
-8. Distribution and an MCP server: MCP server and package manifests done; published tap and bucket, winget, `curl | sh`, npx/uvx wrappers, signing and notarization still open.
+8. Distribution and an MCP server: MCP server, package manifests, the tap and bucket (served from this repository) and the `install.sh` installer done; winget, npx/uvx wrappers, signing and notarization still open.
 
 ## Security
 - [x] `SECURITY.md` with private reporting through GitHub, and the threat model in `docs/threat-model/`
@@ -96,7 +111,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 - [ ] hard CPU/memory/disk quotas for runtime plugins, sandboxing for external providers, Windows `strict`, and a decision on making `contain` the default (threat model Q18)
 - [ ] untrusted-input handling for intake channels (no network, size/page caps, zip-bomb rejection)
 - [ ] threat model revision for the post-sprint-4 surfaces (job queue, HTTP upload and webhooks, IMAP watcher, remote print front, PAPPL printer helper, MCP server, new importers)
-- [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
+- [x] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17) with tests and fixes (#6); Q18 stays open
 
 ## Later media semantics
 - [x] neutral face detection: presence/count/bounds (`anytopdf-plugin-faces`)

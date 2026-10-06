@@ -37,7 +37,7 @@ fn main() -> ExitCode {
         .as_slice()
     {
         ["--anytopdf-manifest"] => {
-            println!("{}", manifest());
+            println!("{}", manifest(readiness()));
             Ok(())
         }
         ["--version"] => {
@@ -98,11 +98,31 @@ fn main() -> ExitCode {
     }
 }
 
-fn manifest() -> Value {
+/// A copy bundled with anytopdf stays idle until a model is downloaded or
+/// configured, so conversions without one neither warn nor fail `--strict`.
+/// An explicit `ANYTOPDF_CLIP_MODEL_DIR` is always ready so its errors surface.
+/// `None` is ready.
+fn readiness() -> Option<String> {
+    let explicit = env::var("ANYTOPDF_CLIP_MODEL_DIR").is_ok_and(|v| !v.trim().is_empty());
+    let downloaded =
+        default_model_dir().is_some_and(|dir| encoder::ModelFiles::locate(&dir).is_ok());
+    if explicit || downloaded {
+        None
+    } else {
+        Some(
+            "needs a CLIP model: run `anytopdf-plugin-clip --fetch-model` or set ANYTOPDF_CLIP_MODEL_DIR"
+                .into(),
+        )
+    }
+}
+
+fn manifest(not_ready: Option<String>) -> Value {
     json!({
         "protocol": PROTOCOL,
         "name": PROVIDER,
         "version": env!("CARGO_PKG_VERSION"),
+        "ready": not_ready.is_none(),
+        "detail": not_ready,
         "capabilities": [{
             "kind": "graph-enricher",
             "extensions": [],
@@ -318,4 +338,20 @@ fn write_atomic(path: &Path, body: &Value) -> Result<()> {
     fs::write(&temporary, serde_json::to_vec(body)?).context("write response")?;
     fs::rename(&temporary, path).context("publish response")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    #[test]
+    fn manifest_reports_idle_with_what_is_missing() {
+        let idle = manifest(Some("needs a model".into()));
+        assert_eq!(idle["ready"], false);
+        assert_eq!(idle["detail"], "needs a model");
+        assert_eq!(idle["capabilities"].as_array().unwrap().len(), 1);
+        let ready = manifest(None);
+        assert_eq!(ready["ready"], true);
+        assert!(ready["detail"].is_null());
+    }
 }

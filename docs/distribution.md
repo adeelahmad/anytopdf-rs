@@ -17,8 +17,10 @@ the container image on GHCR.
 ## Bundled plugins
 
 Every archive carries the workspace's runtime plugins (`PLUGINS` in the
-Makefile, currently `anytopdf-plugin-audio-events`, `anytopdf-plugin-faces`,
-`anytopdf-plugin-sentiment` and `anytopdf-plugin-whisper`) in a `plugins/` folder. anytopdf
+Makefile, currently `anytopdf-plugin-audio-events`, `anytopdf-plugin-clip`,
+`anytopdf-plugin-face-id`, `anytopdf-plugin-faces`, `anytopdf-plugin-objects`,
+`anytopdf-plugin-sentiment`, `anytopdf-plugin-vlm` and `anytopdf-plugin-whisper`) in a
+`plugins/` folder. anytopdf
 finds them there (and in Homebrew's `libexec/plugins` and `<data dir>/plugins`)
 without `ANYTOPDF_PLUGIN_PATH`, but runs a bundled plugin only once its manifest
 reports `ready: true`: an enabled Whisper plugin without an engine would warn on
@@ -80,8 +82,8 @@ uploads them as the `package-manifests` artifact. Commit them in a PR after each
 release (or regenerate them from the published checksums):
 
 ```bash
-gh release download v0.2.0 --pattern SHA256SUMS
-python scripts/distribution.py --version 0.2.0 --checksums SHA256SUMS --output packaging
+gh release download v0.3.0 --pattern SHA256SUMS
+python scripts/distribution.py --version 0.3.0 --checksums SHA256SUMS --output packaging
 cp packaging/anytopdf.rb Formula/anytopdf.rb
 cp packaging/anytopdf.json bucket/anytopdf.json
 ```

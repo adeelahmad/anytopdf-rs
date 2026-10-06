@@ -56,19 +56,18 @@ fn main() -> ExitCode {
     }
 }
 
-/// Declares no capabilities until an endpoint is configured, so a bundled
-/// copy on `ANYTOPDF_PLUGIN_PATH` costs nothing and warns about nothing. A
-/// misconfiguration still registers the unit enricher so its error surfaces.
+/// Reports `ready: false` until an endpoint is configured, so a copy bundled
+/// with anytopdf stays idle and warns about nothing. A misconfiguration is
+/// ready so its error surfaces. A copy put on a plugin path always runs and
+/// answers every request with nothing until an endpoint is set.
 fn manifest(config: Result<Option<config::Config>>) -> Value {
-    let mut capabilities = Vec::new();
-    if !matches!(config, Ok(None)) {
-        capabilities.push(json!({
-            "kind": "unit-enricher",
-            "extensions": [],
-            "mime_types": ["image/*", "video/*"],
-            "priority": 40
-        }));
-    }
+    let ready = !matches!(config, Ok(None));
+    let mut capabilities = vec![json!({
+        "kind": "unit-enricher",
+        "extensions": [],
+        "mime_types": ["image/*", "video/*"],
+        "priority": 40
+    })];
     if let Ok(Some(config)) = config
         && config.text.is_some()
     {
@@ -84,6 +83,8 @@ fn manifest(config: Result<Option<config::Config>>) -> Value {
         "protocol": PROTOCOL,
         "name": "vlm",
         "version": env!("CARGO_PKG_VERSION"),
+        "ready": ready,
+        "detail": (!ready).then_some("set ANYTOPDF_VLM_URL to an OpenAI-compatible or Moondream endpoint"),
         "capabilities": capabilities
     })
 }
@@ -140,4 +141,30 @@ fn write_atomic(path: &Path, body: &Value) -> Result<()> {
     fs::write(&temporary, serde_json::to_vec(body)?).context("write response")?;
     fs::rename(&temporary, path).context("publish response")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    #[test]
+    fn unconfigured_manifest_is_idle_but_still_valid() {
+        let idle = manifest(Ok(None));
+        assert_eq!(idle["ready"], false);
+        assert!(
+            idle["detail"]
+                .as_str()
+                .unwrap()
+                .contains("ANYTOPDF_VLM_URL")
+        );
+        // The host ignores a manifest without capabilities.
+        assert_eq!(idle["capabilities"][0]["kind"], "unit-enricher");
+    }
+
+    #[test]
+    fn misconfigured_manifest_is_ready_so_the_error_surfaces() {
+        let manifest = manifest(Err(anyhow::anyhow!("bad engine")));
+        assert_eq!(manifest["ready"], true);
+        assert!(manifest["detail"].is_null());
+    }
 }

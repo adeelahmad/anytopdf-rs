@@ -10,12 +10,11 @@
 # binaries to dist/docker/<arch>/, so the image ships the exact binaries that
 # were smoke-tested and checksummed instead of rebuilding them.
 #
-# anytopdf-plugin-audio-events, anytopdf-plugin-faces, anytopdf-plugin-sentiment and
-# anytopdf-plugin-whisper are installed in
-# /opt/anytopdf/plugins but stay off unless ANYTOPDF_PLUGIN_PATH names that
-# folder. --build-arg WHISPER=cpp also compiles whisper.cpp's whisper-cli and
-# turns the Whisper plugin on; mount a ggml model
-# at /models/ggml-base.en.bin (or set ANYTOPDF_WHISPER_MODEL):
+# The workspace's runtime plugins (audio-events, clip, face-id, faces, objects,
+# sentiment, vlm and whisper) are installed in /opt/anytopdf/plugins but stay
+# off unless ANYTOPDF_PLUGIN_PATH names that folder. --build-arg WHISPER=cpp
+# also compiles whisper.cpp's whisper-cli and turns the Whisper plugin on;
+# mount a ggml model at /models/ggml-base.en.bin (or set ANYTOPDF_WHISPER_MODEL):
 #
 #   docker build --build-arg WHISPER=cpp -t anytopdf:whisper .
 #   docker run --rm -v "$PWD:/work" -v "$HOME/models:/models:ro" anytopdf:whisper talk.mp3 -o talk.pdf
@@ -26,14 +25,12 @@ ARG WHISPER=none
 FROM rust:1.92-bookworm AS source
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-audio-events -p anytopdf-plugin-faces -p anytopdf-plugin-sentiment -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
-    && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-audio-events target/release/anytopdf-plugin-faces \
-        target/release/anytopdf-plugin-sentiment target/release/anytopdf-plugin-whisper /
+RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-audio-events -p anytopdf-plugin-clip -p anytopdf-plugin-face-id -p anytopdf-plugin-faces -p anytopdf-plugin-objects -p anytopdf-plugin-sentiment -p anytopdf-plugin-vlm -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
+    && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-audio-events target/release/anytopdf-plugin-clip target/release/anytopdf-plugin-face-id target/release/anytopdf-plugin-faces target/release/anytopdf-plugin-objects target/release/anytopdf-plugin-sentiment target/release/anytopdf-plugin-vlm target/release/anytopdf-plugin-whisper /
 
 FROM scratch AS prebuilt
 ARG TARGETARCH
-COPY dist/docker/${TARGETARCH}/anytopdf dist/docker/${TARGETARCH}/anytopdf-plugin-audio-events dist/docker/${TARGETARCH}/anytopdf-plugin-faces \
-     dist/docker/${TARGETARCH}/anytopdf-plugin-sentiment dist/docker/${TARGETARCH}/anytopdf-plugin-whisper /
+COPY dist/docker/${TARGETARCH}/anytopdf dist/docker/${TARGETARCH}/anytopdf-plugin-audio-events dist/docker/${TARGETARCH}/anytopdf-plugin-clip dist/docker/${TARGETARCH}/anytopdf-plugin-face-id dist/docker/${TARGETARCH}/anytopdf-plugin-faces dist/docker/${TARGETARCH}/anytopdf-plugin-objects dist/docker/${TARGETARCH}/anytopdf-plugin-sentiment dist/docker/${TARGETARCH}/anytopdf-plugin-vlm dist/docker/${TARGETARCH}/anytopdf-plugin-whisper /
 
 FROM ${BINARY} AS binary
 
@@ -64,8 +61,12 @@ RUN apt-get update \
     && useradd --create-home --uid 1000 anytopdf
 COPY --from=binary --chmod=0755 /anytopdf /usr/local/bin/anytopdf
 COPY --from=binary --chmod=0755 /anytopdf-plugin-audio-events /opt/anytopdf/plugins/anytopdf-plugin-audio-events
+COPY --from=binary --chmod=0755 /anytopdf-plugin-clip /opt/anytopdf/plugins/anytopdf-plugin-clip
+COPY --from=binary --chmod=0755 /anytopdf-plugin-face-id /opt/anytopdf/plugins/anytopdf-plugin-face-id
 COPY --from=binary --chmod=0755 /anytopdf-plugin-faces /opt/anytopdf/plugins/anytopdf-plugin-faces
+COPY --from=binary --chmod=0755 /anytopdf-plugin-objects /opt/anytopdf/plugins/anytopdf-plugin-objects
 COPY --from=binary --chmod=0755 /anytopdf-plugin-sentiment /opt/anytopdf/plugins/anytopdf-plugin-sentiment
+COPY --from=binary --chmod=0755 /anytopdf-plugin-vlm /opt/anytopdf/plugins/anytopdf-plugin-vlm
 COPY --from=binary --chmod=0755 /anytopdf-plugin-whisper /opt/anytopdf/plugins/anytopdf-plugin-whisper
 COPY --from=whisper --chmod=0755 /out/bin/ /usr/local/bin/
 ENV ANYTOPDF_WHISPER_MODEL=/models/ggml-base.en.bin

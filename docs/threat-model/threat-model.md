@@ -530,7 +530,9 @@ Waiting policy: two unanswered waves or 60 days, whichever comes first. After th
 
 Wave 1 was answered in 2026-10. Q1, Q2, Q3, Q12 and Q16 were confirmed as proposed. Q5 (hostile PDFs to `extract` are in scope for crashes, wrong exit codes and output corruption, not size limits), Q7 (sidecars are found by stem, and following symlinks is disclaimed) and Q10 (no written file may replace an input) were ruled on. Those claims now carry maintainer tags.
 
-Wave 2 — contract edges:
+Waves 2 and 3 were answered in 2026-10 with tests and fixes (#6). Q4, Q14 and Q17 were confirmed as proposed. Q6 took option (a): panics in importers, enrichers and the renderer are caught and the input is skipped like any failing input. Q8 is a promise: directory scans skip symlinked files and directories. Q11 is a claim for both Helvetica and embedded fonts. Q9 went further than proposed: `--profile share` also redacts runtime plugin directories from diagnostics. Q13 was ruled the other way: the host hashes every source it can read and uses a plugin-supplied digest only for sources it cannot. Q15 was also ruled the other way: FFmpeg and ffprobe now run with `-protocol_whitelist file`, so crafted containers cannot open network URLs. The proposals below are kept as the record of what was asked; §1.11 and §1.12 have not yet been rewritten to carry these answers as maintainer tags.
+
+Wave 2 — contract edges (answered):
 
 - **Q4** — Are hard links and concurrent filesystem changes during a run outside P2?
   - Proposed answer: yes. P2 compares canonical paths at the time outputs are chosen.
@@ -548,7 +550,7 @@ Wave 2 — contract edges:
   - Proposed answer: yes, add `hang` to P17's symptoms. A cycle is a structure problem, not a size problem, so D4 does not cover it.
   - Lands in: §1.7 cli-extract topology row, §1.11 P17.
 
-Wave 3 — plugins and edge probes:
+Wave 3 — plugins and edge probes (answered):
 
 - **Q13** — Should a plugin-supplied `sha256`/`size` be trusted for content-derived IDs?
   - Proposed answer: yes, as a disclaimer. Content IDs are only as trustworthy as the installed plugins.
