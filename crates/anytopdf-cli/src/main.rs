@@ -1,5 +1,6 @@
 mod argv;
 mod capabilities;
+mod capture;
 mod cli;
 mod commands;
 mod convert;
@@ -15,7 +16,7 @@ mod queue;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
-use cli::{Cli, Commands, QueueCommand, WatchSource};
+use cli::{CaptureCommand, Cli, Commands, QueueCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
 use exit::{CliError, ExitClass};
@@ -34,7 +35,11 @@ fn main() -> ExitCode {
             return ExitCode::from(class.code());
         }
     };
-    let events = matches!(&cli.command, Commands::Convert(a) if a.events);
+    let events = match &cli.command {
+        Commands::Convert(a) => a.events,
+        Commands::Capture(CaptureCommand::Screen(a)) => a.convert.iter().any(|x| x == "--events"),
+        _ => false,
+    };
     match run(cli) {
         Ok(()) => ExitCode::from(ExitClass::Success.code()),
         Err(e) => {
@@ -103,6 +108,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         }
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
         Commands::Print(command) => print::print(command),
+        Commands::Capture(CaptureCommand::Screen(args)) => capture::screen(*args, &policy),
     }
 }
 

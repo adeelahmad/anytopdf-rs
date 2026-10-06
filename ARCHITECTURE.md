@@ -91,6 +91,12 @@ ExifTool, ffprobe, hashes, provenance, GPS, dates, etc.
 Adds OCR, captions, transcripts, object labels, scene labels, face bounds, and
 other annotations to individual units.
 
+Graph enrichers run before unit enrichers by default (for example, Whisper adds a
+transcript unit that later enrichers can see). A graph enricher whose `phase()`
+is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs
+after them instead, so it can summarize their annotations; `anytopdf-plugin-vlm`
+writes video and scene summaries this way.
+
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text
@@ -107,6 +113,13 @@ For visual pages:
 3. write OCR as invisible text;
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
+
+With `convert --draw-boxes` (graph metadata `anytopdf.draw-boxes`), both renderers
+also draw a vector overlay between steps 1 and 2: a stroked rectangle per `Object`,
+`Face` or `Ocr` annotation region of the selected kinds, with a filled label for faces
+(`attributes.person` when set, else the annotation text) and objects (text and
+confidence). `boxes.rs` computes the geometry once, with a stable colour per kind; the
+image file is never modified, and `pdfa` tags the overlay as an artifact.
 
 Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 `provenance.rs`) and therefore produce the same pages and `unit_pages`:
@@ -167,6 +180,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
 - `anytopdf-plugin-sentiment` (shipped in `crates/anytopdf-plugin-sentiment`)
+- `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`

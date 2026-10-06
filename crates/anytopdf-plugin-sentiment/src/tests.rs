@@ -168,3 +168,19 @@ fn an_unreachable_llm_falls_back_to_the_lexicon_with_a_warning() {
         "{warnings:?}"
     );
 }
+
+#[test]
+fn the_shared_text_llm_endpoint_is_used_when_no_sentiment_one_is_set() {
+    let var = |name: &str| match name {
+        "ANYTOPDF_LLM_URL" => Some("http://127.0.0.1:11434/v1".to_string()),
+        "ANYTOPDF_LLM_MODEL" => Some("llama3.2".to_string()),
+        "ANYTOPDF_SENTIMENT_LLM_MODEL" => Some("qwen2.5:3b".to_string()),
+        _ => None,
+    };
+    let Backend::Llm(llm) = Config::from_env(var).unwrap().backend else {
+        panic!("expected the llm backend");
+    };
+    assert_eq!(llm.url, "http://127.0.0.1:11434/v1");
+    // The plugin's own setting wins over the shared one.
+    assert_eq!(llm.model, "qwen2.5:3b");
+}

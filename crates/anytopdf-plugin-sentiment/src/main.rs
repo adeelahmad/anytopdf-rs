@@ -102,14 +102,19 @@ impl Config {
         let get = |name: &str| {
             var(&format!("ANYTOPDF_SENTIMENT_{name}")).filter(|v| !v.trim().is_empty())
         };
-        let llm_url = get("LLM_URL");
+        // The text-LLM endpoint the VLM plugin's summaries use is shared.
+        let llm = |name: &str| {
+            get(&format!("LLM_{name}"))
+                .or_else(|| var(&format!("ANYTOPDF_LLM_{name}")).filter(|v| !v.trim().is_empty()))
+        };
+        let llm_url = llm("URL");
         let backend = match get("BACKEND").as_deref().map(str::trim) {
             None | Some("auto") if llm_url.is_none() => Backend::Vader,
             Some("vader") => Backend::Vader,
             None | Some("auto") | Some("llm") => {
                 let url = llm_url
                     .context("ANYTOPDF_SENTIMENT_LLM_URL is required for the llm backend")?;
-                let model = get("LLM_MODEL")
+                let model = llm("MODEL")
                     .context("ANYTOPDF_SENTIMENT_LLM_MODEL is required for the llm backend")?;
                 let timeout = match get("LLM_TIMEOUT") {
                     Some(v) => v
@@ -127,7 +132,7 @@ impl Config {
                 Backend::Llm(llm::Llm {
                     url,
                     model,
-                    api_key: get("LLM_API_KEY"),
+                    api_key: llm("API_KEY"),
                     timeout: Duration::from_secs(timeout),
                 })
             }

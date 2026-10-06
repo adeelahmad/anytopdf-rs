@@ -13,7 +13,7 @@ use std::{
 fn plugin() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_anytopdf-plugin-sentiment"));
     for (name, _) in std::env::vars() {
-        if name.starts_with("ANYTOPDF_SENTIMENT_") {
+        if name.starts_with("ANYTOPDF_SENTIMENT_") || name.starts_with("ANYTOPDF_LLM_") {
             command.env_remove(name);
         }
     }
