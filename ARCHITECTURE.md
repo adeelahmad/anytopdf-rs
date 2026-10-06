@@ -220,12 +220,19 @@ to keep static distributions small.
 Runtime plugins are executable processes, not `.so`/`.dylib` Rust trait objects.
 This keeps the ABI stable and makes plugins language-agnostic.
 
-Discovery:
-- `PATH`: `anytopdf-plugin-*`
-- future config dirs:
-  - Linux: `$XDG_CONFIG_HOME/anytopdf/plugins`
-  - macOS: `~/Library/Application Support/anytopdf/plugins`
-  - Windows: `%APPDATA%\anytopdf\plugins`
+Discovery (details in `PLUGIN_PROTOCOL.md`):
+- `PATH` and `ANYTOPDF_PLUGIN_PATH`: `anytopdf-plugin-*`, always registered
+- bundled folders, registered only once the plugin's manifest reports
+  `ready: true` (so a shipped plugin with a missing dependency stays quiet):
+  - `plugins/` beside the executable, and `../libexec/plugins` (Homebrew)
+  - `<data dir>/plugins`, where `<data dir>` is `ANYTOPDF_DATA_DIR` or the
+    per-user data folder (`~/Library/Application Support/anytopdf`,
+    `%LOCALAPPDATA%\anytopdf`, `${XDG_DATA_HOME:-~/.local/share}/anytopdf`)
+
+`anytopdf setup whisper` installs a checksummed whisper.cpp model into
+`<data dir>/whisper/` and records it in `setup.json`; the bundled Whisper plugin
+reads that record, so engine + model + FFmpeg present is all it takes to turn
+transcription on.
 
 Protocol:
 - `plugin --anytopdf-manifest`

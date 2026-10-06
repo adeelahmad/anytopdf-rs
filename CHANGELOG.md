@@ -78,6 +78,18 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   set to an OpenAI-compatible server the answer cites them as `[n]`; an unreachable
   endpoint adds an `ask.llm-failed` warning and falls back to the passages. New
   `anytopdf.ask/1` schema.
+- `anytopdf setup whisper [--model NAME] [--from FILE] [--base-url URL]` turns on
+  speech-to-text in one step: it downloads a whisper.cpp ggml model (default `base`)
+  into the user data folder (`ANYTOPDF_DATA_DIR`, or the platform's per-user data
+  folder), verifies the SHA-1 whisper.cpp publishes, records the model with its SHA-256
+  in `whisper/setup.json`, and says what else transcription still needs.
+- Bundled runtime plugins (`plugins/` beside the binary, Homebrew's `libexec/plugins`,
+  `<data dir>/plugins`) are found without `ANYTOPDF_PLUGIN_PATH` and run once their
+  manifest reports the new optional `ready: true`; `detail` explains what is missing.
+  The Whisper plugin is ready when an engine, a model and FFmpeg are all present.
+  `anytopdf doctor` gains a Transcription section (`transcription` in `--json`), and
+  `capabilities` lists idle bundled plugins with the step that turns them on.
+  `install.sh` now puts plugins in `<data dir>/plugins`.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

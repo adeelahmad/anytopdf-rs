@@ -98,28 +98,48 @@ a private LibreOffice profile, so the original file is never opened in place.
 
 ### Whisper transcription
 
-`anytopdf-plugin-whisper` transcribes audio and video sources that have no
-sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
-one of these engines, adding a visible, timed transcript page whose segments are
-searchable `transcript` annotations:
-
-- whisper.cpp (`whisper-cli`) with `ANYTOPDF_WHISPER_MODEL` set to a ggml model
-  file, for example `ggml-base.en.bin`;
-- `whisper-ctranslate2` (faster-whisper) or OpenAI `whisper`, with
-  `ANYTOPDF_WHISPER_MODEL` naming the model (default `base`).
-
-Release archives ship the plugin in a `plugins/` folder beside `anytopdf`, and
-Homebrew installs it under `$(brew --prefix anytopdf)/libexec/plugins`. It stays
-off until `ANYTOPDF_PLUGIN_PATH` names that folder, so media conversions without
-a Whisper engine do not warn. The container image has a `WHISPER=cpp` build that
-includes whisper.cpp and enables it (see [docs/distribution.md](docs/distribution.md)).
-From source:
+Turn on speech-to-text in one step:
 
 ```bash
-cargo build --release -p anytopdf-plugin-whisper
-export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
-export ANYTOPDF_WHISPER_MODEL="$HOME/models/ggml-base.en.bin"
-anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
+anytopdf setup whisper              # downloads ggml-base.bin (142 MiB), checks its SHA-1
+anytopdf convert meeting.mp4 -o meeting.pdf
+```
+
+`anytopdf-plugin-whisper` transcribes audio and video sources that have no
+sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
+a Whisper engine, adding a visible, timed transcript page whose segments are
+searchable `transcript` annotations.
+
+`setup whisper` installs a whisper.cpp model into anytopdf's data folder
+(`ANYTOPDF_DATA_DIR`, or `~/Library/Application Support/anytopdf` on macOS,
+`%LOCALAPPDATA%\anytopdf` on Windows, `~/.local/share/anytopdf` elsewhere) and
+records it. Pick another model with `--model` (`tiny`, `base.en`, `small`,
+`large-v3-turbo`, …; `.en` models are English-only), install a file you already
+downloaded with `--from FILE`, or use a mirror with `--base-url URL`. Every file
+is checked against the checksum whisper.cpp publishes.
+
+The plugin ships with anytopdf (in `plugins/` beside the binary, or Homebrew's
+`libexec/plugins`) and turns itself on once all three of these are present:
+
+- a model: the one `setup whisper` recorded, or `ANYTOPDF_WHISPER_MODEL` set to
+  a ggml model file;
+- an engine: whisper.cpp's `whisper-cli` (`brew install whisper-cpp`; on Windows
+  `whisper-cli.exe` from the whisper.cpp release zip), or `whisper-ctranslate2`
+  (faster-whisper) / OpenAI `whisper` with `ANYTOPDF_WHISPER_MODEL` naming the
+  model (default `base`);
+- FFmpeg on `PATH`.
+
+Until then it stays off, so media conversions don't warn. `anytopdf doctor` (and
+`setup whisper` itself) says exactly which piece is missing. A plugin you put on
+`PATH` or `ANYTOPDF_PLUGIN_PATH` always runs and reports what it lacks as a
+warning. The container image has a `WHISPER=cpp` build that includes whisper.cpp
+(see [docs/distribution.md](docs/distribution.md)). From source:
+
+```bash
+cargo build --release -p anytopdf -p anytopdf-plugin-whisper
+mkdir -p target/release/plugins && cp target/release/anytopdf-plugin-whisper target/release/plugins/
+target/release/anytopdf setup whisper
+target/release/anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
 ```
 
 `ANYTOPDF_WHISPER_ENGINE` (`auto`, `whisper.cpp`, `openai-whisper`),
@@ -128,7 +148,9 @@ anytopdf convert meeting.mp4 --plugin-timeout 1800 -o meeting.pdf
 invocation transcribes every media source in the job, so raise
 `--plugin-timeout` (default 60 seconds) for long recordings. A missing engine,
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
-the PDF is still written.
+the PDF is still written. Under `--plugin-sandbox strict`, pass
+`--plugin-sandbox-allow-read` for the data folder (or the model file) so the
+plugin can load the model.
 
 ### Visual descriptions
 
@@ -365,6 +387,7 @@ anytopdf convert https://example.com/post -o post.pdf
 anytopdf convert 'https://www.youtube.com/watch?v=…' -o talk.pdf
 
 anytopdf doctor
+anytopdf setup whisper
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json

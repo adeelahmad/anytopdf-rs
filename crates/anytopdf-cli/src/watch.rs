@@ -313,6 +313,7 @@ mod imap {
                     mode: anytopdf_core::SandboxMode::Strict,
                     allow_read: vec!["/opt/models".into()],
                 },
+                bundled_dirs: Vec::new(),
             };
             let flags: Vec<String> = plugin_flags(&policy)
                 .into_iter()
