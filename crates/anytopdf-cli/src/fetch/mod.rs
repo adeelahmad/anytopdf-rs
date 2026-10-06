@@ -389,7 +389,7 @@ mod tests {
             allow_private: false,
         };
         let inputs = vec![PathBuf::from("a.txt")];
-        let fetched = fetch_inputs(&inputs, &opts, false)
+        let fetched = fetch_inputs(&inputs, &[], &opts, false)
             .map_err(|e| e.error)
             .unwrap();
         assert_eq!(fetched.inputs, inputs);

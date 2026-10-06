@@ -270,7 +270,10 @@ fn bookmark_exports_convert_every_link_and_skip_unreachable_ones() {
     let report: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(report["status"], "partial", "{report}");
     let skipped = report["summary"]["skipped"].to_string();
-    assert!(skipped.contains("/gone") && skipped.contains("HTTP 404"), "{skipped}");
+    assert!(
+        skipped.contains("/gone") && skipped.contains("HTTP 404"),
+        "{skipped}"
+    );
     let doc = extract(&tmp.path().join("bookmarks.pdf"));
     let sources = doc["manifest"]["sources"].as_array().unwrap();
     assert_eq!(sources.len(), 2);
