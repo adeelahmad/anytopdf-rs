@@ -35,8 +35,8 @@ pub use importers::StructuredOptions;
 pub use location::{LocationEnricher, LocationMode};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use options::{
-    BuiltinOptions, CaptionOptions, ImageOptions, OcrOptions, OptionTable, VideoOptions,
-    option_tables,
+    BuiltinOptions, CaptionOptions, ColorOptions, EntityOptions, ImageOptions, LocationOptions,
+    OcrOptions, OptionTable, RawOptions, ScanOptions, VideoOptions, option_tables,
 };
 pub use providers::{
     PROVIDER_NAMES, ProviderVersion, URL_PROVIDERS, chrome_path, detect_providers,

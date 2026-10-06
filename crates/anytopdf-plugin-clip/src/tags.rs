@@ -1,6 +1,6 @@
 //! Zero-shot scene tags: compare an image embedding with text prompts.
 
-use crate::onnx::cosine;
+use anytopdf_onnx::encoder::cosine;
 
 /// CLIP's learned logit scale (100) turns cosine similarity into softmax logits.
 const LOGIT_SCALE: f32 = 100.0;

@@ -11,7 +11,6 @@
 
 mod encoder;
 mod fetch;
-mod onnx;
 mod tags;
 mod tokenizer;
 

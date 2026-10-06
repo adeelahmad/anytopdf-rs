@@ -83,6 +83,85 @@ impl Default for CaptionOptions {
     }
 }
 
+/// Reads and writes a mode enum as its configuration string.
+macro_rules! string_option {
+    ($ty:ty { $($variant:path => $text:literal),+ $(,)? }) => {
+        impl Serialize for $ty {
+            fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+                s.serialize_str(match self { $($variant => $text),+ })
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+                String::deserialize(d)?.parse().map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+string_option!(DateOrder { DateOrder::DayFirst => "dmy", DateOrder::MonthFirst => "mdy" });
+string_option!(LocationMode { LocationMode::On => "on", LocationMode::Gps => "gps", LocationMode::Off => "off" });
+string_option!(RawDecode { RawDecode::Auto => "auto", RawDecode::Preview => "preview", RawDecode::Develop => "develop" });
+string_option!(ScanMode { ScanMode::Auto => "auto", ScanMode::On => "on", ScanMode::Off => "off" });
+
+/// `[entities]`: URLs, emails, domains, app names, dates and times in text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EntityOptions {
+    /// Extract entities from OCR, captions, transcripts and text pages.
+    pub enabled: bool,
+    /// Day and month order for all-numeric dates such as `03/04/2024`.
+    pub date_order: DateOrder,
+}
+
+impl Default for EntityOptions {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            date_order: DateOrder::DayFirst,
+        }
+    }
+}
+
+/// `[colors]`: dominant-colour annotations.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ColorOptions {
+    /// Annotate visual units with their dominant colours.
+    pub enabled: bool,
+}
+
+impl Default for ColorOptions {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+/// `[location]`: GPS fixes and place names.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LocationOptions {
+    /// `on`, `gps` or `off`.
+    pub mode: LocationMode,
+}
+
+/// `[raw]`: camera RAW photos.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct RawOptions {
+    /// `auto`, `preview` or `develop`.
+    pub decode: RawDecode,
+}
+
+/// `[scan]`: photographed-page cleanup before OCR.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ScanOptions {
+    /// `auto`, `on` or `off`.
+    pub mode: ScanMode,
+}
+
 #[derive(Debug, Clone)]
 pub struct BuiltinOptions {
     pub image: ImageOptions,
@@ -91,8 +170,8 @@ pub struct BuiltinOptions {
     pub captions: CaptionOptions,
     /// Transcripts named on the command line for this run.
     pub explicit_transcripts: Vec<PathBuf>,
-    // The settings below are not configuration tables yet; `convert` sets
-    // them from its flags.
+    // Flattened from the `[entities]`, `[colors]`, `[raw]`, `[scan]` and
+    // `[location]` tables.
     /// Extract URLs, emails, domains, app names, dates and times from text.
     pub entities: bool,
     /// Day and month order for all-numeric dates such as `03/04/2024`.
@@ -130,12 +209,32 @@ impl Default for BuiltinOptions {
 impl BuiltinOptions {
     /// Reads every built-in table from resolved configuration tables.
     pub fn from_tables(tables: &PluginOptions) -> Result<Self> {
-        Ok(Self {
+        Self {
             image: tables.get("image")?,
             video: tables.get("video")?,
             ocr: tables.get("ocr")?,
             captions: tables.get("captions")?,
             ..Self::default()
+        }
+        .with_flat_tables(tables)
+    }
+}
+
+impl BuiltinOptions {
+    fn with_flat_tables(self, tables: &PluginOptions) -> Result<Self> {
+        let entities: EntityOptions = tables.get("entities")?;
+        let colors: ColorOptions = tables.get("colors")?;
+        let location: LocationOptions = tables.get("location")?;
+        let raw: RawOptions = tables.get("raw")?;
+        let scan: ScanOptions = tables.get("scan")?;
+        Ok(Self {
+            entities: entities.enabled,
+            date_order: entities.date_order,
+            colors: colors.enabled,
+            location: location.mode,
+            raw_decode: raw.decode,
+            scan: scan.mode,
+            ..self
         })
     }
 }
@@ -161,6 +260,11 @@ pub fn option_tables() -> Vec<OptionTable> {
         table("video", VideoOptions::default()),
         table("ocr", OcrOptions::default()),
         table("captions", CaptionOptions::default()),
+        table("entities", EntityOptions::default()),
+        table("colors", ColorOptions::default()),
+        table("location", LocationOptions::default()),
+        table("raw", RawOptions::default()),
+        table("scan", ScanOptions::default()),
     ]
 }
 
@@ -180,6 +284,27 @@ mod tests {
         assert_eq!(options.ocr.mode, OcrMode::Off);
         assert_eq!(options.ocr.lang, "eng");
         assert_eq!(options.image, ImageOptions::default());
+        assert!(options.entities && options.colors);
+        assert_eq!(options.location, LocationMode::On);
+    }
+
+    #[test]
+    fn flag_only_settings_read_their_tables() {
+        let tables = PluginOptions::from_document(&serde_json::json!({
+            "entities": {"enabled": false, "date_order": "mdy"},
+            "colors": {"enabled": false},
+            "location": {"mode": "gps"},
+            "raw": {"decode": "preview"},
+            "scan": {"mode": "off"},
+        }));
+        let options = BuiltinOptions::from_tables(&tables).unwrap();
+        assert!(!options.entities && !options.colors);
+        assert_eq!(options.date_order, DateOrder::MonthFirst);
+        assert_eq!(options.location, LocationMode::Gps);
+        assert_eq!(options.raw_decode, RawDecode::Preview);
+        assert_eq!(options.scan, ScanMode::Off);
+        let bad = PluginOptions::from_document(&serde_json::json!({"scan": {"mode": "sideways"}}));
+        assert!(BuiltinOptions::from_tables(&bad).is_err());
     }
 
     #[test]

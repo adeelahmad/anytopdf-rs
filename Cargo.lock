@@ -296,6 +296,7 @@ name = "anytopdf-plugin-clip"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "anytopdf-onnx",
  "base64 0.22.1",
  "flate2",
  "image",
@@ -303,7 +304,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
- "tract-onnx",
  "ureq",
 ]
 
@@ -326,10 +326,10 @@ name = "anytopdf-plugin-faces"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "anytopdf-onnx",
  "image",
  "serde_json",
  "tempfile",
- "tract-onnx",
 ]
 
 [[package]]

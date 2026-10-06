@@ -1,7 +1,7 @@
 //! YuNet face detection: model loading, input sizing and output decoding.
 
-use crate::onnx::{Channels, Detection, Letterbox, OnnxModel, letterbox, nms};
 use anyhow::{Context, Result, ensure};
+use anytopdf_onnx::detector::{Channels, Detection, Letterbox, OnnxModel, letterbox, nms};
 use image::RgbImage;
 use std::path::Path;
 

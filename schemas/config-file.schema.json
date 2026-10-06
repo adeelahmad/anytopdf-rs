@@ -99,6 +99,21 @@
     },
     "captions": {
       "$ref": "#/$defs/captions"
+    },
+    "entities": {
+      "$ref": "#/$defs/entities"
+    },
+    "colors": {
+      "$ref": "#/$defs/colors"
+    },
+    "location": {
+      "$ref": "#/$defs/location"
+    },
+    "raw": {
+      "$ref": "#/$defs/raw"
+    },
+    "scan": {
+      "$ref": "#/$defs/scan"
     }
   },
   "$defs": {
@@ -192,6 +207,92 @@
           "description": "Read subtitle tracks embedded in video files.",
           "type": "boolean",
           "default": true
+        }
+      }
+    },
+    "entities": {
+      "title": "Entity extraction",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Extract URLs, email addresses, domains, app names, dates and times from text.",
+          "type": "boolean",
+          "default": true
+        },
+        "date_order": {
+          "description": "Order of day and month in all-numeric dates such as 03/04/2024.",
+          "type": "string",
+          "enum": [
+            "dmy",
+            "mdy"
+          ],
+          "default": "dmy"
+        }
+      }
+    },
+    "colors": {
+      "title": "Dominant colours",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Annotate images and keyframes with their dominant colours, so searching \"red\" finds red frames.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "location": {
+      "title": "Location enricher",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "on reads GPS fixes and place names in text, gps reads GPS fixes only, off skips both.",
+          "type": "string",
+          "enum": [
+            "on",
+            "gps",
+            "off",
+            "none"
+          ],
+          "default": "on"
+        }
+      }
+    },
+    "raw": {
+      "title": "Camera RAW importer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decode": {
+          "description": "auto uses the embedded camera preview and develops the RAW data when the preview is small, preview never runs a tool, develop prefers a local developer (sips, dcraw_emu, dcraw or ImageMagick).",
+          "type": "string",
+          "enum": [
+            "auto",
+            "preview",
+            "develop"
+          ],
+          "default": "auto"
+        }
+      }
+    },
+    "scan": {
+      "title": "Photographed pages",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "auto flattens and straightens photos that clearly show a page, on crops to any detected sheet and straightens every photo with text lines, off keeps images unchanged.",
+          "type": "string",
+          "enum": [
+            "auto",
+            "on",
+            "off",
+            "none"
+          ],
+          "default": "auto"
         }
       }
     }

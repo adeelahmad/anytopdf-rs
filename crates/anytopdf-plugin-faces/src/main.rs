@@ -10,7 +10,6 @@
 mod align;
 mod annotate;
 mod detector;
-mod onnx;
 
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
