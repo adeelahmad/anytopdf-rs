@@ -36,6 +36,7 @@ fn every_subcommand_help_prints_a_description() {
         "capabilities",
         "extract",
         "watch",
+        "capture",
     ] {
         let out = run(&[sub, "--help"]);
         let text = String::from_utf8_lossy(&out.stdout).to_string();
