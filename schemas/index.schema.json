@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/index/v1",
+  "title": "anytopdf search index documents (anytopdf index add|list --json)",
+  "type": "object",
+  "required": ["schema_version", "index", "documents"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "anytopdf.index/1"},
+    "index": {"type": "string"},
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pdf", "pdf_sha256", "origin", "profile", "collection", "indexed_at", "sources", "entries", "skipped"],
+        "additionalProperties": false,
+        "properties": {
+          "pdf": {"type": "string"},
+          "pdf_sha256": {"type": "string"},
+          "origin": {"enum": ["convert", "pdf"]},
+          "profile": {"type": ["string", "null"]},
+          "collection": {"type": ["string", "null"]},
+          "indexed_at": {"type": "integer", "minimum": 0},
+          "sources": {"type": "integer", "minimum": 0},
+          "entries": {"type": "integer", "minimum": 0},
+          "skipped": {"type": "boolean", "description": "true when an unchanged PDF kept its convert --index record"}
+        }
+      }
+    }
+  }
+}

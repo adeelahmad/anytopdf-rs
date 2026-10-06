@@ -103,11 +103,99 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: QueueCommand,
     },
-    /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
+    /// Search every PDF recorded in the search index (by `convert --index` or `index add`).
+    Search(Box<SearchArgs>),
+    /// Add PDFs to, list or remove them from the cross-file search index.
+    Index {
+        #[command(subcommand)]
+        command: IndexCommand,
+    },
+    /// Serve convert, extract, probe, search and capabilities as MCP tools over stdio.
     Mcp,
     /// Reach the print helper from other devices: TLS front, users and discovery.
     #[command(subcommand)]
     Print(PrintCommand),
+}
+
+/// Annotation kinds the index records, plus `chunk` (a unit's whole searchable text).
+pub(crate) const ENTRY_KINDS: [&str; 12] = [
+    "chunk",
+    "ocr",
+    "caption",
+    "transcript",
+    "metadata",
+    "object",
+    "face",
+    "scene",
+    "timestamp",
+    "location",
+    "barcode",
+    "custom",
+];
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct SearchArgs {
+    /// Words to find (all must match); "quoted words" match as a phrase and a
+    /// trailing * matches a prefix. Optional when a filter is given.
+    pub(crate) query: Vec<String>,
+    /// Only results of this kind (repeatable).
+    #[arg(long, value_parser = ENTRY_KINDS)]
+    pub(crate) kind: Vec<String>,
+    /// Only faces recognised as this person.
+    #[arg(long)]
+    pub(crate) person: Option<String>,
+    /// Only PDFs indexed into this collection.
+    #[arg(long)]
+    pub(crate) collection: Option<String>,
+    /// Maximum results.
+    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=10_000).map(|n| n as usize))]
+    pub(crate) limit: usize,
+    /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
+    #[arg(long, value_name = "PATH")]
+    pub(crate) index_db: Option<PathBuf>,
+    /// Emit one JSON document (anytopdf.search/1) on stdout.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum IndexCommand {
+    /// Index PDFs made by anytopdf from their embedded manifest and chunks.
+    Add {
+        /// PDFs to index; one already indexed is replaced.
+        #[arg(required = true)]
+        pdfs: Vec<PathBuf>,
+        /// Tag the PDFs with this collection name.
+        #[arg(long)]
+        collection: Option<String>,
+        /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
+        #[arg(long, value_name = "PATH")]
+        index_db: Option<PathBuf>,
+        /// Emit one JSON document (anytopdf.index/1) on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    /// List the indexed PDFs.
+    List {
+        /// Only PDFs in this collection.
+        #[arg(long)]
+        collection: Option<String>,
+        /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
+        #[arg(long, value_name = "PATH")]
+        index_db: Option<PathBuf>,
+        /// Emit one JSON document (anytopdf.index/1) on stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove PDFs from the index (the files are not touched).
+    Remove {
+        /// PDFs to forget.
+        #[arg(required = true)]
+        pdfs: Vec<PathBuf>,
+        /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
+        #[arg(long, value_name = "PATH")]
+        index_db: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -260,6 +348,13 @@ pub(crate) struct QueueServeArgs {
     /// Suppress the server log on stderr.
     #[arg(short, long)]
     pub(crate) quiet: bool,
+    /// Also answer GET /v1/search from the search index.
+    #[arg(long)]
+    pub(crate) search: bool,
+    /// Index database for --search [default: ANYTOPDF_INDEX, else index.sqlite in the
+    /// user data directory].
+    #[arg(long, value_name = "PATH", requires = "search")]
+    pub(crate) index_db: Option<PathBuf>,
     /// Convert options for uploaded files after `--`, for example `-- --profile share`.
     #[arg(last = true)]
     pub(crate) convert: Vec<String>,
@@ -394,6 +489,19 @@ pub(crate) struct ConvertArgs {
     /// Emit one JSON document on stdout.
     #[arg(long)]
     pub(crate) json: bool,
+
+    /// Also record the output in the cross-file search index (`anytopdf search`).
+    #[arg(long)]
+    pub(crate) index: bool,
+
+    /// Index database for --index [default: ANYTOPDF_INDEX, else index.sqlite in the
+    /// user data directory].
+    #[arg(long, value_name = "PATH", requires = "index")]
+    pub(crate) index_db: Option<PathBuf>,
+
+    /// Tag the indexed output with this collection name.
+    #[arg(long, requires = "index")]
+    pub(crate) collection: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

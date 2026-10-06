@@ -198,6 +198,22 @@ copying derived assets. Runtime plugin policy and timeouts are documented in
 (`src/sandbox.rs` in core, `docs/design/plugin-sandbox.md`); by default plugins run
 unconfined, except under `queue`, which defaults to `contain`.
 
+## Search index
+
+`crates/anytopdf-index` is a consumer of rendered output, not a pipeline stage.
+It keeps one SQLite database (bundled, FTS5) with `documents` (one per indexed
+PDF, with its SHA-256, origin, profile and optional collection), `sources`,
+`entries` and `embeddings`. `convert --index` records the graph each PDF was
+rendered from, after the output profile filter, plus its render report: one
+`chunk` entry per unit (the chunk text) and one entry per annotation with kind,
+provider, confidence, region, frame, time range, page range and attributes.
+`index add` records a PDF from its embedded manifest and chunks (chunk entries
+only). Entries are indexed by an external-content FTS5 table kept in sync by
+triggers; deleting a document cascades. `embeddings` stores one vector per unit
+and model for semantic search, ranked by cosine similarity. `PRAGMA
+user_version` versions the layout: an index from a newer anytopdf, or a database
+that is not an index, is refused rather than changed.
+
 ## Intake: mail watcher
 
 `crates/anytopdf-imap` is an intake channel, not a pipeline stage. It watches one

@@ -339,6 +339,11 @@ fn convert_inner(
         dump_dest = Some(graph);
     }
 
+    let mut index = args
+        .index
+        .then(|| crate::search::open_for_convert(args.index_db.as_deref()))
+        .transpose()?;
+
     let opts = BuiltinOptions {
         video_interval: args.video_interval,
         scene_threshold: args.scene_threshold,
@@ -485,7 +490,7 @@ fn convert_inner(
         let doc = stage_document(
             &pipeline,
             &run,
-            (&args.renderer, args.strict),
+            (&args.renderer, args.strict, index.is_some()),
             &staged,
             redactor,
             sink,
@@ -545,6 +550,14 @@ fn convert_inner(
             }
         }
     }
+    if let Some(index) = &mut index {
+        let docs = published
+            .iter()
+            .zip(&mut staged_docs)
+            .filter_map(|(out, (_, doc))| Some((out.clone(), doc.index.take()?)))
+            .collect();
+        crate::search::record(index, args.collection.as_deref(), docs)?;
+    }
     if let (Some(path), Some(graph)) = (&args.dump_graph, &dump) {
         publish_output(path, &serde_json::to_vec_pretty(graph)?, args.overwrite)?;
         emit(
@@ -575,12 +588,13 @@ struct StagedDocument {
     pages: usize,
     sources: Vec<serde_json::Value>,
     sidecars: Option<(Vec<u8>, Vec<u8>)>,
+    index: Option<anytopdf_index::Document>,
 }
 
 fn stage_document(
     pipeline: &Pipeline,
     run: &PipelineRun,
-    (renderer, strict): (&str, bool),
+    (renderer, strict, index): (&str, bool, bool),
     staged: &Path,
     redactor: &Redactor,
     sink: &mut Sink,
@@ -639,16 +653,14 @@ fn stage_document(
     ];
     // A renderer that wrote these exact attachments itself (pdfa stores them as
     // PDF/A-3 associated files) must not be rewritten.
-    if already_embedded(&bytes, &files) {
-        return Ok(StagedDocument {
-            bytes,
-            pages: report.pages,
-            sources,
-            sidecars: None,
-        });
-    }
-    let (bytes, sidecars) = match embed_files(&bytes, &files) {
-        Ok(embedded) => (embedded, None),
+    let embedded = if already_embedded(&bytes, &files) {
+        Ok(None)
+    } else {
+        embed_files(&bytes, &files).map(Some)
+    };
+    let (bytes, sidecars) = match embedded {
+        Ok(None) => (bytes, None),
+        Ok(Some(embedded)) => (embedded, None),
         Err(e) => {
             report_diagnostic(
                 sink,
@@ -662,11 +674,15 @@ fn stage_document(
             (bytes, Some((manifest, chunks)))
         }
     };
+    // The published path is not known yet; `search::record` sets it.
+    let index =
+        index.then(|| anytopdf_index::Document::from_graph(staged, &bytes, &run.graph, &report));
     Ok(StagedDocument {
         bytes,
         pages: report.pages,
         sources,
         sidecars,
+        index,
     })
 }
 

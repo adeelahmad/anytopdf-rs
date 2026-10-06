@@ -6,6 +6,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf search` searches every PDF in a local SQLite (FTS5) index, printing the PDF,
+  page, time, kind, matching text and source file (`--kind`, `--person`, `--collection`,
+  `--limit`, `--json` with the new `anytopdf.search/1` schema). `convert --index`
+  records an output with every annotation; `anytopdf index add|list|remove` manages
+  existing PDFs from their embedded chunks (`anytopdf.index/1`). The index lives at
+  `ANYTOPDF_INDEX` or in the user data directory (`--index-db` overrides) and is never
+  written into a PDF. The MCP server gains a `search` tool and `queue serve --search`
+  a `GET /v1/search` endpoint.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

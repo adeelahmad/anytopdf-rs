@@ -12,6 +12,7 @@ mod naming;
 mod print;
 mod publish;
 mod queue;
+mod search;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
@@ -101,6 +102,8 @@ fn run(cli: Cli) -> Result<(), CliError> {
             }
             queue::run(command, forwarded.0)
         }
+        Commands::Search(args) => search::search(*args),
+        Commands::Index { command } => search::run_index(command),
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
         Commands::Print(command) => print::print(command),
     }

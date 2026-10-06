@@ -398,6 +398,10 @@ fn serve_command(args: QueueServeArgs) -> Result<(), CliError> {
         }
         _ => None,
     };
+    let search_index = args
+        .search
+        .then(|| crate::search::index_path(args.index_db.as_deref()))
+        .transpose()?;
     let queue = tag(ExitClass::Usage, Queue::open(&args.queue))?;
     let listener = tag(ExitClass::Provider, serve::bind(args.listen))?;
     let scheme = if tls.is_some() { "https" } else { "http" };
@@ -415,6 +419,7 @@ fn serve_command(args: QueueServeArgs) -> Result<(), CliError> {
             tls,
             max_connections: usize::from(args.max_connections),
             quiet: args.quiet,
+            search_index,
         },
     )?)
 }

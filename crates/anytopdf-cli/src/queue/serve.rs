@@ -31,6 +31,8 @@ pub(crate) struct ServeConfig {
     pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
     pub(crate) max_connections: usize,
     pub(crate) quiet: bool,
+    /// Index database answering GET /v1/search; `None` leaves search off.
+    pub(crate) search_index: Option<std::path::PathBuf>,
 }
 
 /// Refuse listeners that would expose the queue without TLS, or on every interface
@@ -254,9 +256,11 @@ fn handle<S: Read + Write>(s: &mut S, cfg: &ServeConfig) -> io::Result<()> {
         ("POST", ["v1", "jobs"]) => upload(s, cfg, &request),
         ("GET", ["v1", "jobs", id]) => status(s, cfg, id),
         ("GET", ["v1", "jobs", id, "output"]) => output(s, cfg, id),
-        (_, ["v1", "jobs"] | ["v1", "jobs", _] | ["v1", "jobs", _, "output"]) => {
-            error(s, "405 Method Not Allowed", "method not allowed")
-        }
+        ("GET", ["v1", "search"]) => search(s, cfg, &request.query),
+        (
+            _,
+            ["v1", "jobs"] | ["v1", "jobs", _] | ["v1", "jobs", _, "output"] | ["v1", "search"],
+        ) => error(s, "405 Method Not Allowed", "method not allowed"),
         _ => error(s, "404 Not Found", "no such endpoint"),
     }
 }
@@ -372,6 +376,75 @@ fn output<S: Write>(s: &mut S, cfg: &ServeConfig, id: &str) -> io::Result<()> {
     s.flush()
 }
 
+/// `GET /v1/search?q=…&kind=…&person=…&collection=…&limit=…`: the same
+/// `anytopdf.search/1` document as `anytopdf search --json`, without the index path.
+fn search<S: Write>(s: &mut S, cfg: &ServeConfig, query: &str) -> io::Result<()> {
+    let Some(path) = &cfg.search_index else {
+        return error(
+            s,
+            "404 Not Found",
+            "search is not enabled; start queue serve with --search",
+        );
+    };
+    let kinds: Vec<String> = query_params(query, "kind")
+        .iter()
+        .flat_map(|k| k.split(','))
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .collect();
+    if let Some(bad) = kinds
+        .iter()
+        .find(|k| !crate::cli::ENTRY_KINDS.contains(&k.as_str()))
+    {
+        return error(s, "400 Bad Request", &format!("unknown kind {bad:?}"));
+    }
+    let limit = match query_param(query, "limit").map(|l| l.parse::<usize>()) {
+        None => 20,
+        Some(Ok(n)) if (1..=1000).contains(&n) => n,
+        Some(_) => return error(s, "400 Bad Request", "limit must be between 1 and 1000"),
+    };
+    let text = query_param(query, "q").filter(|q| !q.trim().is_empty());
+    let request = anytopdf_index::SearchQuery {
+        text: text.clone(),
+        kinds,
+        person: query_param(query, "person").filter(|p| !p.is_empty()),
+        collection: query_param(query, "collection").filter(|c| !c.is_empty()),
+        limit,
+    };
+    if request.text.is_none()
+        && request.kinds.is_empty()
+        && request.person.is_none()
+        && request.collection.is_none()
+    {
+        return error(
+            s,
+            "400 Bad Request",
+            "give q, or filter with kind, person or collection",
+        );
+    }
+    let hits = anytopdf_index::Index::open_existing(path).and_then(|index| index.search(&request));
+    match hits {
+        Ok(hits) => json(
+            s,
+            "200 OK",
+            &serde_json::json!({
+                "schema_version": crate::search::SEARCH_SCHEMA,
+                "query": text,
+                "hits": hits,
+            }),
+            "",
+        ),
+        Err(e) => {
+            log(cfg, &format!("search failed: {e:#}"));
+            error(
+                s,
+                "503 Service Unavailable",
+                "the search index is not available",
+            )
+        }
+    }
+}
+
 fn find(cfg: &ServeConfig, id: &str) -> Option<Job> {
     let valid = id.strip_prefix("job_").is_some_and(|hex| {
         hex.len() == 32
@@ -386,11 +459,16 @@ fn find(cfg: &ServeConfig, id: &str) -> Option<Job> {
 }
 
 fn query_param(query: &str, key: &str) -> Option<String> {
+    query_params(query, key).into_iter().next()
+}
+
+fn query_params(query: &str, key: &str) -> Vec<String> {
     query
         .split('&')
         .filter_map(|pair| pair.split_once('='))
-        .find(|(k, _)| *k == key)
+        .filter(|(k, _)| *k == key)
         .map(|(_, v)| percent_decode(v))
+        .collect()
 }
 
 fn percent_decode(text: &str) -> String {
