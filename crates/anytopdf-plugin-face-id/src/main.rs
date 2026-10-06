@@ -1,8 +1,8 @@
 //! `anytopdf-plugin-face-id`: an anytopdf runtime plugin (protocol v1) that
 //! computes a face embedding for every detected face.
 //!
-//! It registers as a graph enricher with order 100, so it runs after the
-//! face detector has added `face` annotations with five-point `landmarks`
+//! It registers as a graph enricher in the `after-units` phase, so it runs
+//! once per job after the face detector has added `face` annotations with five-point `landmarks`
 //! (or an aligned `crop`). It aligns each face onto the ArcFace template,
 //! embeds it with a user-supplied ONNX model, tags the annotation with a
 //! `face.ref` and writes the vectors to `face-id/` in the job workspace.
@@ -70,7 +70,7 @@ fn manifest() -> Value {
             "extensions": [],
             "mime_types": [],
             "priority": 0,
-            "order": 100
+            "phase": "after-units"
         }]
     })
 }

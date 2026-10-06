@@ -159,7 +159,7 @@ anytopdf faces rename|merge|forget …
 
 The index is `faces.sqlite` in the anytopdf data directory
 (`$XDG_DATA_HOME/anytopdf`, `~/Library/Application Support/anytopdf` or
-`%APPDATA%\anytopdf`; override with `ANYTOPDF_DATA_DIR`, `ANYTOPDF_FACE_INDEX` or
+`%LOCALAPPDATA%\anytopdf`; override with `ANYTOPDF_DATA_DIR`, `ANYTOPDF_FACE_INDEX` or
 `--face-index`). It holds embeddings and sightings, which never go into a PDF.
 `--face-threshold` (default 0.40, cosine similarity) sets how close a face must
 be to count as a known person; two faces in one frame are never the same
@@ -167,6 +167,54 @@ person. Embedding runs as one plugin call per conversion, so raise
 `--plugin-timeout` for long videos. `--profile share` leaves names and the
 "People in …" pages out of the PDF. Identities come only from people you enroll
 or name: nothing infers age, gender, emotion or other traits.
+
+### Visual descriptions
+
+`anytopdf-plugin-vlm` asks a local vision-language model about every image and
+video keyframe and writes the answers as searchable `caption` annotations. By
+default it asks for a caption, "What do you see in this image?" and the
+activities shown, as the original video-analysis script did. For each video,
+audio file or subtitle file it then adds a visible summary page before the
+source's other pages, with a category and up to five topics (`custom`
+annotations whose `entity` is `category` or `topic`). Videos also get a one- or
+two-sentence summary per scene (keyframes are split at FFmpeg scene changes).
+Summaries are written from the keyframe descriptions plus any transcript or
+subtitles; audio needs a transcript, for example from the Whisper plugin. Prompts
+never ask for anyone's age, gender, ethnicity or emotions.
+
+The plugin does nothing until `ANYTOPDF_VLM_URL` is set. It talks to either:
+
+- an OpenAI-compatible endpoint (default `ANYTOPDF_VLM_ENGINE=openai`): Ollama,
+  llama.cpp `llama-server`, LM Studio or vLLM, with `ANYTOPDF_VLM_MODEL` naming
+  a vision model; or
+- the Moondream API (`ANYTOPDF_VLM_ENGINE=moondream`): Moondream Station, or
+  Moondream2 through transformers with the bundled
+  `helpers/anytopdf-moondream-server.py` (`--device cpu|cuda`). This engine also
+  supports open-vocabulary detection: `ANYTOPDF_VLM_DETECT="red car,logo"` adds
+  an `object` annotation with a box for each match.
+
+```bash
+ollama pull llava
+cargo build --release -p anytopdf-plugin-vlm
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_VLM_URL=http://127.0.0.1:11434/v1 ANYTOPDF_VLM_MODEL=llava
+anytopdf convert meeting.mp4 --plugin-timeout 120 -o meeting.pdf
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_VLM_PROMPTS` | caption, query, activity | `type=prompt` entries separated by `\|`; an entry without `type=` is a `query` |
+| `ANYTOPDF_VLM_TIMEOUT` | `50` | seconds per keyframe, and for all summaries of a run; keep it below `--plugin-timeout` |
+| `ANYTOPDF_VLM_MAX_SIDE` | `768` | images are downscaled to this many pixels before upload |
+| `ANYTOPDF_VLM_API_KEY` | none | bearer token (OpenAI) or `X-Moondream-Auth` (Moondream) |
+| `ANYTOPDF_VLM_SUMMARY` | `on` | `off` skips summaries and categories |
+| `ANYTOPDF_LLM_URL`, `ANYTOPDF_LLM_MODEL` | the VLM endpoint | OpenAI-compatible text model for summaries; required for them with the Moondream engine |
+| `ANYTOPDF_VLM_CATEGORIES` | news, entertainment, education, sports, music, gaming, tutorial, meeting, documentary, other | comma-separated category list |
+
+Images go to the configured endpoint, so point it at a server you trust; a
+loopback URL bypasses any HTTP proxy. `--plugin-sandbox strict` blocks network
+access and therefore this plugin. An unreachable endpoint, a slow frame or a bad
+answer becomes a `plugin.warning`, and the PDF is still written.
 
 ## How it works
 
@@ -285,6 +333,8 @@ Bundled runtime plugins (separate executables in this workspace):
   whisper.cpp or an OpenAI-compatible Whisper CLI
 - `anytopdf-plugin-face-id`: face embeddings for `--recognize-faces`, through an
   ArcFace-style ONNX model
+- `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
+  scene summaries and a category through a local vision-language model
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -615,6 +665,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Spike: layout and writer options
 - [x] krilla 0.8 writer behind `--renderer pdfa` (Rust 1.92, invisible text via fill opacity)
 - [x] `pdfa` as the default renderer
+- [x] Labelled boxes for object, face and OCR regions on visual pages (`--draw-boxes`)
 - [ ] Rendered Markdown
 - [x] Arabic, Hebrew and CJK shaping, bidi and font fallback (`--renderer pdfa`)
 
@@ -838,6 +889,9 @@ a plugin for speech recognition; docTR may download model weights on first use.
 `--dump-graph` is a diagnostic sidecar, not a portable media bundle: visual paths
 into the temporary workspace are removed. `--profile archive|share` (default
 `archive`) selects metadata detail; `share` also strips local paths, including from stderr diagnostics, the Summary and `--json` messages.
+`--draw-boxes[=objects,faces,ocr|all]` draws labelled boxes for detected regions over
+image and video-frame pages (bare `--draw-boxes` draws objects and faces); the source
+images are not modified.
 `--no-provenance-page` omits the provenance page. `SOURCE_DATE_EPOCH` fixes the
 creation time for reproducible output; an invalid value exits 2.
 

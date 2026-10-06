@@ -74,7 +74,7 @@ fn manifest_runs_after_unit_enrichers() {
     let manifest: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(manifest["name"], "face-id");
     assert_eq!(manifest["capabilities"][0]["kind"], "graph-enricher");
-    assert_eq!(manifest["capabilities"][0]["order"], 100);
+    assert_eq!(manifest["capabilities"][0]["phase"], "after-units");
 }
 
 #[test]

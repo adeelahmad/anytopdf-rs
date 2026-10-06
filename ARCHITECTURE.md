@@ -91,15 +91,17 @@ ExifTool, ffprobe, hashes, provenance, GPS, dates, etc.
 Adds OCR, captions, transcripts, object labels, scene labels, face bounds, and
 other annotations to individual units.
 
-Enrichers of one kind run in ascending `Plugin::order` (default 0), then in
-registration order. Graph enrichers run in two passes: those with order 0 or
-below before unit enrichment, those above 0 after it.
+Graph enrichers run before unit enrichers by default (for example, Whisper adds a
+transcript unit that later enrichers can see). A graph enricher whose `phase()`
+is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs
+after them instead, so it can summarize their annotations; `anytopdf-plugin-vlm`
+writes video and scene summaries this way.
 
 ### Face recognition
 
 Detection, embedding and identity are separate. A detector plugin adds `face`
 annotations with five-point `landmarks`. `anytopdf-plugin-face-id` (graph
-enricher, order 100) aligns each face onto the ArcFace template, embeds it with
+enricher in the `after-units` phase) aligns each face onto the ArcFace template, embeds it with
 an ONNX model through tract, tags the annotation with `face.ref` and writes the
 vector to `face-id/` in the job workspace, never into the graph. With
 `--recognize-faces` the CLI reads those vectors after the pipeline, matches them
@@ -124,6 +126,13 @@ For visual pages:
 3. write OCR as invisible text;
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
+
+With `convert --draw-boxes` (graph metadata `anytopdf.draw-boxes`), both renderers
+also draw a vector overlay between steps 1 and 2: a stroked rectangle per `Object`,
+`Face` or `Ocr` annotation region of the selected kinds, with a filled label for faces
+(`attributes.person` when set, else the annotation text) and objects (text and
+confidence). `boxes.rs` computes the geometry once, with a stable colour per kind; the
+image file is never modified, and `pdfa` tags the overlay as an artifact.
 
 Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 `provenance.rs`) and therefore produce the same pages and `unit_pages`:
@@ -183,6 +192,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
+- `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`

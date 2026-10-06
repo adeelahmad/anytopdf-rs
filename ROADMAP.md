@@ -67,6 +67,7 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] PDF importer (Poppler page images plus the PDF's own text as the hidden layer; OCR only for textless pages) and HEIC/HEIF/AVIF importer
 - [x] `helpers/anytopdf-printer`: optional IPP Everywhere printer built on PAPPL, with a PWG/Apple raster importer
 - [x] `anytopdf print remote`: TLS print front for Tailscale/WireGuard with user passwords, a peer allowlist and DNS-SD discovery
+- [x] `--draw-boxes`: labelled object, face and OCR boxes over visual pages in both renderers
 - [x] krilla renderer, now the default: tagged PDF/A-3a with bookmarks, bidi shaping and font fallback, manifest and chunks as associated files
 - [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a container image
@@ -97,6 +98,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 - [ ] neutral face detection: presence/count/bounds
 - [x] face recognition against a local, user-enrolled face index: `--recognize-faces`, `anytopdf faces enroll|import|list|name|rename|merge|forget|find`, `anytopdf-plugin-face-id`
 - [ ] object detection provider (YOLO/DETR plugin)
+- [x] keyframe captions, questions and activities, video and scene summaries, and a video category (`anytopdf-plugin-vlm`)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction
 - [ ] audio chapter / speaker-turn annotations

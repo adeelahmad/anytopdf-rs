@@ -23,17 +23,11 @@ impl Registry {
     }
 
     pub fn register_graph_enricher(&mut self, p: GraphEnricherRef) {
-        let at = self
-            .graph_enrichers
-            .partition_point(|e| e.order() <= p.order());
-        self.graph_enrichers.insert(at, p);
+        self.graph_enrichers.push(p);
     }
 
     pub fn register_unit_enricher(&mut self, p: UnitEnricherRef) {
-        let at = self
-            .unit_enrichers
-            .partition_point(|e| e.order() <= p.order());
-        self.unit_enrichers.insert(at, p);
+        self.unit_enrichers.push(p);
     }
 
     pub fn register_renderer(&mut self, p: RendererRef) {
@@ -147,49 +141,5 @@ mod tests {
                 .importer_for(&SourceRecord::new("x".into()))
                 .is_err()
         );
-    }
-
-    struct Ordered(&'static str, i32);
-    impl Plugin for Ordered {
-        fn descriptor(&self) -> PluginDescriptor {
-            PluginDescriptor {
-                name: self.0.into(),
-                version: "1".into(),
-                kind: "unit-enricher".into(),
-                extensions: vec![],
-                mime_types: vec![],
-                priority: 0,
-            }
-        }
-        fn order(&self) -> i32 {
-            self.1
-        }
-    }
-    impl crate::UnitEnricher for Ordered {
-        fn supports(&self, _: &crate::DocumentGraph, _: &crate::Unit) -> bool {
-            true
-        }
-        fn enrich_unit(
-            &self,
-            _: &JobContext,
-            _: &crate::DocumentGraph,
-            _: &mut crate::Unit,
-        ) -> Result<Vec<String>> {
-            Ok(Vec::new())
-        }
-    }
-
-    #[test]
-    fn enrichers_run_by_order_then_registration() {
-        let mut registry = Registry::default();
-        for (name, order) in [("recognize", 100), ("detect", 0), ("ocr", 0), ("early", -5)] {
-            registry.register_unit_enricher(Arc::new(Ordered(name, order)));
-        }
-        let names: Vec<String> = registry
-            .unit_enrichers()
-            .iter()
-            .map(|e| e.descriptor().name)
-            .collect();
-        assert_eq!(names, ["early", "detect", "ocr", "recognize"]);
     }
 }

@@ -5,7 +5,7 @@ use std::{env, path::PathBuf};
 /// The per-user anytopdf data directory: `ANYTOPDF_DATA_DIR`, else
 /// `$XDG_DATA_HOME/anytopdf` or `~/.local/share/anytopdf` on Linux,
 /// `~/Library/Application Support/anytopdf` on macOS and
-/// `%APPDATA%\anytopdf` on Windows.
+/// `%LOCALAPPDATA%\anytopdf` on Windows.
 pub fn data_dir() -> Option<PathBuf> {
     let var = |name: &str| {
         env::var_os(name)
@@ -16,7 +16,7 @@ pub fn data_dir() -> Option<PathBuf> {
         return Some(dir);
     }
     if cfg!(windows) {
-        return var("APPDATA").map(|d| d.join("anytopdf"));
+        return var("LOCALAPPDATA").map(|d| d.join("anytopdf"));
     }
     let home = var("HOME");
     if cfg!(target_os = "macos") {
