@@ -95,7 +95,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 
 ## Later media semantics
 - [ ] neutral face detection: presence/count/bounds
-- [ ] object detection provider (YOLO/DETR plugin)
+- [x] object detection provider (`anytopdf-plugin-objects`, YOLO ONNX on a pure-Rust runtime)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction
 - [ ] audio chapter / speaker-turn annotations

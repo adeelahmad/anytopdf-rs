@@ -6,6 +6,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- The new `anytopdf-plugin-objects` runtime plugin detects objects in images and video
+  keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
+  pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
+  confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error
