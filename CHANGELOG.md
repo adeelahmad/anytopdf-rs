@@ -6,6 +6,9 @@ Visual and audio analysis, cross-file search, and many new inputs.
 
 ### Behaviour changes
 
+- OCR chunk text in `anytopdf-chunks.json`, `anytopdf ask` passages and the search
+  index joins the words of one OCR line with spaces instead of putting every word on
+  its own line.
 - URLs, email addresses, domains and app names found in OCR, captions, transcripts
   and text become `custom` entity annotations, and dates and times become
   `timestamp` annotations with an ISO 8601 value (relative ones such as "last
