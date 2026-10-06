@@ -4,12 +4,14 @@ use printpdf::*;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 mod attachments;
+mod boxes;
 mod fonts;
 mod layout;
 mod pdfa;
 mod pdfa_text;
 mod provenance;
 pub use attachments::{CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, embed_files, read_embedded_files};
+pub use boxes::{BoxKind, DRAW_BOXES_KEY, box_kinds_value, parse_box_kinds};
 use fonts::{find_system_font, subset_document_font};
 use layout::{
     TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, annotation_line,
@@ -123,6 +125,7 @@ impl Renderer for SearchablePdfRenderer {
                     unit,
                     visual,
                     &font_handle,
+                    &measure,
                     &mut pdf_warnings,
                 ) {
                     Ok(page) => pages.push(page),
@@ -213,10 +216,11 @@ impl SearchablePdfRenderer {
     fn visual_page(
         &self,
         doc: &mut PdfDocument,
-        _graph: &DocumentGraph,
+        graph: &DocumentGraph,
         unit: &Unit,
         visual: &Path,
         font: &PdfFontHandle,
+        measure: &dyn Fn(char) -> f32,
         warnings: &mut Vec<PdfWarnMsg>,
     ) -> Result<PdfPage> {
         let bytes = fs::read(visual)?;
@@ -241,6 +245,9 @@ impl SearchablePdfRenderer {
                 ..Default::default()
             },
         }];
+        ops.extend(boxes::printpdf_ops(
+            graph, unit, page_w_mm, page_h_mm, font, measure,
+        ));
 
         // Positioned OCR layer.
         for annotation in unit
@@ -514,6 +521,7 @@ pub(crate) mod tests {
                 &unit,
                 &visual,
                 &helvetica(),
+                &|_| 0.6,
                 &mut warnings,
             )
             .unwrap();
@@ -547,6 +555,7 @@ pub(crate) mod tests {
                     &unit,
                     &visual,
                     &helvetica(),
+                    &|_| 0.6,
                     &mut Vec::new(),
                 )
                 .unwrap();
