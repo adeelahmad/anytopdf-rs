@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 mod attachments;
 mod boxes;
 mod fonts;
+#[cfg(test)]
+mod injection_tests;
 mod layout;
 mod pdfa;
 mod pdfa_text;
