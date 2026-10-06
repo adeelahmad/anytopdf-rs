@@ -12,16 +12,52 @@ use std::fs;
 use std::io::Read;
 use std::ops::Range;
 
-pub struct StructuredImporter;
+/// Options for the structured importer. Field names (kebab-case) are the
+/// keys of an `[importer.structured]` configuration table.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct StructuredOptions {
+    /// Split a JSON document's record array into one unit per record. JSON
+    /// Lines are always one unit per line.
+    pub records: bool,
+    /// Let record units share pages instead of starting a page each.
+    pub flow: bool,
+    /// Split documents whose outline is longer than this many lines into one
+    /// unit per top-level member, and only then look for nested record arrays.
+    /// 0 never splits.
+    pub split_lines: usize,
+}
+
+impl Default for StructuredOptions {
+    fn default() -> Self {
+        Self {
+            records: true,
+            flow: true,
+            split_lines: 60,
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct StructuredImporter {
+    options: StructuredOptions,
+}
+
+impl StructuredImporter {
+    pub fn new(options: StructuredOptions) -> Self {
+        Self { options }
+    }
+
+    fn too_long(&self, outline_lines: usize) -> bool {
+        self.options.split_lines > 0 && outline_lines > self.options.split_lines
+    }
+}
 
 const SNIFF_BYTES: u64 = 8 * 1024;
 /// Above the text importer's sniff (100), below any extension match (300), so
 /// a `.txt` holding JSON stays text but an unnamed or `.log` JSON file does not.
 const JSON_SNIFF: ProbeScore = ProbeScore(250);
 const LINES_EXTENSIONS: [&str; 3] = ["jsonl", "ndjson", "jsonlines"];
-/// Outlines longer than this many lines are split into one unit per top-level
-/// member so each becomes its own chunk.
-const SPLIT_OUTLINE_LINES: usize = 60;
 
 pub const FORMAT_KEY: &str = "structured.format";
 pub const SHAPE_KEY: &str = "structured.shape";
@@ -79,12 +115,12 @@ impl Importer for StructuredImporter {
         let lines_by_name = LINES_EXTENSIONS.contains(&extension(&source).as_str());
         let mut warnings = Vec::new();
         let units = if lines_by_name {
-            json_lines(&mut source, &bytes, &name, &mut warnings)
+            self.json_lines(&mut source, &bytes, &name, &mut warnings)
         } else {
             match json::parse_document(&bytes) {
-                Ok(root) => document(&mut source, &bytes, &root),
+                Ok(root) => self.document(&mut source, &bytes, &root),
                 Err(_) if json::first_line_is_json(&bytes) => {
-                    json_lines(&mut source, &bytes, &name, &mut warnings)
+                    self.json_lines(&mut source, &bytes, &name, &mut warnings)
                 }
                 Err(e) => {
                     warnings.push(
@@ -116,51 +152,56 @@ fn byte_anchor(span: &Range<usize>) -> Anchor {
     }
 }
 
-/// A record unit: a heading naming where it came from, then `path: value` lines.
-fn record_unit(
-    source: &SourceRecord,
-    heading: String,
-    body: Vec<String>,
-    span: Option<&Range<usize>>,
-) -> Unit {
-    let mut unit = Unit::text(
-        source.id,
-        std::iter::once(heading)
-            .chain(body)
-            .collect::<Vec<_>>()
-            .join("\n"),
-    );
-    unit.anchor = span.map(byte_anchor);
-    unit.metadata
-        .insert(LAYOUT_FLOW_KEY.into(), LAYOUT_FLOW_CONTINUOUS.into());
-    unit
-}
-
-fn json_lines(
-    source: &mut SourceRecord,
-    bytes: &[u8],
-    name: &str,
-    warnings: &mut Vec<String>,
-) -> Vec<Unit> {
-    let mut units = Vec::new();
-    let mut bad: Vec<(usize, String)> = Vec::new();
-    for line in json::parse_lines(bytes) {
-        let index = units.len();
-        let heading = format!("Record {} (line {})", index + 1, line.number);
-        let body = match &line.value {
-            Ok(node) => structured::flat_lines(node),
-            Err(e) => {
-                bad.push((line.number, e.to_string()));
-                vec![String::from_utf8_lossy(&bytes[line.span.clone()]).into_owned()]
-            }
-        };
-        let mut unit = record_unit(source, heading, body, Some(&line.span));
-        unit.metadata
-            .insert("structured.line".into(), line.number.to_string());
-        units.push(unit);
+impl StructuredImporter {
+    /// A record unit: a heading naming where it came from, then `path: value` lines.
+    fn record_unit(
+        &self,
+        source: &SourceRecord,
+        heading: String,
+        body: Vec<String>,
+        span: Option<&Range<usize>>,
+    ) -> Unit {
+        let mut unit = Unit::text(
+            source.id,
+            std::iter::once(heading)
+                .chain(body)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+        unit.anchor = span.map(byte_anchor);
+        if self.options.flow {
+            unit.metadata
+                .insert(LAYOUT_FLOW_KEY.into(), LAYOUT_FLOW_CONTINUOUS.into());
+        }
+        unit
     }
-    if let Some((number, error)) = bad.first() {
-        warnings.push(
+
+    fn json_lines(
+        &self,
+        source: &mut SourceRecord,
+        bytes: &[u8],
+        name: &str,
+        warnings: &mut Vec<String>,
+    ) -> Vec<Unit> {
+        let mut units = Vec::new();
+        let mut bad: Vec<(usize, String)> = Vec::new();
+        for line in json::parse_lines(bytes) {
+            let index = units.len();
+            let heading = format!("Record {} (line {})", index + 1, line.number);
+            let body = match &line.value {
+                Ok(node) => structured::flat_lines(node),
+                Err(e) => {
+                    bad.push((line.number, e.to_string()));
+                    vec![String::from_utf8_lossy(&bytes[line.span.clone()]).into_owned()]
+                }
+            };
+            let mut unit = self.record_unit(source, heading, body, Some(&line.span));
+            unit.metadata
+                .insert("structured.line".into(), line.number.to_string());
+            units.push(unit);
+        }
+        if let Some((number, error)) = bad.first() {
+            warnings.push(
             Diagnostic::new(
                 DiagnosticCode::LossyDecode,
                 format!(
@@ -170,93 +211,96 @@ fn json_lines(
             )
             .to_string(),
         );
+        }
+        source.metadata.insert(FORMAT_KEY.into(), "jsonl".into());
+        source.metadata.insert(SHAPE_KEY.into(), "records".into());
+        source
+            .metadata
+            .insert("structured.records".into(), units.len().to_string());
+        if units.is_empty() {
+            units.push(Unit::text(source.id, String::new()));
+        }
+        units
     }
-    source.metadata.insert(FORMAT_KEY.into(), "jsonl".into());
-    source.metadata.insert(SHAPE_KEY.into(), "records".into());
-    source
-        .metadata
-        .insert("structured.records".into(), units.len().to_string());
-    if units.is_empty() {
-        units.push(Unit::text(source.id, String::new()));
-    }
-    units
-}
 
-fn document(source: &mut SourceRecord, bytes: &[u8], root: &Node) -> Vec<Unit> {
-    source.metadata.insert(FORMAT_KEY.into(), "json".into());
-    let outline = structured::outline_lines(root);
-    // A root array is always records; a nested one only once the document is
-    // too long to read as one outline, so small configs stay whole.
-    if let Some(path) = structured::records_path(root)
-        && (path.is_empty() || outline.len() > SPLIT_OUTLINE_LINES)
-        && let Some(items) = root.get(&path).and_then(Node::records)
-    {
-        return records(source, bytes, root, &path, items);
+    fn document(&self, source: &mut SourceRecord, bytes: &[u8], root: &Node) -> Vec<Unit> {
+        source.metadata.insert(FORMAT_KEY.into(), "json".into());
+        let outline = structured::outline_lines(root);
+        // A root array is always records; a nested one only once the document is
+        // too long to read as one outline, so small configs stay whole.
+        if let Some(path) = structured::records_path(root)
+            && self.options.records
+            && (path.is_empty() || self.too_long(outline.len()))
+            && let Some(items) = root.get(&path).and_then(Node::records)
+        {
+            return self.records(source, bytes, root, &path, items);
+        }
+        source.metadata.insert(SHAPE_KEY.into(), "document".into());
+        if let Node::Object(members) = root
+            && members.len() > 1
+            && self.too_long(outline.len())
+        {
+            let spans = json::root_span(bytes).and_then(|span| json::children(bytes, span));
+            return members
+                .iter()
+                .enumerate()
+                .map(|(i, (key, value))| {
+                    let section = Node::Object(vec![(key.clone(), value.clone())]);
+                    let mut unit =
+                        Unit::text(source.id, structured::outline_lines(&section).join("\n"));
+                    let path = [Segment::Key(key.clone())];
+                    unit.metadata
+                        .insert(POINTER_KEY.into(), structured::pointer(&path));
+                    unit.anchor = spans
+                        .as_ref()
+                        .and_then(|s| s.get(i))
+                        .map(|c| byte_anchor(&(c.start..c.value.end)));
+                    unit
+                })
+                .collect();
+        }
+        vec![Unit::text(source.id, outline.join("\n"))]
     }
-    source.metadata.insert(SHAPE_KEY.into(), "document".into());
-    if let Node::Object(members) = root
-        && members.len() > 1
-        && outline.len() > SPLIT_OUTLINE_LINES
-    {
-        let spans = json::root_span(bytes).and_then(|span| json::children(bytes, span));
-        return members
-            .iter()
-            .enumerate()
-            .map(|(i, (key, value))| {
-                let section = Node::Object(vec![(key.clone(), value.clone())]);
-                let mut unit =
-                    Unit::text(source.id, structured::outline_lines(&section).join("\n"));
-                let path = [Segment::Key(key.clone())];
-                unit.metadata
-                    .insert(POINTER_KEY.into(), structured::pointer(&path));
-                unit.anchor = spans
-                    .as_ref()
-                    .and_then(|s| s.get(i))
-                    .map(|c| byte_anchor(&(c.start..c.value.end)));
-                unit
-            })
-            .collect();
-    }
-    vec![Unit::text(source.id, outline.join("\n"))]
-}
 
-fn records(
-    source: &mut SourceRecord,
-    bytes: &[u8],
-    root: &Node,
-    path: &[Segment],
-    items: &[Node],
-) -> Vec<Unit> {
-    let pointer = structured::pointer(path);
-    let label = structured::dotted(path);
-    source.metadata.insert(SHAPE_KEY.into(), "records".into());
-    source
-        .metadata
-        .insert("structured.records".into(), items.len().to_string());
-    source
-        .metadata
-        .insert("structured.records-pointer".into(), pointer.clone());
-    let spans = json::locate(bytes, path).and_then(|span| json::children(bytes, span));
-    let mut units = Vec::new();
-    if !path.is_empty() {
-        let envelope = structured::envelope(root, path, items.len());
-        let mut unit = Unit::text(source.id, structured::outline_lines(&envelope).join("\n"));
-        unit.metadata.insert(POINTER_KEY.into(), String::new());
-        units.push(unit);
+    fn records(
+        &self,
+        source: &mut SourceRecord,
+        bytes: &[u8],
+        root: &Node,
+        path: &[Segment],
+        items: &[Node],
+    ) -> Vec<Unit> {
+        let pointer = structured::pointer(path);
+        let label = structured::dotted(path);
+        source.metadata.insert(SHAPE_KEY.into(), "records".into());
+        source
+            .metadata
+            .insert("structured.records".into(), items.len().to_string());
+        source
+            .metadata
+            .insert("structured.records-pointer".into(), pointer.clone());
+        let spans = json::locate(bytes, path).and_then(|span| json::children(bytes, span));
+        let mut units = Vec::new();
+        if !path.is_empty() {
+            let envelope = structured::envelope(root, path, items.len());
+            let mut unit = Unit::text(source.id, structured::outline_lines(&envelope).join("\n"));
+            unit.metadata.insert(POINTER_KEY.into(), String::new());
+            units.push(unit);
+        }
+        for (i, item) in items.iter().enumerate() {
+            let heading = if label.is_empty() {
+                format!("Record {}", i + 1)
+            } else {
+                format!("Record {} ({label}[{i}])", i + 1)
+            };
+            let span = spans.as_ref().and_then(|s| s.get(i)).map(|c| &c.value);
+            let mut unit = self.record_unit(source, heading, structured::flat_lines(item), span);
+            unit.metadata
+                .insert(POINTER_KEY.into(), format!("{pointer}/{i}"));
+            units.push(unit);
+        }
+        units
     }
-    for (i, item) in items.iter().enumerate() {
-        let heading = if label.is_empty() {
-            format!("Record {}", i + 1)
-        } else {
-            format!("Record {} ({label}[{i}])", i + 1)
-        };
-        let span = spans.as_ref().and_then(|s| s.get(i)).map(|c| &c.value);
-        let mut unit = record_unit(source, heading, structured::flat_lines(item), span);
-        unit.metadata
-            .insert(POINTER_KEY.into(), format!("{pointer}/{i}"));
-        units.push(unit);
-    }
-    units
 }
 
 #[cfg(test)]
@@ -278,7 +322,7 @@ mod tests {
             quiet: true,
         };
         (
-            StructuredImporter.import(&ctx, source).unwrap(),
+            StructuredImporter::default().import(&ctx, source).unwrap(),
             bytes.to_vec(),
         )
     }
@@ -443,6 +487,83 @@ mod tests {
             "{}",
             d.message
         );
+    }
+
+    #[test]
+    fn options_parse_from_kebab_case_tables_and_reject_unknown_keys() {
+        let parsed: StructuredOptions =
+            serde_json::from_str(r#"{"split-lines": 0, "flow": false}"#).unwrap();
+        assert_eq!(
+            parsed,
+            StructuredOptions {
+                records: true,
+                flow: false,
+                split_lines: 0,
+            }
+        );
+        assert!(serde_json::from_str::<StructuredOptions>(r#"{"split_lines": 1}"#).is_err());
+        assert_eq!(
+            serde_json::from_str::<StructuredOptions>("{}").unwrap(),
+            StructuredOptions::default()
+        );
+    }
+
+    #[test]
+    fn options_turn_off_record_splitting_flow_and_member_splitting() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        let run = |options: StructuredOptions, name: &str, bytes: &[u8]| {
+            StructuredImporter::new(options)
+                .import(&ctx, write(dir.path(), name, bytes))
+                .unwrap()
+        };
+        let array = br#"[{"a":1},{"a":2}]"#;
+        let whole = run(
+            StructuredOptions {
+                records: false,
+                ..Default::default()
+            },
+            "rows.json",
+            array,
+        );
+        assert_eq!(whole.units.len(), 1);
+        assert_eq!(text(&whole.units[0]), "- a: 1\n- a: 2");
+
+        let paged = run(
+            StructuredOptions {
+                flow: false,
+                ..Default::default()
+            },
+            "rows.json",
+            array,
+        );
+        assert_eq!(paged.units.len(), 2);
+        assert!(
+            paged
+                .units
+                .iter()
+                .all(|u| !u.metadata.contains_key(LAYOUT_FLOW_KEY))
+        );
+
+        let long = format!(
+            r#"{{"a":{{{}}},"b":1}}"#,
+            (0..80)
+                .map(|i| format!(r#""f{i}":{i}"#))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let never = run(
+            StructuredOptions {
+                split_lines: 0,
+                ..Default::default()
+            },
+            "big.json",
+            long.as_bytes(),
+        );
+        assert_eq!(never.units.len(), 1);
     }
 
     #[test]

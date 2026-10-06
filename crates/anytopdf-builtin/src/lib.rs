@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
+pub use importers::StructuredOptions;
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{ProviderVersion, detect_providers};
 
@@ -29,6 +30,8 @@ pub struct BuiltinOptions {
     pub ocr_language: String,
     pub explicit_transcripts: Vec<std::path::PathBuf>,
     pub embedded_subtitles: bool,
+    /// JSON / JSON Lines importer options (`[importer.structured]`).
+    pub structured: StructuredOptions,
 }
 
 impl Default for BuiltinOptions {
@@ -43,6 +46,7 @@ impl Default for BuiltinOptions {
             ocr_language: "eng".to_string(),
             explicit_transcripts: Vec::new(),
             embedded_subtitles: true,
+            structured: StructuredOptions::default(),
         }
     }
 }
@@ -59,7 +63,9 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_image_frames,
     )));
     registry.register_importer(Arc::new(importers::TextImporter));
-    registry.register_importer(Arc::new(importers::StructuredImporter));
+    registry.register_importer(Arc::new(importers::StructuredImporter::new(
+        opts.structured.clone(),
+    )));
     registry.register_importer(Arc::new(importers::HtmlImporter));
     registry.register_importer(Arc::new(importers::EmailImporter));
     registry.register_importer(Arc::new(importers::ArchiveImporter));

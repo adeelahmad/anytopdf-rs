@@ -1,19 +1,16 @@
 # Changelog
 
-## Unreleased
-
-- JSON and JSON Lines inputs (`.json`, `.jsonl`, `.ndjson`, or sniffed). Each record of a
-  JSON Lines file, top-level array or long API response (`{"data": [...]}`) becomes its own
-  searchable chunk of `path: value` lines anchored to its exact bytes, and records share
-  pages instead of taking one each. Other documents render as an indented outline. A
-  malformed line is kept as text with one `input.lossy-decode` warning.
-
 ## 0.2.0
 
 Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- JSON and JSON Lines inputs (`.json`, `.jsonl`, `.ndjson`, or sniffed). Each record of a
+  JSON Lines file, top-level array or long API response (`{"data": [...]}`) becomes its own
+  searchable chunk of `path: value` lines anchored to its exact bytes, and records share
+  pages instead of taking one each. Other documents render as an indented outline. A
+  malformed line is kept as text with one `input.lossy-decode` warning.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

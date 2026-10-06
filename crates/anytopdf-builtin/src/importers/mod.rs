@@ -21,7 +21,7 @@ pub use image_file::ImageImporter;
 pub use office::{OfficeImporter, TEXT_LAYER_KEY, TEXT_LAYER_NATIVE, soffice_path};
 pub use pdf_input::PdfInputImporter;
 pub use raster::RasterImporter;
-pub use structured::StructuredImporter;
+pub use structured::{StructuredImporter, StructuredOptions};
 pub use subtitle::SubtitleImporter;
 pub use text::TextImporter;
 pub use video::VideoImporter;
