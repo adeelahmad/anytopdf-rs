@@ -21,8 +21,8 @@ use std::sync::Arc;
 /// playlist cannot make them fetch network URLs.
 pub(crate) const FFMPEG_PROTOCOLS: &str = "file";
 
-pub use dates::DateOrder;
 pub use colors::{DominantColor, dominant_colors};
+pub use dates::DateOrder;
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use importers::StructuredOptions;
