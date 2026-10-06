@@ -50,7 +50,7 @@ jobs:
           }
       - name: Install PDF inspection tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core libreoffice-writer-nogui
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-dejavu-core libreoffice-writer-nogui ffmpeg
       - name: Check Conventional Commit event policy
         if: github.event_name == 'push' || github.event_name == 'pull_request'
         run: python scripts/release.py check-event
@@ -58,6 +58,7 @@ jobs:
         env:
           SMOKE_FLAGS: ${{ runner.os == 'Linux' && '--require-poppler' || '' }}
           ANYTOPDF_REQUIRE_OFFICE: ${{ runner.os == 'Linux' && '1' || '' }}
+          ANYTOPDF_REQUIRE_FFMPEG: ${{ runner.os == 'Linux' && '1' || '' }}
         run: make ci PYTHON=python
 
   printer:
