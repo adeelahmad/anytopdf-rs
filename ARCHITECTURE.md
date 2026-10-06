@@ -253,6 +253,7 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-faces` (shipped in `crates/anytopdf-plugin-faces`; see `docs/faces.md`)
 - `anytopdf-plugin-objects` (shipped in `crates/anytopdf-plugin-objects`; YOLO ONNX
   models on the shared pure-Rust runtime in `crates/anytopdf-onnx`)
+- `anytopdf-plugin-sentiment` (shipped in `crates/anytopdf-plugin-sentiment`)
 - `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`

@@ -60,6 +60,16 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   kept in unit metadata (`clip.embedding`) for the search index and never written
   into the PDF. `anytopdf-plugin-clip --fetch-model` downloads the model with pinned
   SHA-256 checksums. The shared `anytopdf-onnx` crate holds the ONNX helpers.
+- `anytopdf-plugin-sentiment`, a bundled opt-in runtime plugin, labels transcript
+  segments, caption cues, OCR blocks and text paragraphs `positive`, `negative` or
+  `neutral` and tags them `question`, `complaint` or `urgent` (`formal`/`informal`
+  with an LLM). Labels are `custom` annotations with `entity` `sentiment`, `tone` or
+  `sentiment-overall` and the segment's time range or region, written to the hidden
+  text layer so "negative" or "complaint" is searchable. English works offline
+  through a built-in VADER lexicon port; `ANYTOPDF_SENTIMENT_LLM_URL` and
+  `ANYTOPDF_SENTIMENT_LLM_MODEL` use a local OpenAI-compatible endpoint instead,
+  falling back to the lexicon with a warning. Text only: nothing is inferred from
+  faces or voices.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

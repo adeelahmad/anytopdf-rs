@@ -200,6 +200,54 @@ plugin warns once per conversion and the PDF is still written. Under
 `--plugin-sandbox strict`, allow the model folder with
 `--plugin-sandbox-allow-read "$ANYTOPDF_CLIP_MODEL_DIR"` (or the default folder).
 
+### Sentiment and tone
+
+`anytopdf-plugin-sentiment` labels what text *says* as `positive`, `negative` or
+`neutral`, and tags its tone as `question`, `complaint` or `urgent` (plus `formal`
+or `informal` with an LLM). It reads every text source: transcript segments
+(including Whisper's), caption cues, OCR blocks (words grouped into lines and
+paragraphs) and the paragraphs of plain-text, email and document units. Each label
+is a `custom` annotation with `entity` set to `sentiment` or `tone`, carrying the
+segment's time range or OCR region; a unit with several segments also gets one
+`sentiment-overall` line such as "overall negative", weighted by segment length.
+Searching the PDF for "negative" or "complaint" finds those moments. Labels never
+come from faces or voices and are never attached to a person.
+
+It needs no model: by default it scores English text with a built-in port of the
+VADER lexicon. For other languages and better accuracy, point it at a local
+OpenAI-compatible endpoint (Ollama, llama.cpp `llama-server`, LM Studio, vLLM); if
+the endpoint fails, the lexicon is used and a `plugin.warning` says so.
+
+```bash
+cargo build --release -p anytopdf-plugin-sentiment
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+anytopdf convert support-call.mp4 -o call.pdf
+
+# Optional: a local LLM instead of the lexicon
+export ANYTOPDF_SENTIMENT_LLM_URL=http://127.0.0.1:11434/v1
+export ANYTOPDF_SENTIMENT_LLM_MODEL=qwen2.5:3b
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_SENTIMENT_BACKEND` | `auto` | `vader`, `llm`, or `auto` (`llm` when an LLM URL is set) |
+| `ANYTOPDF_SENTIMENT_LLM_URL` | `ANYTOPDF_LLM_URL` | OpenAI-compatible base URL or full `/chat/completions` URL |
+| `ANYTOPDF_SENTIMENT_LLM_MODEL` | `ANYTOPDF_LLM_MODEL` | Model name, required with the LLM backend |
+| `ANYTOPDF_SENTIMENT_LLM_API_KEY` | `ANYTOPDF_LLM_API_KEY` | Sent as a bearer token |
+| `ANYTOPDF_SENTIMENT_LLM_TIMEOUT` | `45` | Seconds per request (24 segments each) |
+| `ANYTOPDF_SENTIMENT_FROM` | all | Comma list of `transcript`, `caption`, `ocr`, `text` |
+| `ANYTOPDF_SENTIMENT_NEUTRAL` | `false` | Also annotate neutral segments |
+| `ANYTOPDF_SENTIMENT_TONES` | `true` | Add tone tags |
+| `ANYTOPDF_SENTIMENT_THRESHOLD` | `0.05` | Lexicon score needed for positive or negative |
+
+A request `options` object (how anytopdf's layered configuration passes a
+`[sentiment]` table) takes precedence: `llm_model = "qwen2.5:3b"` there wins over
+`ANYTOPDF_SENTIMENT_LLM_MODEL`, and lists such as `from = ["ocr"]` are accepted.
+
+The plugin runs once per unit; with an LLM, raise `--plugin-timeout` for long
+transcripts. `--plugin-sandbox strict` blocks network access, so the LLM backend
+falls back to the lexicon there.
+
 ### Visual descriptions
 
 `anytopdf-plugin-vlm` asks a local vision-language model about every image and
@@ -441,6 +489,8 @@ Bundled runtime plugins (separate executables in this workspace):
   zero-shot scene tags in the searchable layer
 - `anytopdf-plugin-objects`: YOLO object detection on images and video keyframes
   through a pure-Rust ONNX runtime
+- `anytopdf-plugin-sentiment`: sentiment and tone of transcript, caption, OCR
+  and document text, from a built-in English lexicon or a local LLM endpoint
 - `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
   scene summaries and a category through a local vision-language model
 

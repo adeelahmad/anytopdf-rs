@@ -23,7 +23,7 @@ HOMEBREW = {
 SCOOP = {"64bit": "x86_64-pc-windows-msvc"}
 # Runtime plugins shipped in each archive's plugins/ folder. They stay opt-in:
 # anytopdf only runs them once ANYTOPDF_PLUGIN_PATH names that folder.
-PLUGINS = ["anytopdf-plugin-faces", "anytopdf-plugin-whisper"]
+PLUGINS = ["anytopdf-plugin-faces", "anytopdf-plugin-sentiment", "anytopdf-plugin-whisper"]
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 
 
@@ -95,7 +95,8 @@ def homebrew_formula(version, digests, repository, description):
         "      Install the ones you need:\n"
         "        brew install ffmpeg exiftool tesseract whisper-cpp\n"
         "      Bundled runtime plugins are opt-in. To transcribe audio and video with\n"
-        "      anytopdf-plugin-whisper, add to your shell profile:\n"
+        "      anytopdf-plugin-whisper and tag the sentiment and tone of text with\n"
+        "      anytopdf-plugin-sentiment, add to your shell profile:\n"
         "        export ANYTOPDF_PLUGIN_PATH=\"#{opt_libexec}/plugins\"\n"
         "        export ANYTOPDF_WHISPER_MODEL=/path/to/ggml-base.en.bin\n"
         "      Then run `anytopdf doctor` to check what is available.\n"

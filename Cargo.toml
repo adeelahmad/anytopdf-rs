@@ -11,6 +11,7 @@ members = [
   "crates/anytopdf-plugin-clip",
   "crates/anytopdf-plugin-faces",
   "crates/anytopdf-plugin-objects",
+  "crates/anytopdf-plugin-sentiment",
   "crates/anytopdf-plugin-vlm",
   "crates/anytopdf-plugin-whisper",
   "crates/anytopdf-print",
