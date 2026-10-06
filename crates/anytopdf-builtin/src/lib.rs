@@ -12,6 +12,7 @@ mod metadata;
 mod ocr;
 mod providers;
 mod scene;
+mod structured;
 
 use anytopdf_core::Registry;
 use std::sync::Arc;
@@ -24,6 +25,7 @@ pub use dates::DateOrder;
 pub use colors::{DominantColor, dominant_colors};
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
+pub use importers::StructuredOptions;
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{ProviderVersion, detect_providers};
 
@@ -44,6 +46,8 @@ pub struct BuiltinOptions {
     pub date_order: DateOrder,
     /// Annotate visual units with their dominant colours.
     pub colors: bool,
+    /// JSON / JSON Lines importer options (`[importer.structured]`).
+    pub structured: StructuredOptions,
 }
 
 impl Default for BuiltinOptions {
@@ -61,6 +65,7 @@ impl Default for BuiltinOptions {
             entities: true,
             date_order: DateOrder::DayFirst,
             colors: true,
+            structured: StructuredOptions::default(),
         }
     }
 }
@@ -77,6 +82,9 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_image_frames,
     )));
     registry.register_importer(Arc::new(importers::TextImporter));
+    registry.register_importer(Arc::new(importers::StructuredImporter::new(
+        opts.structured.clone(),
+    )));
     registry.register_importer(Arc::new(importers::HtmlImporter));
     registry.register_importer(Arc::new(importers::EmailImporter));
     registry.register_importer(Arc::new(importers::ArchiveImporter));

@@ -352,6 +352,7 @@ fn convert_inner(
         entities: !args.no_entities,
         date_order: args.date_order.parse().map_err(anyhow::Error::msg)?,
         colors: args.colors,
+        ..BuiltinOptions::default()
     };
 
     let (registry, mut warnings) = registry(opts, policy);

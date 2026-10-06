@@ -18,6 +18,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   layer and the chunks JSON (`color navy blue #141e64 31%`), so searching "red" or
   "blue" finds the frames those colours dominate. `--colors off` disables it.
   Runtime plugins' `custom` annotations with an `entity` attribute are now searchable too.
+- JSON and JSON Lines inputs (`.json`, `.jsonl`, `.ndjson`, or sniffed). Each record of a
+  JSON Lines file, top-level array or long API response (`{"data": [...]}`) becomes its own
+  searchable chunk of `path: value` lines anchored to its exact bytes, and records share
+  pages instead of taking one each. Other documents render as an indented outline. A
+  malformed line is kept as text with one `input.lossy-decode` warning.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

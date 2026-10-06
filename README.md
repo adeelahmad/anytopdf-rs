@@ -43,7 +43,7 @@ per-page chunks is embedded in the PDF, which makes the file its own index.
 
 | | |
 | --- | --- |
-| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
+| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, JSON and JSON Lines, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
 | **Finds the words** | OCR through Apple Vision, docTR or Tesseract, kept word-aligned under the image; speech to text through the bundled Whisper plugin; video keyframes chosen by interval and scene change |
 | **Writes a real archive file** | Tagged PDF/A-3a with bookmarks, Arabic/Hebrew/CJK shaping, byte-reproducible output, and a provenance page |
 | **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes and page maps; `anytopdf extract --json` reads them back |
@@ -267,6 +267,7 @@ Importers:
 - video through FFmpeg
 - audio container placeholder units
 - text / Markdown
+- JSON and JSON Lines (`.json`, `.jsonl`, `.ndjson`, or sniffed): one searchable chunk per record with its key paths, API envelopes such as `{"data": [...]}` split into records, other documents as an indented outline
 - HTML pages (readable text, title and image alt text; no network fetches)
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - archives (`.zip`, `.tar`, `.tar.gz`/`.tgz`): an index page plus every member through its own importer, with zip-bomb and path-traversal limits

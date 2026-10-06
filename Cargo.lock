@@ -172,6 +172,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-vision",
  "regex",
+ "serde",
  "serde_json",
  "tar",
  "tempfile",
