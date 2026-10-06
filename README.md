@@ -130,6 +130,38 @@ invocation transcribes every media source in the job, so raise
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
 the PDF is still written.
 
+### Search by meaning (CLIP)
+
+`anytopdf-plugin-clip` embeds every image, document page and video keyframe with
+OpenAI's CLIP ViT-B/32, so they can be searched by what they show rather than by
+the words on them. It runs on the CPU in pure Rust; no Python or ONNX Runtime
+install is needed. It also adds zero-shot scene tags (`photo`, `document`,
+`screenshot`, `slide`, `chart`, `indoors`/`outdoors`, `beach`, `city street`,
+`office`, `food`, `night` and similar) to the PDF's searchable layer, so searching
+the PDF for "screenshot" or "beach" finds those pages. The tags describe content
+and setting only, never a person's traits.
+
+```bash
+cargo build --release -p anytopdf-plugin-clip
+target/release/anytopdf-plugin-clip --fetch-model     # about 600 MB, checksum-verified
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+anytopdf convert holiday/ -o holiday.pdf
+```
+
+`--fetch-model [DIR]` stores the model in `anytopdf/models/clip` in the user data
+directory (`ANYTOPDF_CLIP_MODEL_DIR` overrides it; `ANYTOPDF_CLIP_MODEL_MIRROR` names
+a mirror holding the same three files). A Hugging Face ONNX export
+(`onnx/vision_model.onnx`, `onnx/text_model.onnx`, `tokenizer.json`) also works.
+`ANYTOPDF_CLIP_TAGS=off` turns tags off, `ANYTOPDF_CLIP_TAGS="logo=a company logo;cat"`
+replaces them with your own labels, and `ANYTOPDF_CLIP_TAG_THRESHOLD` (default 0.5)
+sets how sure a tag must be. Each embedding stays in the conversion's graph
+(`clip.embedding`) for the cross-file search index and is never written into the
+PDF. `anytopdf-plugin-clip --encode-text "people on a beach at night"` and
+`--encode-image photo.jpg` print a query embedding as JSON. Without a model the
+plugin warns once per conversion and the PDF is still written. Under
+`--plugin-sandbox strict`, allow the model folder with
+`--plugin-sandbox-allow-read "$ANYTOPDF_CLIP_MODEL_DIR"` (or the default folder).
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -243,6 +275,8 @@ Rendering:
 Bundled runtime plugins (separate executables in this workspace):
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-clip`: CLIP image embeddings for search by meaning, plus
+  zero-shot scene tags in the searchable layer
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection

@@ -6,6 +6,15 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- The new `anytopdf-plugin-clip` runtime plugin embeds every image, page and video
+  keyframe with CLIP (ViT-B/32 on the CPU through the pure-Rust `tract` ONNX runtime)
+  and tags it with zero-shot scene labels such as `screenshot`, `document`, `outdoors`
+  or `beach`. Tags are `scene` annotations with `entity = scene-tag` and land in the
+  PDF's hidden text layer, so searching a PDF for "beach" finds beach photos; other
+  `scene` annotations (keyframe selection notes) stay out of it. The embedding is
+  kept in unit metadata (`clip.embedding`) for the search index and never written
+  into the PDF. `anytopdf-plugin-clip --fetch-model` downloads the model with pinned
+  SHA-256 checksums. The shared `anytopdf-onnx` crate holds the ONNX helpers.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

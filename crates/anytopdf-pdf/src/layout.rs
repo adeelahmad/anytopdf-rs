@@ -18,9 +18,16 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
     ]
 }
 
-pub(crate) fn is_searchable_content(kind: &AnnotationKind) -> bool {
+/// Whether an annotation is content for the hidden search layer. Scene
+/// annotations count only as tags (`entity = scene-tag`, such as "beach");
+/// other scene annotations record how a keyframe was selected.
+pub(crate) fn is_searchable_content(a: &Annotation) -> bool {
     use AnnotationKind::*;
-    matches!(*kind, Ocr | Caption | Transcript | Object | Barcode)
+    match a.kind {
+        Ocr | Caption | Transcript | Object | Barcode => true,
+        Scene => a.attributes.get("entity").is_some_and(|e| e == "scene-tag"),
+        _ => false,
+    }
 }
 
 pub(crate) fn annotation_line(a: &Annotation) -> String {
@@ -198,5 +205,17 @@ mod tests {
         assert!(ys.iter().all(|y| *y > 0.0 && *y < 297.0), "y out of page");
         let shown = invisible_items(&[PdfPage::new(Mm(210.0), Mm(297.0), ops)]);
         assert_eq!(shown[0], lines);
+    }
+
+    #[test]
+    fn only_scene_tags_are_searchable_scene_annotations() {
+        let selection =
+            Annotation::text(AnnotationKind::Scene, "ffmpeg-video", "selected keyframe");
+        assert!(!is_searchable_content(&selection));
+        let mut tag = Annotation::text(AnnotationKind::Scene, "clip", "beach");
+        tag.attributes.insert("entity".into(), "scene-tag".into());
+        assert!(is_searchable_content(&tag));
+        let metadata = Annotation::text(AnnotationKind::Metadata, "exiftool", "Camera: X");
+        assert!(!is_searchable_content(&metadata));
     }
 }

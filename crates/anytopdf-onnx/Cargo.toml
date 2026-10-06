@@ -1,0 +1,13 @@
+[package]
+name = "anytopdf-onnx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Shared ONNX inference helpers for anytopdf model plugins"
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+image.workspace = true
+tract-onnx.workspace = true
