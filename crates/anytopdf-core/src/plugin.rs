@@ -88,8 +88,22 @@ pub trait SourceEnricher: Plugin {
     fn enrich_source(&self, ctx: &JobContext, source: &mut SourceRecord) -> Result<Vec<String>>;
 }
 
+/// When a graph enricher runs relative to the unit enrichers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GraphPhase {
+    /// Before unit enrichers, so they see the enriched graph (the default).
+    #[default]
+    BeforeUnits,
+    /// After unit enrichers, for summaries over their annotations.
+    AfterUnits,
+}
+
 pub trait GraphEnricher: Plugin {
     fn enrich_graph(&self, ctx: &JobContext, graph: &mut DocumentGraph) -> Result<Vec<String>>;
+
+    fn phase(&self) -> GraphPhase {
+        GraphPhase::BeforeUnits
+    }
 }
 
 pub trait UnitEnricher: Plugin {
