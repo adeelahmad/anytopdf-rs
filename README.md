@@ -221,8 +221,9 @@ Every fact becomes an `Annotation` with provenance:
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, colours, time ranges); source paths and file
-metadata are never written into it. Text/transcript units become normal
+(OCR, captions, transcripts, objects, barcodes, colours, time ranges, and place names
+read from that text); source paths and file metadata, including GPS-derived places,
+are never written into it. Text/transcript units become normal
 visible text pages.
 
 The built-in project intentionally limits face enrichment to neutral facts such
@@ -310,6 +311,15 @@ Enrichment:
 - dominant colours of images and keyframes (up to five per page, named
   "red", "navy blue", ... with hex and share), so searching a colour finds
   the frames it dominates; `--colors off` disables it
+- location (`--location on|gps|off`, default `on`): the source's GPS fix (EXIF,
+  XMP, QuickTime `GPSCoordinates` or ISO 6709 `location` tags) becomes one
+  `location` annotation on its first unit, reverse geocoded offline to
+  "City, Region, Country" from an embedded GeoNames `cities1000` table. Place names
+  in OCR text, captions, transcripts and text pages (cities of 100,000 people or
+  more, countries, and a few aliases such as "USA" and "England") become
+  `location` annotations with `attributes.source = text` and are searchable in the
+  PDF. GPS-derived locations stay out of the hidden layer and `--profile share`
+  drops them; place names read from the text are kept.
 
 Rendering:
 - tagged PDF/A-3a with bookmarks via `krilla` (default, `--renderer pdfa`)
@@ -755,6 +765,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Media enrichment
 - [x] Whisper transcription as a runtime plugin
+- [x] Location: offline reverse geocoding of GPS fixes and place names in text
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
 - [x] Dominant colours per image and keyframe
@@ -1022,4 +1033,8 @@ Report security issues privately as described in [SECURITY.md](SECURITY.md).
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
 [MIT license](LICENSE-MIT) at your option. The bundled DejaVu Sans font ships
-under its own [license](crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt).
+under its own [license](crates/anytopdf-pdf/fonts/LICENSE-DejaVu.txt). The embedded
+gazetteer (`crates/anytopdf-builtin/data/geonames-cities1000.tsv.gz`) contains data
+from [GeoNames](https://www.geonames.org/), licensed
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); location annotations
+name it in `attributes.gazetteer`.

@@ -141,6 +141,13 @@ it writes a flattened, deskewed derivative into the job workspace and records th
 original sheet corners (`scan.page`) and rotation (`scan.deskew-degrees`) on the
 unit, so OCR boxes and the rendered page refer to the same corrected image.
 
+The built-in `location` enricher is a late unit enricher (it runs after runtime
+plugins' unit enrichers) so it also reads captions that runtime unit enrichers
+add. It turns a source's GPS fix into one `location` annotation on the source's
+first unit, reverse geocoded against the embedded GeoNames table, and place names
+found in OCR text, captions, transcripts and text pages into `location`
+annotations with `attributes.source = text`.
+
 Graph enrichers run before unit enrichers by default (for example, Whisper adds a
 transcript unit that later enrichers can see). A graph enricher whose `phase()`
 is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs

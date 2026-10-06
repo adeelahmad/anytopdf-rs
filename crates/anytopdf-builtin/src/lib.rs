@@ -9,6 +9,7 @@ pub mod email;
 mod entities;
 mod html;
 mod importers;
+mod location;
 mod metadata;
 mod ocr;
 mod providers;
@@ -30,6 +31,7 @@ pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use importers::RawDecode;
 pub use importers::StructuredOptions;
+pub use location::{LocationEnricher, LocationMode};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{
     PROVIDER_NAMES, ProviderVersion, URL_PROVIDERS, chrome_path, detect_providers,
@@ -59,6 +61,7 @@ pub struct BuiltinOptions {
     pub chat: ChatOptions,
     pub raw_decode: RawDecode,
     pub scan: ScanMode,
+    pub location: LocationMode,
 }
 
 impl Default for BuiltinOptions {
@@ -80,6 +83,7 @@ impl Default for BuiltinOptions {
             chat: ChatOptions::default(),
             raw_decode: RawDecode::Auto,
             scan: ScanMode::Auto,
+            location: LocationMode::default(),
         }
     }
 }
@@ -130,6 +134,8 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     )));
     registry.register_unit_enricher(Arc::new(colors::ColorEnricher::new(opts.colors)));
     registry.register_unit_enricher(Arc::new(scene::SceneAnnotationEnricher));
+    // Late, so place names also come from runtime plugins' captions and transcripts.
+    registry.register_late_unit_enricher(Arc::new(location::LocationEnricher::new(opts.location)));
     if opts.entities {
         // Late, so entities also come from runtime plugins' captions and transcripts.
         registry.register_late_unit_enricher(Arc::new(entities::EntityEnricher {

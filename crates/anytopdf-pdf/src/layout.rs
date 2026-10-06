@@ -18,10 +18,17 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
     ]
 }
 
+/// Whether an annotation belongs in the hidden text layer, which carries page
+/// content only. Extracted entities and place names read from that content
+/// qualify; a location derived from GPS metadata does not.
 pub(crate) fn is_searchable_content(a: &Annotation) -> bool {
     use AnnotationKind::*;
-    matches!(a.kind, Ocr | Caption | Transcript | Object | Barcode)
-        || (matches!(a.kind, Custom | Timestamp) && a.attributes.contains_key("entity"))
+    match a.kind {
+        Ocr | Caption | Transcript | Object | Barcode => true,
+        Custom | Timestamp => a.attributes.contains_key("entity"),
+        Location => a.attributes.get("source").map(String::as_str) == Some("text"),
+        _ => false,
+    }
 }
 
 pub(crate) fn annotation_line(a: &Annotation) -> String {
@@ -376,6 +383,26 @@ mod tests {
         );
         assert!(matches!(ops.first(), Some(Op::SaveGraphicsState)));
         assert!(matches!(ops.last(), Some(Op::RestoreGraphicsState)));
+    }
+
+    #[test]
+    fn hidden_layer_takes_text_place_names_but_not_gps_locations() {
+        let mut text = Annotation::text(AnnotationKind::Location, "location", "Paris, France");
+        text.attributes.insert("source".into(), "text".into());
+        let mut gps = Annotation::text(AnnotationKind::Location, "location", "Lyon, France");
+        gps.attributes.insert("source".into(), "gps".into());
+        assert!(is_searchable_content(&text));
+        assert!(!is_searchable_content(&gps));
+        assert!(!is_searchable_content(&Annotation::text(
+            AnnotationKind::Metadata,
+            "exiftool",
+            "Model: X"
+        )));
+        assert!(is_searchable_content(&Annotation::text(
+            AnnotationKind::Ocr,
+            "tesseract",
+            "word"
+        )));
     }
 
     #[test]

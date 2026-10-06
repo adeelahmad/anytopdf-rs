@@ -56,6 +56,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 - WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) chat exports become
   conversation pages with a `time sender: text` line per message; attachments in the export
   follow the message that sent them. New `--chat-date-order` and `--no-chat-attachments`.
+- Location enrichment (`--location on|gps|off`, default `on`). A GPS fix from EXIF,
+  XMP, QuickTime `GPSCoordinates` or an ISO 6709 `location` tag becomes a `location`
+  annotation reverse geocoded offline to "City, Region, Country" from an embedded
+  GeoNames `cities1000` table (CC BY 4.0). Place names in OCR text, captions,
+  transcripts and text pages become `location` annotations with
+  `attributes.source = text` and are searchable in the PDF's hidden layer.
+  GPS-derived locations never enter the hidden layer and `--profile share` drops
+  them, as before.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

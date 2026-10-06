@@ -372,6 +372,7 @@ fn convert_inner(
         },
         raw_decode: args.raw_decode,
         scan: args.scan_mode,
+        location: args.location,
         ..BuiltinOptions::default()
     };
 
