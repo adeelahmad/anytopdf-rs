@@ -109,6 +109,11 @@ Units whose positioned text came from the document itself (not OCR) may set the
 unit metadata entry `"text-layer": "native"`; the built-in OCR enricher skips
 those units. The Office importer sets it for pages with extractable text.
 
+Text units may set the unit metadata entry `"layout.flow": "continuous"` to
+continue on the page where the previous text unit of the same source ended
+instead of starting a new page; use it for many small records (rows, messages,
+log entries). Protocol version unchanged.
+
 Plugins may create derived files only under the supplied workspace unless the
 user explicitly configured otherwise.
 

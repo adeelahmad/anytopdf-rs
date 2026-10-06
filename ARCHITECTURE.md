@@ -65,6 +65,7 @@ An importer emits normalized units. Examples:
 - video -> keyframe visual units + timestamps
 - subtitle -> text/cue units
 - text -> visible text unit
+- JSON / JSON Lines -> one text unit per record (or an outline unit per document section)
 - future `.igl` -> arbitrary page/image/text units
 - email/archive -> its own units plus the units of each member file
 
@@ -81,6 +82,21 @@ input. Every top-level input carries one extraction budget
 through `MemberImporter::charge`, so nested archives cannot multiply it.
 Runtime plugins keep the plain `import` path.
 
+Structured data (`importers/structured.rs`, model in `structured/`) parses into a
+format-neutral `Node` tree, so YAML, TOML or CSV readers only need to produce a
+`Node`. Shape detection then decides the units. JSON Lines, a top-level array of
+objects, and (in a document too long for one outline) the longest record array
+one or two object levels down, as in API responses such as `{"data": [...]}`,
+become records: one text unit each, written
+as `path: value` lines so a full key path and its value are searchable together,
+with a `byte-range` anchor on the record's exact bytes and a
+`structured.pointer` (RFC 6901). An API envelope keeps its other members in one
+outline unit. Any other document becomes an indented outline, split into one
+unit per top-level member when it is long. A malformed JSON Lines line is kept as
+plain text with one `input.lossy-decode` warning; an invalid JSON document falls
+back to plain text. Recognizers for known shapes (chat exports, logs) can be
+added as importers that probe higher, without changing this one.
+
 ### Source enrichment
 
 Adds facts that belong to the whole source:
@@ -94,7 +110,12 @@ other annotations to individual units.
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text
-pages for text-only units. A future planner plugin can group contact sheets,
+pages for text-only units. A text unit whose metadata sets `layout.flow` to
+`continuous` continues on the page where the previous text unit of the same
+source ended (after a blank row) instead of starting a page; a unit that fits on
+one page moves to the next page rather than being split. Record importers use it
+so each record stays its own chunk without costing a page, and chunks of flowed
+units may share page numbers. A future planner plugin can group contact sheets,
 storyboards, or source-specific layouts.
 
 ### Rendering

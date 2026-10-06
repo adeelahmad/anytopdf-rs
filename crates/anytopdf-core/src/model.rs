@@ -185,6 +185,14 @@ pub enum Anchor {
     },
 }
 
+/// Unit metadata key controlling page layout. With the value
+/// [`LAYOUT_FLOW_CONTINUOUS`], a text unit continues on the page where the
+/// previous text unit of the same source ended instead of starting a new page.
+/// Record-oriented importers (JSON Lines, CSV rows, chat messages) set it so
+/// each record stays its own chunk without costing a page.
+pub const LAYOUT_FLOW_KEY: &str = "layout.flow";
+pub const LAYOUT_FLOW_CONTINUOUS: &str = "continuous";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unit {
     #[serde(default = "Uuid::new_v4")]
@@ -236,6 +244,19 @@ impl Unit {
             start: 0,
             end: source.size.unwrap_or(0),
         }
+    }
+
+    /// Whether this unit may share a page with `previous`: both are text-only
+    /// units of the same source and this one asks for continuous flow.
+    pub fn flows_after(&self, previous: &Unit) -> bool {
+        let text_only = |u: &Unit| u.visual_path.is_none() && u.visible_text.is_some();
+        text_only(self)
+            && text_only(previous)
+            && self.source_id == previous.source_id
+            && self
+                .metadata
+                .get(LAYOUT_FLOW_KEY)
+                .is_some_and(|v| v == LAYOUT_FLOW_CONTINUOUS)
     }
 
     pub fn visual(source_id: Uuid, path: PathBuf) -> Self {

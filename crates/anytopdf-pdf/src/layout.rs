@@ -136,9 +136,116 @@ pub(crate) fn wrap_text(text: &str, width: f32, measure: &impl Fn(char) -> f32) 
     lines
 }
 
+/// Hidden search lines a text unit carries on the page where it starts.
+pub(crate) fn unit_hidden_lines(unit: &Unit) -> Vec<String> {
+    let mut lines: Vec<String> = unit
+        .annotations
+        .iter()
+        .filter(|a| is_searchable_content(&a.kind))
+        .map(annotation_line)
+        .collect();
+    if let Some(time) = unit.time_range {
+        lines.push(time_line(time));
+    }
+    lines
+}
+
+/// One visible row of a text page. `unit` indexes the run (`None` for the
+/// blank row separating flowed units) and `line` is the source line the row
+/// was wrapped from.
+pub(crate) struct FlowRow {
+    pub unit: Option<usize>,
+    pub line: usize,
+    pub text: String,
+}
+
+#[derive(Default)]
+pub(crate) struct FlowPage {
+    pub rows: Vec<FlowRow>,
+    /// Hidden search lines of the units that start on this page.
+    pub hidden: Vec<String>,
+    /// Units (run indexes) whose first row is on this page.
+    pub starts: Vec<usize>,
+}
+
+pub(crate) struct FlowLayout {
+    pub pages: Vec<FlowPage>,
+    /// First and last page (0-based within the run) of each unit.
+    pub unit_pages: Vec<(usize, usize)>,
+}
+
+/// Lay out a run of text units: the first starts a new page and each later one
+/// (see [`Unit::flows_after`]) continues after a blank row on the same page. A
+/// unit that fits on one page moves to a fresh page rather than being split.
+pub(crate) fn flow_pages(units: &[&Unit], measure: &impl Fn(char) -> f32) -> FlowLayout {
+    let cap = TEXT_ROWS_PER_PAGE;
+    let mut pages: Vec<FlowPage> = Vec::new();
+    let mut unit_pages = Vec::with_capacity(units.len());
+    for (index, unit) in units.iter().enumerate() {
+        let text = unit.visible_text.as_deref().unwrap_or("");
+        let mut rows: Vec<(usize, String)> = text
+            .lines()
+            .enumerate()
+            .flat_map(|(line, source)| {
+                wrap_text(source, TEXT_WRAP_EMS, measure)
+                    .into_iter()
+                    .map(move |row| (line, row))
+            })
+            .collect();
+        if rows.is_empty() {
+            rows.push((0, String::new()));
+        }
+        let open = pages.last().map_or(0, |p| p.rows.len());
+        let fresh =
+            index == 0 || open + 2 > cap || (rows.len() <= cap && open + 1 + rows.len() > cap);
+        if fresh {
+            pages.push(FlowPage::default());
+        } else if let Some(page) = pages.last_mut() {
+            page.rows.push(FlowRow {
+                unit: None,
+                line: 0,
+                text: String::new(),
+            });
+        }
+        let first = pages.len() - 1;
+        if let Some(page) = pages.last_mut() {
+            page.starts.push(index);
+            page.hidden.extend(unit_hidden_lines(unit));
+        }
+        for (line, text) in rows {
+            if pages.last().is_some_and(|p| p.rows.len() >= cap) {
+                pages.push(FlowPage::default());
+            }
+            if let Some(page) = pages.last_mut() {
+                page.rows.push(FlowRow {
+                    unit: Some(index),
+                    line,
+                    text,
+                });
+            }
+        }
+        unit_pages.push((first, pages.len() - 1));
+    }
+    FlowLayout { pages, unit_pages }
+}
+
+/// Split `units` into runs that share pages: each run is a maximal sequence in
+/// which every unit after the first flows after its predecessor.
+pub(crate) fn flow_runs(units: &[Unit]) -> Vec<std::ops::Range<usize>> {
+    let mut runs = Vec::new();
+    let mut start = 0;
+    for i in 1..=units.len() {
+        if i == units.len() || !units[i].flows_after(&units[i - 1]) {
+            runs.push(start..i);
+            start = i;
+        }
+    }
+    runs
+}
+
 /// Resolution of a visual unit: print-job pages carry their own in
 /// `visual.dpi`; other visuals use the renderer default.
-pub(crate) fn unit_dpi(unit: &anytopdf_core::Unit, default: f32) -> f32 {
+pub(crate) fn unit_dpi(unit: &Unit, default: f32) -> f32 {
     unit.metadata
         .get("visual.dpi")
         .and_then(|v| v.parse::<f32>().ok())
@@ -166,6 +273,82 @@ mod tests {
         });
         assert_eq!(lines[0], "    abc");
         assert_eq!(lines[1..], ["界界", "界界", "界"]);
+    }
+
+    fn record(source: Uuid, text: &str) -> Unit {
+        let mut unit = Unit::text(source, text.into());
+        unit.metadata
+            .insert(LAYOUT_FLOW_KEY.into(), LAYOUT_FLOW_CONTINUOUS.into());
+        unit
+    }
+
+    #[test]
+    fn flowed_units_share_pages_and_keep_short_units_whole() {
+        let source = Uuid::new_v4();
+        let mut units: Vec<Unit> = (0..40)
+            .map(|i| record(source, &format!("Record {i}\nid: {i}\nname: n{i}")))
+            .collect();
+        let mut tagged = Unit::text(source, "plain".into());
+        tagged
+            .annotations
+            .push(Annotation::text(AnnotationKind::Caption, "t", "cue"));
+        units.insert(0, tagged);
+        assert_eq!(
+            flow_runs(&units),
+            vec![std::ops::Range { start: 0, end: 41 }]
+        );
+        let refs: Vec<&Unit> = units.iter().collect();
+        let layout = flow_pages(&refs, &|_| 0.5);
+        // 59 rows a page: the plain unit and 14 records, then 15, then 11.
+        assert_eq!(TEXT_ROWS_PER_PAGE, 59);
+        assert_eq!(layout.pages.len(), 3);
+        for (index, (first, last)) in layout.unit_pages.iter().enumerate() {
+            assert_eq!(first, last, "unit {index} split across pages");
+            assert!(layout.pages[*first].starts.contains(&index));
+        }
+        assert_eq!(layout.pages[0].hidden, ["[Caption][t] cue"]);
+        for page in &layout.pages {
+            assert!(page.rows.len() <= TEXT_ROWS_PER_PAGE);
+            assert!(page.rows.first().is_some_and(|r| r.unit.is_some()));
+        }
+        let all: Vec<&str> = layout
+            .pages
+            .iter()
+            .flat_map(|p| &p.rows)
+            .filter(|r| r.unit.is_some())
+            .map(|r| r.text.as_str())
+            .collect();
+        assert_eq!(all.len(), 121);
+        assert_eq!(all[1..4], ["Record 0", "id: 0", "name: n0"]);
+    }
+
+    #[test]
+    fn flow_runs_break_at_other_sources_visuals_and_unflagged_units() {
+        let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
+        let units = vec![
+            record(a, "1"),
+            record(a, "2"),
+            Unit::text(a, "3".into()),
+            record(b, "4"),
+            Unit::visual(b, "v.png".into()),
+            record(b, "5"),
+        ];
+        assert_eq!(flow_runs(&units), [0..2, 2..3, 3..4, 4..5, 5..6]);
+        assert!(flow_runs(&[]).is_empty());
+    }
+
+    #[test]
+    fn long_flowed_unit_splits_across_pages_after_the_open_page() {
+        let source = Uuid::new_v4();
+        let long = (0..TEXT_ROWS_PER_PAGE * 2)
+            .map(|i| format!("k{i}: v"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let units = [record(source, "short"), record(source, &long)];
+        let refs: Vec<&Unit> = units.iter().collect();
+        let layout = flow_pages(&refs, &|_| 0.5);
+        assert_eq!(layout.unit_pages, [(0, 0), (0, 2)]);
+        assert_eq!(layout.pages[0].rows[2].text, "k0: v");
     }
 
     #[test]

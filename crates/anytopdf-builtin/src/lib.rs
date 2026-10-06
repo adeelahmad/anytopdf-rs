@@ -8,6 +8,7 @@ mod metadata;
 mod ocr;
 mod providers;
 mod scene;
+mod structured;
 
 use anytopdf_core::Registry;
 use std::sync::Arc;
@@ -58,6 +59,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.max_image_frames,
     )));
     registry.register_importer(Arc::new(importers::TextImporter));
+    registry.register_importer(Arc::new(importers::StructuredImporter));
     registry.register_importer(Arc::new(importers::HtmlImporter));
     registry.register_importer(Arc::new(importers::EmailImporter));
     registry.register_importer(Arc::new(importers::ArchiveImporter));
