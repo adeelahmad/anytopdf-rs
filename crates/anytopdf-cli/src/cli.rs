@@ -1,4 +1,4 @@
-use anytopdf_builtin::OcrMode;
+use anytopdf_builtin::{LocationMode, OcrMode};
 use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
 use std::path::PathBuf;
@@ -338,6 +338,14 @@ pub(crate) struct ConvertArgs {
         clap::builder::PossibleValue::new("off").alias("none"),
     ]).try_map(|s| s.parse::<OcrMode>()))]
     pub(crate) ocr: OcrMode,
+
+    /// Location enrichment: on (GPS fixes and place names in text), gps (GPS only) or off.
+    #[arg(long, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new([
+        clap::builder::PossibleValue::new("on"),
+        clap::builder::PossibleValue::new("gps"),
+        clap::builder::PossibleValue::new("off").alias("none"),
+    ]).try_map(|s| s.parse::<LocationMode>()))]
+    pub(crate) location: LocationMode,
 
     /// OCR language code.
     #[arg(long, default_value = "eng")]

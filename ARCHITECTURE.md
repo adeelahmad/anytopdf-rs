@@ -91,6 +91,13 @@ ExifTool, ffprobe, hashes, provenance, GPS, dates, etc.
 Adds OCR, captions, transcripts, object labels, scene labels, face bounds, and
 other annotations to individual units.
 
+The built-in `location` enricher registers after runtime plugins
+(`register_late_builtins`) so it also reads captions that runtime unit enrichers
+add. It turns a source's GPS fix into one `location` annotation on the source's
+first unit, reverse geocoded against the embedded GeoNames table, and place names
+found in OCR text, captions, transcripts and text pages into `location`
+annotations with `attributes.source = text`.
+
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text

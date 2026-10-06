@@ -5,7 +5,8 @@ use crate::naming;
 use crate::publish::{checked_destination, publish_output};
 use anyhow::{Context, Result};
 use anytopdf_builtin::{
-    BuiltinOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs, register_builtins,
+    BuiltinOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs,
+    register_core_builtins, register_late_builtins,
 };
 use anytopdf_core::{
     Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline,
@@ -28,10 +29,11 @@ pub(crate) fn registry(
     policy: &RuntimePluginPolicy,
 ) -> (Registry, Vec<Diagnostic>) {
     let mut registry = Registry::default();
-    register_builtins(&mut registry, opts);
+    register_core_builtins(&mut registry, opts.clone());
     registry.register_renderer(Arc::new(SearchablePdfRenderer::default()));
     registry.register_renderer(Arc::new(PdfARenderer::default()));
     let warnings = register_runtime_plugins_with_policy(&mut registry, policy);
+    register_late_builtins(&mut registry, &opts);
     (registry, warnings)
 }
 
@@ -349,6 +351,7 @@ fn convert_inner(
         ocr_language: args.lang,
         explicit_transcripts: args.transcripts,
         embedded_subtitles: !args.no_embedded_subtitles,
+        location: args.location,
     };
 
     let (registry, mut warnings) = registry(opts, policy);

@@ -6,6 +6,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- Location enrichment (`--location on|gps|off`, default `on`). A GPS fix from EXIF,
+  XMP, QuickTime `GPSCoordinates` or an ISO 6709 `location` tag becomes a `location`
+  annotation reverse geocoded offline to "City, Region, Country" from an embedded
+  GeoNames `cities1000` table (CC BY 4.0). Place names in OCR text, captions,
+  transcripts and text pages become `location` annotations with
+  `attributes.source = text` and are searchable in the PDF's hidden layer.
+  GPS-derived locations never enter the hidden layer and `--profile share` drops
+  them, as before.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

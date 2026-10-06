@@ -4,6 +4,7 @@ mod discovery;
 pub mod email;
 mod html;
 mod importers;
+mod location;
 mod metadata;
 mod ocr;
 mod providers;
@@ -14,6 +15,7 @@ use std::sync::Arc;
 
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
+pub use location::{LocationEnricher, LocationMode};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use providers::{ProviderVersion, detect_providers};
 
@@ -28,6 +30,7 @@ pub struct BuiltinOptions {
     pub ocr_language: String,
     pub explicit_transcripts: Vec<std::path::PathBuf>,
     pub embedded_subtitles: bool,
+    pub location: LocationMode,
 }
 
 impl Default for BuiltinOptions {
@@ -42,11 +45,26 @@ impl Default for BuiltinOptions {
             ocr_language: "eng".to_string(),
             explicit_transcripts: Vec::new(),
             embedded_subtitles: true,
+            location: LocationMode::default(),
         }
     }
 }
 
+/// Registers every built-in plugin. Callers that also load runtime plugins use
+/// [`register_core_builtins`] and [`register_late_builtins`] around them instead.
 pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
+    register_core_builtins(registry, opts.clone());
+    register_late_builtins(registry, &opts);
+}
+
+/// Built-in enrichers that read what earlier enrichers produced, including
+/// captions from runtime unit enrichers, so they register after runtime plugins.
+pub fn register_late_builtins(registry: &mut Registry, opts: &BuiltinOptions) {
+    registry.register_unit_enricher(Arc::new(location::LocationEnricher::new(opts.location)));
+}
+
+/// Built-in importers and enrichers that run before runtime plugins.
+pub fn register_core_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_source_enricher(Arc::new(metadata::MetadataEnricher));
 
     registry.register_importer(Arc::new(importers::ImageImporter::new(

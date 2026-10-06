@@ -85,6 +85,14 @@ impl Profile {
             source.metadata = filter_metadata(*self, channel, &source.metadata);
         }
         for unit in &mut out.units {
+            if *self == Profile::Share {
+                // GPS-derived locations reveal where a file was made; place
+                // names read from the visible content reveal nothing new.
+                unit.annotations.retain(|a| {
+                    a.kind != AnnotationKind::Location
+                        || a.attributes.get("source").map(String::as_str) == Some("text")
+                });
+            }
             unit.metadata = filter_metadata(*self, channel, &unit.metadata);
             for annotation in &mut unit.annotations {
                 annotation.attributes = filter_metadata(*self, channel, &annotation.attributes);
@@ -96,8 +104,6 @@ impl Profile {
             }
             for unit in &mut out.units {
                 unit.visual_path = None;
-                unit.annotations
-                    .retain(|a| a.kind != AnnotationKind::Location);
             }
         }
         out
@@ -221,6 +227,27 @@ mod tests {
             );
         }
         assert_eq!(serde_json::to_string(&graph).unwrap(), before);
+    }
+
+    #[test]
+    fn share_keeps_place_names_read_from_visible_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut graph = photo_graph(dir.path());
+        let mut from_text = Annotation::text(AnnotationKind::Location, "location", "Paris, France");
+        from_text.attributes.insert("source".into(), "text".into());
+        let mut from_gps = Annotation::text(AnnotationKind::Location, "location", "Lyon, France");
+        from_gps.attributes.insert("source".into(), "gps".into());
+        graph.units[0].annotations.extend([from_text, from_gps]);
+        let out = Profile::Share.filter(&graph, Channel::Document);
+        let kept: Vec<_> = out.units[0]
+            .annotations
+            .iter()
+            .filter(|a| a.kind == AnnotationKind::Location)
+            .map(|a| a.text.as_str())
+            .collect();
+        assert_eq!(kept, ["Paris, France"]);
+        let archive = Profile::Archive.filter(&graph, Channel::Document);
+        assert_eq!(archive.units[0].annotations.len(), 3);
     }
 
     #[test]
