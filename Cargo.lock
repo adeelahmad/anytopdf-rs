@@ -148,6 +148,7 @@ dependencies = [
  "clap",
  "hmac",
  "infer",
+ "libc",
  "printpdf",
  "regex",
  "rustls",
@@ -158,6 +159,7 @@ dependencies = [
  "ureq",
  "uuid",
  "which",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -256,6 +258,20 @@ dependencies = [
  "sha2",
  "tempfile",
  "ureq",
+]
+
+[[package]]
+name = "anytopdf-plugin-vlm"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-core",
+ "base64 0.22.1",
+ "image",
+ "serde_json",
+ "tempfile",
+ "ureq",
+ "uuid",
 ]
 
 [[package]]

@@ -66,6 +66,28 @@
         }
       }
     },
+    "capture": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "available",
+          "detail"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean"
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "printing": {
       "type": "array",
       "items": {
