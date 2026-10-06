@@ -141,6 +141,7 @@ dependencies = [
  "anyhow",
  "anytopdf-builtin",
  "anytopdf-core",
+ "anytopdf-faces",
  "anytopdf-imap",
  "anytopdf-index",
  "anytopdf-pdf",
@@ -206,6 +207,20 @@ dependencies = [
  "thiserror",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "anytopdf-faces"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-core",
+ "image",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]
@@ -289,6 +304,20 @@ dependencies = [
  "tempfile",
  "tract-onnx",
  "ureq",
+]
+
+[[package]]
+name = "anytopdf-plugin-face-id"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-faces",
+ "image",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tract-onnx",
+ "uuid",
 ]
 
 [[package]]
@@ -1231,6 +1260,9 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "foldhash",
+]
 
 [[package]]
 name = "hashify"
@@ -1242,6 +1274,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
+dependencies = [
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -2294,6 +2335,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsqlite-vfs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c51c9ae4df8a7fba42103df5c621fa3c37eccf3a3c650879e90fc48b11cc192c"
+dependencies = [
+ "hashbrown 0.16.1",
+ "thiserror",
+]
+
+[[package]]
 name = "rusqlite"
 version = "0.40.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2302,8 +2353,10 @@ dependencies = [
  "bitflags",
  "fallible-iterator",
  "fallible-streaming-iterator",
+ "hashlink",
  "libsqlite3-sys",
  "smallvec",
+ "sqlite-wasm-rs",
 ]
 
 [[package]]
@@ -2629,6 +2682,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
 dependencies = [
  "lock_api",
+]
+
+[[package]]
+name = "sqlite-wasm-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc3efc0da82635d7e1ced0053bbbfa8c7ab9645d0bf36ceb4f7127bb85315d75"
+dependencies = [
+ "cc",
+ "js-sys",
+ "rsqlite-vfs",
+ "wasm-bindgen",
 ]
 
 [[package]]

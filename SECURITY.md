@@ -54,7 +54,8 @@ someone reading outputs shared under `--profile share`.
 The job queue, its signed webhooks and its HTTP upload listener (`anytopdf queue`,
 `anytopdf queue serve`), the IMAP watcher (`anytopdf watch imap`), the remote print front (`anytopdf print remote`), the MCP
 server (`anytopdf mcp`), URL inputs, the search index (`anytopdf search`, `queue serve --search`), question answering (`anytopdf ask`), the PAPPL printer helper and the HTML, email, Office,
-archive, PDF and HEIC importers shipped after this threat model was written. Reports
+archive, PDF and HEIC importers and face recognition (`--recognize-faces`,
+`anytopdf faces`) shipped after this threat model was written. Reports
 against them are welcome and are triaged by the maintainer directly until the
 model is revised (threat model §1.16).
 
@@ -103,6 +104,11 @@ From the threat model's downstream responsibilities (§1.13):
   and set `--max-image-frames` and `--max-video-frames` to non-zero values.
 - Use `--profile share` before giving outputs to someone else, and review the
   visible and OCR text yourself.
+- Face recognition is opt-in. The face index (`faces.sqlite` in the anytopdf
+  data directory) holds face embeddings and where each person was seen: keep it
+  private, enroll only people who agreed to it, and remove someone with
+  `anytopdf faces forget`. Under `share`, names and "People in …" pages are left
+  out of the PDF.
 - Sign outputs with your own tooling if you need tamper evidence; treat
   `extract` results as unverified when `origin` is `sidecar` or a
   `extract.version-mismatch` warning appears.

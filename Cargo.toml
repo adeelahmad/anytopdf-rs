@@ -6,9 +6,11 @@ members = [
   "crates/anytopdf-pdf",
   "crates/anytopdf-cli",
   "crates/anytopdf-imap",
+  "crates/anytopdf-faces",
   "crates/anytopdf-index",
   "crates/anytopdf-onnx",
   "crates/anytopdf-plugin-clip",
+  "crates/anytopdf-plugin-face-id",
   "crates/anytopdf-plugin-faces",
   "crates/anytopdf-plugin-objects",
   "crates/anytopdf-plugin-sentiment",
@@ -46,7 +48,7 @@ printpdf = { version = "0.12.8", default-features = false, features = [
 prost = { version = "0.14", default-features = false, features = ["std", "derive"] }
 regex = "1.11"
 # Bundled SQLite with FTS5 for the cross-file search index.
-rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.20"

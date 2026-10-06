@@ -154,6 +154,19 @@ is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs
 after them instead, so it can summarize their annotations; `anytopdf-plugin-vlm`
 writes video and scene summaries this way.
 
+### Face recognition
+
+Detection, embedding and identity are separate. A detector plugin adds `face`
+annotations with five-point `landmarks`. `anytopdf-plugin-face-id` (graph
+enricher in the `after-units` phase) aligns each face onto the ArcFace template, embeds it with
+an ONNX model through tract, tags the annotation with `face.ref` and writes the
+vector to `face-id/` in the job workspace, never into the graph. With
+`--recognize-faces` the CLI reads those vectors after the pipeline, matches them
+against the local face index (`anytopdf-faces`, SQLite), clusters faces that
+match nobody as `person-N`, records sightings, sets `attributes.person` and the
+annotation text, and appends a "People in …" text unit per source. Face
+annotations are part of the hidden search layer.
+
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text

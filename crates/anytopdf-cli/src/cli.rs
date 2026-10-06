@@ -1,4 +1,5 @@
 mod capture;
+mod faces;
 mod search;
 mod setup;
 mod url;
@@ -7,6 +8,7 @@ use anytopdf_builtin::{ChatDateOrder, LocationMode, OcrMode, RawDecode, ScanMode
 use anytopdf_core::{Profile, SandboxMode};
 pub(crate) use capture::{CaptureCommand, ScreenArgs};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
+pub(crate) use faces::{FacesArgs, FacesCommand};
 pub(crate) use search::{ENTRY_KINDS, IndexCommand, SearchArgs};
 pub(crate) use setup::{SetupCommand, SetupWhisperArgs};
 use std::path::PathBuf;
@@ -147,6 +149,8 @@ pub(crate) enum Commands {
     /// Download and record what optional providers need, such as a Whisper model.
     #[command(subcommand)]
     Setup(SetupCommand),
+    /// Manage the local face index: enroll people, name clusters, search by photo.
+    Faces(FacesArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -470,6 +474,21 @@ pub(crate) struct ConvertArgs {
     /// Omit the provenance page from the PDF.
     #[arg(long)]
     pub(crate) no_provenance_page: bool,
+
+    /// Name detected faces from the local face index and add a "People in …" page per
+    /// source; faces that match nobody become `person-N`. Needs a face detection plugin
+    /// and anytopdf-plugin-face-id.
+    #[arg(long)]
+    pub(crate) recognize_faces: bool,
+
+    /// Cosine similarity at or above which a face counts as a known person.
+    #[arg(long, default_value_t = anytopdf_faces::recognize::DEFAULT_THRESHOLD, requires = "recognize_faces")]
+    pub(crate) face_threshold: f32,
+
+    /// Face index file [default: faces.sqlite in the anytopdf data directory, or
+    /// ANYTOPDF_FACE_INDEX].
+    #[arg(long, value_name = "PATH", requires = "recognize_faces")]
+    pub(crate) face_index: Option<PathBuf>,
 
     /// Draw labelled boxes for detected regions over image and video-frame pages.
     ///

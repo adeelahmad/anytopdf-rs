@@ -1,0 +1,24 @@
+[package]
+name = "anytopdf-faces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Face alignment, the local face index and person matching for anytopdf"
+
+[features]
+default = ["index"]
+# The SQLite face index and graph recognition; the embedding plugin needs neither.
+index = ["dep:rusqlite", "dep:anytopdf-core"]
+
+[dependencies]
+anyhow.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+anytopdf-core = { path = "../anytopdf-core", optional = true }
+rusqlite = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true

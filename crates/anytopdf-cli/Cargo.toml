@@ -40,6 +40,7 @@ anytopdf-pdf = { path = "../anytopdf-pdf" }
 anytopdf-imap = { path = "../anytopdf-imap", optional = true }
 anytopdf-index = { path = "../anytopdf-index" }
 anytopdf-print = { path = "../anytopdf-print" }
+anytopdf-faces = { path = "../anytopdf-faces" }
 anytopdf-plugin-whisper = { path = "../anytopdf-plugin-whisper" }
 rustls.workspace = true
 clap.workspace = true

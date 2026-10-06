@@ -37,7 +37,8 @@ Capability kinds:
 
 A `graph-enricher` capability may set `"phase"`: `"before-units"` (the default)
 runs before unit enrichers, and `"after-units"` runs after them, for summaries
-over what they found. The host skips a capability with any other phase and
+over what they found or to consume their annotations (`anytopdf-plugin-face-id`
+embeds the faces a detector added). The host skips a capability with any other phase and
 reports a discovery warning. Hosts that predate the field run every graph
 enricher before unit enrichers; the protocol stays at `"protocol": 1`.
 

@@ -9,6 +9,7 @@ mod environment;
 mod events;
 mod exit;
 mod extract;
+mod faces;
 mod fetch;
 mod mcp;
 mod naming;
@@ -130,6 +131,10 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Commands::Print(command) => print::print(command),
         Commands::Capture(CaptureCommand::Screen(args)) => capture::screen(*args, &policy),
         Commands::Setup(SetupCommand::Whisper(args)) => setup::whisper(args, &policy),
+        Commands::Faces(args) => {
+            check_sandbox(&policy)?;
+            faces::faces(args, &policy)
+        }
     }
 }
 
