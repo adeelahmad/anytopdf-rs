@@ -14,6 +14,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `anytopdf.chunks/1`. App names come from a gazetteer, window titles and URL
   domains, never bare capitalized words. `--no-entities` turns extraction off and
   `--date-order dmy|mdy` sets how `03/04/2024` is read.
+- `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
+  gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
+  until `--duration` or Ctrl-C, then converts the recording with the video importer's
+  interval, scene-change and dedupe sampling. `anytopdf doctor` adds a "Screen capture"
+  section (`capture` in `--json`) with the grabber and, on macOS, the Screen Recording
+  permission.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

@@ -130,6 +130,54 @@ invocation transcribes every media source in the job, so raise
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
 the PDF is still written.
 
+### Visual descriptions
+
+`anytopdf-plugin-vlm` asks a local vision-language model about every image and
+video keyframe and writes the answers as searchable `caption` annotations. By
+default it asks for a caption, "What do you see in this image?" and the
+activities shown, as the original video-analysis script did. For each video,
+audio file or subtitle file it then adds a visible summary page before the
+source's other pages, with a category and up to five topics (`custom`
+annotations whose `entity` is `category` or `topic`). Videos also get a one- or
+two-sentence summary per scene (keyframes are split at FFmpeg scene changes).
+Summaries are written from the keyframe descriptions plus any transcript or
+subtitles; audio needs a transcript, for example from the Whisper plugin. Prompts
+never ask for anyone's age, gender, ethnicity or emotions.
+
+The plugin does nothing until `ANYTOPDF_VLM_URL` is set. It talks to either:
+
+- an OpenAI-compatible endpoint (default `ANYTOPDF_VLM_ENGINE=openai`): Ollama,
+  llama.cpp `llama-server`, LM Studio or vLLM, with `ANYTOPDF_VLM_MODEL` naming
+  a vision model; or
+- the Moondream API (`ANYTOPDF_VLM_ENGINE=moondream`): Moondream Station, or
+  Moondream2 through transformers with the bundled
+  `helpers/anytopdf-moondream-server.py` (`--device cpu|cuda`). This engine also
+  supports open-vocabulary detection: `ANYTOPDF_VLM_DETECT="red car,logo"` adds
+  an `object` annotation with a box for each match.
+
+```bash
+ollama pull llava
+cargo build --release -p anytopdf-plugin-vlm
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_VLM_URL=http://127.0.0.1:11434/v1 ANYTOPDF_VLM_MODEL=llava
+anytopdf convert meeting.mp4 --plugin-timeout 120 -o meeting.pdf
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_VLM_PROMPTS` | caption, query, activity | `type=prompt` entries separated by `\|`; an entry without `type=` is a `query` |
+| `ANYTOPDF_VLM_TIMEOUT` | `50` | seconds per keyframe, and for all summaries of a run; keep it below `--plugin-timeout` |
+| `ANYTOPDF_VLM_MAX_SIDE` | `768` | images are downscaled to this many pixels before upload |
+| `ANYTOPDF_VLM_API_KEY` | none | bearer token (OpenAI) or `X-Moondream-Auth` (Moondream) |
+| `ANYTOPDF_VLM_SUMMARY` | `on` | `off` skips summaries and categories |
+| `ANYTOPDF_LLM_URL`, `ANYTOPDF_LLM_MODEL` | the VLM endpoint | OpenAI-compatible text model for summaries; required for them with the Moondream engine |
+| `ANYTOPDF_VLM_CATEGORIES` | news, entertainment, education, sports, music, gaming, tutorial, meeting, documentary, other | comma-separated category list |
+
+Images go to the configured endpoint, so point it at a server you trust; a
+loopback URL bypasses any HTTP proxy. `--plugin-sandbox strict` blocks network
+access and therefore this plugin. An unreachable endpoint, a slow frame or a bad
+answer becomes a `plugin.warning`, and the PDF is still written.
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -251,6 +299,8 @@ Rendering:
 Bundled runtime plugins (separate executables in this workspace):
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
+  scene summaries and a category through a local vision-language model
 
 External plugins are the intended route for model-heavy enrichers such as:
 - YOLO / DETR object detection
@@ -287,6 +337,7 @@ anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf capture screen --duration 60 -o screen.pdf
 anytopdf mcp
 ```
 
@@ -299,6 +350,26 @@ anytopdf convert meeting.mp4 \
   --scene-threshold 0.30 \
   -o meeting.pdf
 ```
+
+### Screen capture
+
+`anytopdf capture screen` records the screen with FFmpeg and converts the
+recording like any video: a frame every `--interval` seconds plus every scene
+change, with near-duplicates dropped, then OCR and the usual pipeline.
+
+```bash
+anytopdf capture screen -o session.pdf                  # until Ctrl-C
+anytopdf capture screen --duration 600 --interval 10 -o standup.pdf
+anytopdf capture screen --display 1 --keep-recording s.mkv -- --ocr tesseract
+```
+
+It uses FFmpeg's platform grabber: `avfoundation` on macOS, `gdigrab` (whole
+desktop) or `ddagrab` (`--display N`) on Windows, `x11grab` on Linux. Pass
+`--input-format` and `--input` for any other FFmpeg input, such as `kmsgrab` on a
+Wayland session. macOS needs the Screen Recording permission for the terminal app;
+`anytopdf doctor` reports it and the grabber under "Screen capture". Options after
+`--` go to `convert`; the recording is deleted unless `--keep-recording` is given,
+and the PDF defaults to `screen-<UTC time>.pdf`.
 
 ### Progress events
 
@@ -612,6 +683,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] IMAP watcher: IDLE and polling, sender allowlist with DMARC check, OAuth2 (XOAUTH2) tokens, job-queue hand-off
 - [ ] IMAP rules beyond sender and search criteria (Paperless-ngx style), quarantine folder
 - [ ] Email-to-print
+- [x] Screen capture (`anytopdf capture screen`)
 
 ### Printing
 - [x] Spike: PAPPL printer feasibility
@@ -648,7 +720,7 @@ Building from source:
 - `Cargo.lock` pins dependencies compatible with this toolchain.
 
 Optional runtime providers:
-- `ffmpeg` / `ffprobe`: video/audio demuxing and keyframes
+- `ffmpeg` / `ffprobe`: video/audio demuxing, keyframes and screen capture
 - `exiftool`: rich metadata
 - `tesseract`: OCR fallback
 - Python + `doctr`: docTR OCR fallback

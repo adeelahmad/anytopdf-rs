@@ -1,4 +1,5 @@
 mod captions;
+pub mod capture;
 mod containers;
 mod dates;
 mod discovery;
