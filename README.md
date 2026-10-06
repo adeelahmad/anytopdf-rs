@@ -43,7 +43,7 @@ per-page chunks is embedded in the PDF, which makes the file its own index.
 
 | | |
 | --- | --- |
-| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
+| **Reads almost anything** | Photos (JPEG, PNG, TIFF, HEIC/AVIF), scanned and digital PDFs, video, audio, SRT/VTT captions, text and Markdown, HTML, `.eml`/`.mbox` email with attachments, WhatsApp/Telegram/Slack/iMessage chat exports, Word/Excel/PowerPoint/OpenDocument, zip and tar archives, and print jobs |
 | **Finds the words** | OCR through Apple Vision, docTR or Tesseract, kept word-aligned under the image; speech to text through the bundled Whisper plugin; video keyframes chosen by interval and scene change |
 | **Writes a real archive file** | Tagged PDF/A-3a with bookmarks, Arabic/Hebrew/CJK shaping, byte-reproducible output, and a provenance page |
 | **Proves where it came from** | Embedded `anytopdf-manifest.json` and `anytopdf-chunks.json` with source hashes and page maps; `anytopdf extract --json` reads them back |
@@ -221,6 +221,15 @@ Importers:
 - text / Markdown
 - HTML pages (readable text, title and image alt text; no network fetches)
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
+- chat exports: WhatsApp (`_chat.txt` or the exported `.zip`), Telegram Desktop JSON
+  (`result.json`, one chat or a whole account), Slack workspace exports (the `.zip`, or
+  extracted `YYYY-MM-DD.json` day files) and iMessage text from `imessage-exporter -f txt`.
+  Each conversation becomes text pages with a `time sender: text` line per message under
+  date headings; photos and files shipped inside the export are imported right after the
+  message that sent them (never from outside the export's folder, and once even when the
+  whole export folder is converted). Slack exports only link files, so those stay named
+  in the text. `--chat-date-order auto|dmy|mdy|ymd` reads
+  ambiguous WhatsApp dates; `--no-chat-attachments` names attachments without importing them
 - archives (`.zip`, `.tar`, `.tar.gz`/`.tgz`): an index page plus every member through its own importer, with zip-bomb and path-traversal limits
 - SRT / VTT captions
 - Office documents (Word, Excel, PowerPoint, OpenDocument, RTF) through
@@ -581,6 +590,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] HTML importer: `.html`/`.htm`/`.xhtml` or a doctype becomes a text page without scripts, styles or markup
 - [ ] URL snapshot
 - [x] Email importer: `.eml` and `.mbox` messages become text pages; attachments and forwarded messages are imported through the registry (nested at most 4 deep), unimportable ones warn `input.members-not-imported`
+- [x] Chat exports: WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) conversations with speakers, timestamps and attachments inline
 - [x] Archive importer: zip and (gzipped) tar members are extracted into the job workspace under sanitized names (no traversal, links skipped) with caps of 512 MiB per member, 1 GiB per archive, 10,000 entries, a 200:1 zip compression ratio, and 2 GiB / 10,000 members per input across nesting
 - [x] HEIC/HEIF/AVIF importer: the first of `sips`, `heif-convert`, `magick` or `convert` that decodes the photo produces the page; without one the input is skipped with `import.failed`
 - [x] Office documents through LibreOffice and Poppler

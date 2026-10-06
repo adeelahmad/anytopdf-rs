@@ -1,4 +1,5 @@
 mod captions;
+mod chat;
 mod containers;
 mod discovery;
 pub mod email;
@@ -12,6 +13,7 @@ mod scene;
 use anytopdf_core::Registry;
 use std::sync::Arc;
 
+pub use chat::{ChatDateOrder, ChatOptions};
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
@@ -28,6 +30,7 @@ pub struct BuiltinOptions {
     pub ocr_language: String,
     pub explicit_transcripts: Vec<std::path::PathBuf>,
     pub embedded_subtitles: bool,
+    pub chat: ChatOptions,
 }
 
 impl Default for BuiltinOptions {
@@ -42,6 +45,7 @@ impl Default for BuiltinOptions {
             ocr_language: "eng".to_string(),
             explicit_transcripts: Vec::new(),
             embedded_subtitles: true,
+            chat: ChatOptions::default(),
         }
     }
 }
@@ -70,8 +74,16 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     )));
     registry.register_importer(Arc::new(importers::AudioImporter));
     registry.register_importer(Arc::new(importers::OfficeImporter));
+    let chat_attachments = importers::ImportedAttachments::default();
+    registry.register_importer(Arc::new(importers::ChatImporter::new(
+        opts.chat,
+        chat_attachments.clone(),
+    )));
 
     registry.register_unit_enricher(Arc::new(ocr::OcrEnricher::new(opts.ocr, opts.ocr_language)));
+    registry.register_graph_enricher(Arc::new(importers::ChatAttachmentDedupe::new(
+        chat_attachments,
+    )));
     registry.register_graph_enricher(Arc::new(captions::CaptionEnricher::new(
         opts.explicit_transcripts,
         opts.embedded_subtitles,

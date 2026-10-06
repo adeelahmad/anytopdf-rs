@@ -69,6 +69,7 @@ pub fn capabilities() -> Result<Value> {
         "audio",
         "ffmpeg-video",
         "office",
+        "chat",
     ]
     .iter()
     .map(|name| json!({"name": name}))

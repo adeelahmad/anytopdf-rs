@@ -5,7 +5,8 @@ use crate::naming;
 use crate::publish::{checked_destination, publish_output};
 use anyhow::{Context, Result};
 use anytopdf_builtin::{
-    BuiltinOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs, register_builtins,
+    BuiltinOptions, ChatOptions, DiscoveryOptions, OcrMode, detect_providers, discover_inputs,
+    register_builtins,
 };
 use anytopdf_core::{
     Channel, ChunkSet, Diagnostic, DiagnosticCode, DocumentGraph, Manifest, Pipeline,
@@ -349,6 +350,10 @@ fn convert_inner(
         ocr_language: args.lang,
         explicit_transcripts: args.transcripts,
         embedded_subtitles: !args.no_embedded_subtitles,
+        chat: ChatOptions {
+            attachments: !args.no_chat_attachments,
+            date_order: args.chat_date_order,
+        },
     };
 
     let (registry, mut warnings) = registry(opts, policy);

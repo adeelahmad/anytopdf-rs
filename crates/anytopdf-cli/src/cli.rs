@@ -1,4 +1,4 @@
-use anytopdf_builtin::OcrMode;
+use anytopdf_builtin::{ChatDateOrder, OcrMode};
 use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
 use std::path::PathBuf;
@@ -370,6 +370,16 @@ pub(crate) struct ConvertArgs {
     /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]
     pub(crate) no_embedded_subtitles: bool,
+
+    /// How numeric dates in chat exports are read (auto picks day-first unless only month-first fits).
+    #[arg(long, default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(
+        ["auto", "dmy", "mdy", "ymd"]
+    ).try_map(|s| s.parse::<ChatDateOrder>()))]
+    pub(crate) chat_date_order: ChatDateOrder,
+
+    /// Name attachments in chat exports without importing them.
+    #[arg(long)]
+    pub(crate) no_chat_attachments: bool,
 
     /// Write the normalized document graph as JSON to this path.
     #[arg(long)]
