@@ -91,6 +91,21 @@ ExifTool, ffprobe, hashes, provenance, GPS, dates, etc.
 Adds OCR, captions, transcripts, object labels, scene labels, face bounds, and
 other annotations to individual units.
 
+Unit enrichers run in registration order, built-ins before runtime plugins. A
+late unit enricher (`Registry::register_late_unit_enricher`) runs after all of
+them, so it can read their output. The built-in `text-entities` enricher is one:
+it turns URLs, emails, domains and app names found in OCR, caption, transcript and
+visible text into `Custom` annotations with `attributes.entity`
+(`url|email|domain|app`) and `attributes.from` (`ocr|caption|transcript|text`);
+URLs and domains also carry `attributes.href`, a followable absolute URL; and
+dates and times into `Timestamp` annotations with `attributes.entity`
+(`date|time|datetime`), `attributes.iso` (ISO 8601) and `attributes.relative` when
+resolved against the source's capture date. Each keeps the time range of the cue
+or keyframe it came from. OCR words are rebuilt into lines first, so multi-word
+names, window titles and dates are found. The renderer adds these to the hidden
+text layer and the chunks list them under `entities` instead of repeating them in
+the chunk text.
+
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text

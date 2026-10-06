@@ -151,6 +151,14 @@ responses must retain existing sources and keep valid, unique IDs and references
 Annotations must have a provider, finite coordinates, confidence between 0 and 1
 when supplied, and finite, ordered nonnegative time ranges.
 
+A `custom` annotation with an `entity` attribute (for example
+`{"kind":"custom","text":"https://example.com","attributes":{"entity":"url"}}`)
+is a structured entity: it is written to the hidden text layer and listed in the
+unit's chunk `entities`; so is a `timestamp` annotation with an `entity`
+attribute, listed by its `iso` attribute when present. The built-in
+`text-entities` enricher runs after runtime unit enrichers, so URLs, app names and
+dates in plugin captions and transcripts are extracted too.
+
 Visual paths must be absolute existing paths to the original input or inside the
 canonical job workspace. The host resolves symlinks before validating the path.
 This validation does not prevent an executable from accessing other files itself.

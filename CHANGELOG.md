@@ -6,6 +6,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- URLs, email addresses, domains and app names found in OCR, captions, transcripts
+  and text become `custom` entity annotations, and dates and times become
+  `timestamp` annotations with an ISO 8601 value (relative ones such as "last
+  Friday" resolved against the capture date). Both are searchable in the hidden text
+  layer and listed per chunk under the new optional `entities` field of
+  `anytopdf.chunks/1`. App names come from a gazetteer, window titles and URL
+  domains, never bare capitalized words. `--no-entities` turns extraction off and
+  `--date-order dmy|mdy` sets how `03/04/2024` is read.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

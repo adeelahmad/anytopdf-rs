@@ -235,6 +235,14 @@ Enrichment:
   - Tesseract CLI
 - sidecar captions / transcripts
 - video timestamps and scene-selection provenance
+- URLs, email addresses, domains, app names, dates and times from OCR, captions and
+  transcripts alike (`--no-entities` turns this off). App names come from a small
+  gazetteer, window titles such as `Budget.xlsx - Excel`, and URL domains
+  (`docs.google.com/spreadsheets` is Google Sheets), never from bare capitalized
+  words. Dates ("3 March 2024", "2024-03-03 14:05", "Tuesday at 5pm", "last
+  Friday") are normalized to ISO 8601; relative ones resolve against the capture
+  date from ExifTool or ffprobe when known, and each keeps the moment it was seen
+  or spoken. `--date-order dmy|mdy` (default `dmy`) reads `03/04/2024`
 
 Rendering:
 - tagged PDF/A-3a with bookmarks via `krilla` (default, `--renderer pdfa`)
@@ -335,7 +343,9 @@ text can embed different fonts on different hosts.
 Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
 (`anytopdf.manifest/1`: sources with SHA-256 and size, units, providers, profile)
 and `anytopdf-chunks.json` (`anytopdf.chunks/1`: one chunk per unit with page
-traceability). Schemas live in `schemas/`. The `share` profile omits absolute
+traceability, plus an optional `entities` list of `{kind, value}` such as
+`{"kind":"url","value":"https://example.com"}` with kinds `url`, `email`, `domain`,
+`app`, `date`, `time` and `datetime`; dates and times carry their ISO 8601 value). Schemas live in `schemas/`. The `share` profile omits absolute
 paths. If embedding fails, the same JSON is written beside the PDF as
 `<output>.manifest.json` and `<output>.chunks.json` and an informational
 `manifest.sidecar` notice is printed.
