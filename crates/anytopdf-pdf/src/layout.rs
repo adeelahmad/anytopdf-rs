@@ -18,13 +18,18 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
     ]
 }
 
-pub(crate) fn is_searchable_content(kind: &AnnotationKind) -> bool {
+pub(crate) fn is_searchable_content(a: &Annotation) -> bool {
     use AnnotationKind::*;
-    matches!(*kind, Ocr | Caption | Transcript | Object | Barcode)
+    matches!(a.kind, Ocr | Caption | Transcript | Object | Barcode)
+        || (matches!(a.kind, Custom | Timestamp) && a.attributes.contains_key("entity"))
 }
 
 pub(crate) fn annotation_line(a: &Annotation) -> String {
-    format!("[{:?}][{}] {}", a.kind, a.provider, a.text)
+    match a.attributes.get("iso") {
+        // "last Friday (2024-03-01)" is found by searching either form.
+        Some(iso) => format!("[{:?}][{}] {} ({iso})", a.kind, a.provider, a.text),
+        None => format!("[{:?}][{}] {}", a.kind, a.provider, a.text),
+    }
 }
 
 pub(crate) fn time_line(t: TimeRange) -> String {
@@ -198,5 +203,28 @@ mod tests {
         assert!(ys.iter().all(|y| *y > 0.0 && *y < 297.0), "y out of page");
         let shown = invisible_items(&[PdfPage::new(Mm(210.0), Mm(297.0), ops)]);
         assert_eq!(shown[0], lines);
+    }
+
+    #[test]
+    fn entity_annotations_join_the_search_layer_with_their_iso_value() {
+        let mut date = Annotation::text(AnnotationKind::Timestamp, "text-entities", "last Friday");
+        date.attributes.insert("entity".into(), "date".into());
+        date.attributes.insert("iso".into(), "2024-03-01".into());
+        assert!(is_searchable_content(&date));
+        assert_eq!(
+            annotation_line(&date),
+            "[Timestamp][text-entities] last Friday (2024-03-01)"
+        );
+        let mut url = Annotation::text(AnnotationKind::Custom, "text-entities", "https://x.io");
+        url.attributes.insert("entity".into(), "url".into());
+        assert!(is_searchable_content(&url));
+        // Video frame timestamps and other custom annotations stay out.
+        let frame = Annotation::text(AnnotationKind::Timestamp, "ffmpeg-video", "video timestamp");
+        assert!(!is_searchable_content(&frame));
+        assert!(!is_searchable_content(&Annotation::text(
+            AnnotationKind::Custom,
+            "p",
+            "x"
+        )));
     }
 }

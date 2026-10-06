@@ -6,6 +6,18 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf-plugin-sentiment`, a bundled opt-in runtime plugin, labels transcript
+  segments, caption cues, OCR blocks and text paragraphs `positive`, `negative` or
+  `neutral` and tags them `question`, `complaint` or `urgent` (`formal`/`informal`
+  with an LLM). Labels are `custom` annotations with `entity` `sentiment`, `tone` or
+  `sentiment-overall` and the segment's time range or region, written to the hidden
+  text layer so "negative" or "complaint" is searchable. English works offline
+  through a built-in VADER lexicon port; `ANYTOPDF_SENTIMENT_LLM_URL` and
+  `ANYTOPDF_SENTIMENT_LLM_MODEL` use a local OpenAI-compatible endpoint instead,
+  falling back to the lexicon with a warning. Text only: nothing is inferred from
+  faces or voices.
+- `custom` and `timestamp` annotations carrying an `entity` attribute are written to
+  the hidden text layer.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

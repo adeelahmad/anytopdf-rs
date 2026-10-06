@@ -17,9 +17,9 @@ the container image on GHCR.
 ## Bundled plugins
 
 Every archive carries the workspace's runtime plugins (`PLUGINS` in the
-Makefile, currently `anytopdf-plugin-whisper`) in a `plugins/` folder. They are
-opt-in: anytopdf runs them only once `ANYTOPDF_PLUGIN_PATH` names that folder,
-because an enabled Whisper plugin without an engine warns on every audio or
+Makefile, currently `anytopdf-plugin-sentiment` and `anytopdf-plugin-whisper`) in
+a `plugins/` folder. They are opt-in: anytopdf runs them only once
+`ANYTOPDF_PLUGIN_PATH` names that folder, because an enabled Whisper plugin without an engine warns on every audio or
 video conversion and would fail `--strict` runs. `make package` checks that each
 plugin answers `--anytopdf-manifest` on the build runner before archiving.
 

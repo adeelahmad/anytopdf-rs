@@ -275,7 +275,7 @@ impl SearchablePdfRenderer {
             unit.annotations
                 .iter()
                 .filter(|a| {
-                    is_searchable_content(&a.kind)
+                    is_searchable_content(a)
                         && (a.kind != AnnotationKind::Ocr || a.region.is_none())
                 })
                 .map(annotation_line),
@@ -328,7 +328,7 @@ impl SearchablePdfRenderer {
                 hidden_parts.extend(
                     unit.annotations
                         .iter()
-                        .filter(|a| is_searchable_content(&a.kind))
+                        .filter(|a| is_searchable_content(a))
                         .map(annotation_line),
                 );
                 if let Some(time) = unit.time_range {

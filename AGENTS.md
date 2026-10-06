@@ -9,6 +9,7 @@ This Rust workspace converts media and documents into searchable PDFs:
 - `crates/anytopdf-pdf/`: PDF rendering from the normalized graph.
 - `crates/anytopdf-cli/`: the `anytopdf` executable and CLI arguments.
 - `crates/anytopdf-plugin-whisper/`: Whisper speech-to-text runtime plugin.
+- `crates/anytopdf-plugin-sentiment/`: sentiment and tone runtime plugin (VADER lexicon or local LLM).
 - `examples/anytopdf-plugin-example.py`: runtime plugin example.
 - `scripts/verify.sh`: local checks; `.github/workflows/release.yml`: release builds.
 

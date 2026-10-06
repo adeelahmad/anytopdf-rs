@@ -228,6 +228,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "anytopdf-plugin-sentiment"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-core",
+ "serde_json",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "anytopdf-plugin-whisper"
 version = "0.2.0"
 dependencies = [

@@ -39,7 +39,8 @@ class Anytopdf < Formula
       Install the ones you need:
         brew install ffmpeg exiftool tesseract whisper-cpp
       Bundled runtime plugins are opt-in. To transcribe audio and video with
-      anytopdf-plugin-whisper, add to your shell profile:
+      anytopdf-plugin-whisper and tag the sentiment and tone of text with
+      anytopdf-plugin-sentiment, add to your shell profile:
         export ANYTOPDF_PLUGIN_PATH="#{opt_libexec}/plugins"
         export ANYTOPDF_WHISPER_MODEL=/path/to/ggml-base.en.bin
       Then run `anytopdf doctor` to check what is available.
@@ -50,7 +51,13 @@ class Anytopdf < Formula
     assert_match version.to_s, shell_output("#{bin}/anytopdf --version")
     assert_match "anytopdf.capabilities/1",
                  shell_output("#{bin}/anytopdf --no-plugins capabilities --json")
-    assert_match "\"protocol\":1",
-                 shell_output("#{libexec}/plugins/anytopdf-plugin-whisper --anytopdf-manifest")
+    if (libexec/"plugins/anytopdf-plugin-sentiment").exist?
+      assert_match "\"protocol\":1",
+                   shell_output("#{libexec}/plugins/anytopdf-plugin-sentiment --anytopdf-manifest")
+    end
+    if (libexec/"plugins/anytopdf-plugin-whisper").exist?
+      assert_match "\"protocol\":1",
+                   shell_output("#{libexec}/plugins/anytopdf-plugin-whisper --anytopdf-manifest")
+    end
   end
 end
