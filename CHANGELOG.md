@@ -79,6 +79,9 @@ Visual and audio analysis, cross-file search, and many new inputs.
   their table in a new optional `options` request field (protocol stays 1).
   `anytopdf config` shows the effective settings and where each came from; new
   `anytopdf.config/1` and config-file schemas.
+  `--no-entities`, `--colors`, `--location`, `--date-order`, `--raw-decode` and
+  `--scan-mode` resolve the same way through new `[entities]`, `[colors]`,
+  `[location]`, `[raw]` and `[scan]` tables.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's
@@ -212,6 +215,7 @@ Visual and audio analysis, cross-file search, and many new inputs.
 #### Maintenance
 
 - security: model the opt-in plugin sandbox and the IMAP watcher (#30) (b73c6dfd)
+- share ONNX helpers and move flag-only options into config tables (#55) (f4709fbb)
 
 ## 0.2.0
 
