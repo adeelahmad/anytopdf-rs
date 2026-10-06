@@ -294,3 +294,29 @@ fn forwarded_flags_reproduce_the_configuration_sources() {
         ["--no-config", "--config=a.toml", "--set=strict=true"].map(OsString::from)
     );
 }
+
+#[test]
+fn every_builtin_table_has_a_strict_schema_entry() {
+    let schema = file_schema();
+    for table in anytopdf_builtin::option_tables() {
+        let path = [table.section.to_string(), table.name.to_string()];
+        let node = super::values::schema_node(&path).unwrap();
+        assert_eq!(
+            node["additionalProperties"],
+            json!(false),
+            "{}.{} needs a $defs entry in config-file.schema.json",
+            table.section,
+            table.name
+        );
+        let keys: Vec<&String> = table.defaults.as_object().unwrap().keys().collect();
+        for key in keys {
+            assert!(
+                node["properties"].get(key).is_some(),
+                "{}.{}.{key} is missing from the schema",
+                table.section,
+                table.name
+            );
+        }
+    }
+    assert!(schema["properties"]["importer"].is_object());
+}
