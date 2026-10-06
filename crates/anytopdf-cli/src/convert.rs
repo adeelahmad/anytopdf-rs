@@ -349,6 +349,7 @@ fn convert_inner(
         ocr_language: args.lang,
         explicit_transcripts: args.transcripts,
         embedded_subtitles: !args.no_embedded_subtitles,
+        colors: args.colors,
     };
 
     let (registry, mut warnings) = registry(opts, policy);

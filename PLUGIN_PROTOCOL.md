@@ -158,6 +158,11 @@ responses must retain existing sources and keep valid, unique IDs and references
 Annotations must have a provider, finite coordinates, confidence between 0 and 1
 when supplied, and finite, ordered nonnegative time ranges.
 
+The renderer writes `ocr`, `caption`, `transcript`, `object` and `barcode`
+annotations into the hidden search layer. A `custom` annotation joins them only
+when its `attributes` include `entity` (for example the built-in dominant-colour
+enricher's `entity: "color"`); other custom annotations stay in the chunks JSON.
+
 Visual paths must be existing paths to the original input or inside the canonical
 job workspace. Send absolute paths: a relative path is resolved against anytopdf's
 working directory, and the containment check, not absoluteness, is what the host
