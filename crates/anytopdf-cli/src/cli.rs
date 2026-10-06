@@ -1,4 +1,4 @@
-use anytopdf_builtin::OcrMode;
+use anytopdf_builtin::{ChatDateOrder, OcrMode};
 use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
 use std::path::PathBuf;
@@ -425,10 +425,20 @@ pub(crate) struct ConvertArgs {
     /// Order of day and month in all-numeric dates such as 03/04/2024.
     #[arg(long, default_value = "dmy", value_parser = ["dmy", "mdy"])]
     pub(crate) date_order: String,
+
     /// Dominant-colour annotations on images and keyframes (searching "red" finds red frames).
     #[arg(long, action = clap::ArgAction::Set, default_value = "on", value_parser = clap::builder::PossibleValuesParser::new(["on", "off"])
         .map(|s| s == "on"))]
     pub(crate) colors: bool,
+    /// How numeric dates in chat exports are read (auto picks day-first unless only month-first fits).
+    #[arg(long, default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new(
+        ["auto", "dmy", "mdy", "ymd"]
+    ).try_map(|s| s.parse::<ChatDateOrder>()))]
+    pub(crate) chat_date_order: ChatDateOrder,
+
+    /// Name attachments in chat exports without importing them.
+    #[arg(long)]
+    pub(crate) no_chat_attachments: bool,
 
     /// Write the normalized document graph as JSON to this path.
     #[arg(long)]

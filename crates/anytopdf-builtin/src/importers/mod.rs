@@ -1,5 +1,6 @@
 mod archive;
 mod audio;
+mod chat;
 mod email;
 mod heif;
 mod html;
@@ -14,6 +15,7 @@ mod video;
 
 pub use archive::ArchiveImporter;
 pub use audio::AudioImporter;
+pub use chat::{ChatAttachmentDedupe, ChatImporter, ImportedAttachments};
 pub use email::EmailImporter;
 pub use heif::HeifImporter;
 pub use html::HtmlImporter;

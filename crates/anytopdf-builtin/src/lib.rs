@@ -1,5 +1,6 @@
 mod captions;
 pub mod capture;
+mod chat;
 mod colors;
 mod containers;
 mod dates;
@@ -21,8 +22,9 @@ use std::sync::Arc;
 /// playlist cannot make them fetch network URLs.
 pub(crate) const FFMPEG_PROTOCOLS: &str = "file";
 
-pub use dates::DateOrder;
+pub use chat::{ChatDateOrder, ChatOptions};
 pub use colors::{DominantColor, dominant_colors};
+pub use dates::DateOrder;
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use importers::StructuredOptions;
@@ -48,6 +50,7 @@ pub struct BuiltinOptions {
     pub colors: bool,
     /// JSON / JSON Lines importer options (`[importer.structured]`).
     pub structured: StructuredOptions,
+    pub chat: ChatOptions,
 }
 
 impl Default for BuiltinOptions {
@@ -66,6 +69,7 @@ impl Default for BuiltinOptions {
             date_order: DateOrder::DayFirst,
             colors: true,
             structured: StructuredOptions::default(),
+            chat: ChatOptions::default(),
         }
     }
 }
@@ -97,8 +101,16 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     )));
     registry.register_importer(Arc::new(importers::AudioImporter));
     registry.register_importer(Arc::new(importers::OfficeImporter));
+    let chat_attachments = importers::ImportedAttachments::default();
+    registry.register_importer(Arc::new(importers::ChatImporter::new(
+        opts.chat,
+        chat_attachments.clone(),
+    )));
 
     registry.register_unit_enricher(Arc::new(ocr::OcrEnricher::new(opts.ocr, opts.ocr_language)));
+    registry.register_graph_enricher(Arc::new(importers::ChatAttachmentDedupe::new(
+        chat_attachments,
+    )));
     registry.register_graph_enricher(Arc::new(captions::CaptionEnricher::new(
         opts.explicit_transcripts,
         opts.embedded_subtitles,

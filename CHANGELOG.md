@@ -29,6 +29,9 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   interval, scene-change and dedupe sampling. `anytopdf doctor` adds a "Screen capture"
   section (`capture` in `--json`) with the grabber and, on macOS, the Screen Recording
   permission.
+- WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) chat exports become
+  conversation pages with a `time sender: text` line per message; attachments in the export
+  follow the message that sent them. New `--chat-date-order` and `--no-chat-attachments`.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

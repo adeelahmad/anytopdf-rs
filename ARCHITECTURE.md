@@ -68,8 +68,10 @@ An importer emits normalized units. Examples:
 - JSON / JSON Lines -> one text unit per record (or an outline unit per document section)
 - future `.igl` -> arbitrary page/image/text units
 - email/archive -> its own units plus the units of each member file
+- chat export -> text units per conversation (split at about 12 KiB), each
+  followed by the units of the attachments its last message sent
 
-Containers (emails, archives) implement `Importer::import_with_members`. They
+Containers (emails, archives, chat exports) implement `Importer::import_with_members`. They
 write members into the job workspace under sanitized single-component names and
 hand each path to the pipeline's `MemberImporter`, which probes it against the
 registry like a top-level input. Member units are re-parented onto the container
