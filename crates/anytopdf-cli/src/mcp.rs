@@ -235,8 +235,8 @@ fn initialize(params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "anytopdf", "version": env!("CARGO_PKG_VERSION")},
-        "instructions": "Convert local media and documents into searchable PDFs and read \
-            back their embedded manifest and chunks. Paths are local to the machine running \
+        "instructions": "Convert local media and documents into searchable PDFs, read \
+            back their embedded manifest and chunks, and ask questions about them. Paths are local to the machine running \
             the server; relative paths resolve against the server's working directory, so \
             prefer absolute paths. Outputs are never overwritten unless overwrite is true, \
             and source files are always protected."
@@ -291,6 +291,27 @@ fn tool_definitions() -> Value {
             "annotations": {"readOnlyHint": true, "openWorldHint": false}
         },
         {
+            "name": "ask",
+            "title": "Ask a question about converted files",
+            "description": "Answer a question from one PDF produced by anytopdf, or a directory \
+                of them. Retrieves the best-matching chunks and, when ANYTOPDF_LLM_URL points at \
+                an OpenAI-compatible server, answers with [n] citations; otherwise returns the \
+                ranked passages. Each passage carries its file, pages and time range. Returns \
+                the anytopdf.ask/1 document.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "description": "PDF produced by anytopdf, or a directory of them."},
+                    "question": {"type": "string", "description": "The question to answer."},
+                    "top": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Number of ranked passages to retrieve (default 8)."},
+                    "no_llm": {"type": "boolean", "description": "Return ranked passages only, even when an LLM endpoint is configured."}
+                },
+                "required": ["source", "question"],
+                "additionalProperties": false
+            },
+            "annotations": {"readOnlyHint": true, "openWorldHint": true}
+        },
+        {
             "name": "probe",
             "title": "Probe an input",
             "description": "Detect the format of a file and the importer that would handle it, \
@@ -338,6 +359,7 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             "max_image_frames",
         ],
         "extract" => &["pdf"],
+        "ask" => &["source", "question", "top", "no_llm"],
         "probe" => &["input"],
         "capabilities" => &[],
         other => return Err(format!("unknown tool: {other}")),
@@ -356,6 +378,7 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             argv.push(string(arguments, "input")?.ok_or("probe requires `input`")?);
         }
         "convert" => convert_argv(arguments, &mut argv)?,
+        "ask" => ask_argv(arguments, &mut argv)?,
         _ => {}
     }
     Ok(argv)
@@ -417,6 +440,25 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
     }
     argv.push("--".into());
     argv.extend(inputs);
+    Ok(())
+}
+
+fn ask_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Result<(), String> {
+    if let Some(value) = arguments.get("top").filter(|v| !v.is_null()) {
+        let top = value
+            .as_u64()
+            .filter(|n| (1..=100).contains(n))
+            .ok_or("`top` must be an integer from 1 to 100")?;
+        argv.push(format!("--top={top}"));
+    }
+    match arguments.get("no_llm") {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => {}
+        Some(Value::Bool(true)) => argv.push("--no-llm".into()),
+        Some(_) => return Err("`no_llm` must be a boolean".into()),
+    }
+    let source = string(arguments, "source")?.ok_or("ask requires `source`")?;
+    let question = string(arguments, "question")?.ok_or("ask requires `question`")?;
+    argv.extend(["--".into(), source, question]);
     Ok(())
 }
 
@@ -490,6 +532,12 @@ mod tests {
                 json!({"inputs": ["a"], "dump_graph": "/tmp/g.json"}),
             ),
             ("extract", json!({})),
+            ("ask", json!({"source": "a.pdf"})),
+            ("ask", json!({"source": "a.pdf", "question": "q", "top": 0})),
+            (
+                "ask",
+                json!({"source": "a.pdf", "question": "q", "no_llm": 1}),
+            ),
             ("probe", json!({"input": 3})),
             ("capabilities", json!({"x": 1})),
             ("shell", json!({})),
@@ -499,6 +547,21 @@ mod tests {
                 "{tool} accepted {value}"
             );
         }
+    }
+
+    #[test]
+    fn ask_arguments_keep_question_and_source_positional() {
+        let argv = tool_argv(
+            "ask",
+            &args(json!({"source": "-a.pdf", "question": "--json?", "top": 3, "no_llm": true})),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "ask", "--json", "--top=3", "--no-llm", "--", "-a.pdf", "--json?"
+            ]
+        );
     }
 
     #[test]

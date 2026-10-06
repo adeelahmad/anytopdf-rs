@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/ask/v1",
+  "title": "anytopdf ask",
+  "type": "object",
+  "required": ["schema_version", "question", "mode", "model", "answer", "cited", "passages", "warnings"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "anytopdf.ask/1"},
+    "question": {"type": "string"},
+    "mode": {"enum": ["llm", "retrieval"]},
+    "model": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "answer": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+    "cited": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+    "passages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["n", "file", "source", "pages", "kind", "text", "score"],
+        "additionalProperties": false,
+        "properties": {
+          "n": {"type": "integer", "minimum": 1},
+          "file": {"type": "string"},
+          "source": {"type": "string"},
+          "pages": {
+            "type": "object",
+            "required": ["first", "last"],
+            "additionalProperties": false,
+            "properties": {"first": {"type": "integer", "minimum": 1}, "last": {"type": "integer", "minimum": 1}}
+          },
+          "time": {
+            "type": "object",
+            "required": ["start_seconds", "end_seconds"],
+            "additionalProperties": false,
+            "properties": {"start_seconds": {"type": "number", "minimum": 0}, "end_seconds": {"type": "number", "minimum": 0}}
+          },
+          "kind": {"type": "string"},
+          "text": {"type": "string"},
+          "score": {"type": "number", "minimum": 0}
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {"code": {"type": "string"}, "message": {"type": "string"}}
+      }
+    }
+  }
+}

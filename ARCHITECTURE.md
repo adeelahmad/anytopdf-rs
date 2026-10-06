@@ -230,6 +230,12 @@ layer holds content only; provenance is a visible back-matter page.
 The PDF embeds a manifest and attachment chunks describing the sources. The `extract`
 command recovers them.
 
+`ask` reads those chunks back (through `extract`), ranks them against a question
+with BM25, and optionally sends the top passages to an OpenAI-compatible chat
+endpoint (`ANYTOPDF_LLM_URL`). It is a consumer of the normalized output, like a
+RAG client, and never touches the pipeline; every passage keeps its PDF, page
+range and time-span anchor so answers stay traceable.
+
 ## CLI contract
 
 Failures map to exit codes 0-7. `--events` attaches an observer to the pipeline that writes NDJSON progress to stderr; the CLI emits the terminal `run.finished`. `--json` output follows published schemas, and the

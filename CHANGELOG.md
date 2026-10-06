@@ -6,6 +6,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf ask <pdf-or-directory> "<question>"` and the MCP `ask` tool answer a
+  question from converted PDFs. Chunks are ranked with BM25 and returned as numbered
+  passages citing PDF, pages, time range and original file. With `ANYTOPDF_LLM_URL`
+  set to an OpenAI-compatible server the answer cites them as `[n]`; an unreachable
+  endpoint adds an `ask.llm-failed` warning and falls back to the passages. New
+  `anytopdf.ask/1` schema.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error

@@ -152,7 +152,7 @@ fn capabilities_lists_profiles_ocr_modes_importers_and_schema_ids() {
             schema["$id"].as_str().expect("schema $id").to_string()
         })
         .collect();
-    assert_eq!(on_disk.len(), 11, "11 schema files expected: {on_disk:?}");
+    assert_eq!(on_disk.len(), 12, "12 schema files expected: {on_disk:?}");
     let listed: BTreeSet<String> = document["schemas"]
         .as_array()
         .expect("schemas must be an array")

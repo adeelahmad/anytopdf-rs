@@ -279,6 +279,7 @@ anytopdf doctor
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf ask archive.pdf "When is the Acme invoice due?"
 anytopdf mcp
 ```
 
@@ -348,6 +349,32 @@ on stderr) but still exits 0. A version-matched manifest or chunks file that
 does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
+
+### Asking questions
+
+`anytopdf ask <pdf-or-directory> "<question>"` answers a question from PDFs that
+anytopdf produced. It reads each PDF's embedded chunks (every `*.pdf` directly in
+a directory), ranks them with BM25 and keeps the best `--top N` (default 8) as
+numbered passages. Each passage cites its PDF, pages, time range for audio and
+video, and the original file name.
+
+With no LLM configured, ask prints those passages. To get a written answer that
+cites them as `[n]`, point it at any OpenAI-compatible server such as llama.cpp,
+Ollama, vLLM or LM Studio:
+
+```bash
+export ANYTOPDF_LLM_URL=http://127.0.0.1:11434/v1   # POSTs to $URL/chat/completions
+export ANYTOPDF_LLM_MODEL=llama3.2                  # optional: ANYTOPDF_LLM_API_KEY, ANYTOPDF_LLM_TIMEOUT
+anytopdf ask meeting.pdf "What did we decide about the launch date?"
+```
+
+The question and the retrieved passages are sent to that URL, so use a local
+server for private files. If the endpoint fails, ask prints an `ask.llm-failed`
+warning and returns the passages, still exiting 0. `--no-llm` skips the endpoint.
+`--json` prints one `anytopdf.ask/1` document (`schemas/ask.schema.json`):
+`mode` (`llm` or `retrieval`), `answer`, `cited` passage numbers, `passages` and
+`warnings`. A missing or unreadable PDF exits 3, an empty question or a
+non-HTTP `ANYTOPDF_LLM_URL` exits 2.
 
 ### Watching a mailbox (IMAP)
 
@@ -504,6 +531,7 @@ as tools:
 | --- | --- | --- |
 | `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
 | `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
+| `ask` | `anytopdf ask --json` | `anytopdf.ask/1` answer and cited passages |
 | `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
 | `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
 
@@ -555,6 +583,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] `--json` for convert, probe, doctor and plugins, with capabilities and published JSON Schemas
 - [x] Help text on every flag
 - [x] NDJSON progress events
+- [x] `anytopdf ask` answers questions with cited passages (MCP `ask` tool)
 
 ### Evidence file and provenance
 - [x] Content-derived source and unit IDs with SHA-256 and size

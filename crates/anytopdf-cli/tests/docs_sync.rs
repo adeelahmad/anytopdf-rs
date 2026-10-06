@@ -104,7 +104,7 @@ fn schemas_readme_lists_the_events_schema() {
     let absent = missing(
         &readme,
         &[
-            "exactly 11 files",
+            "exactly 12 files",
             "events",
             "anytopdf.events/1",
             "--events",

@@ -59,7 +59,7 @@ fn reply(replies: &[Value], id: u64) -> &Value {
 }
 
 #[test]
-fn mcp_handshake_lists_the_four_tools_and_ignores_notifications() {
+fn mcp_handshake_lists_the_five_tools_and_ignores_notifications() {
     let dir = tempfile::tempdir().unwrap();
     let replies = session(
         &[
@@ -81,7 +81,10 @@ fn mcp_handshake_lists_the_four_tools_and_ignores_notifications() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["convert", "extract", "probe", "capabilities"]);
+    assert_eq!(
+        names,
+        ["convert", "extract", "ask", "probe", "capabilities"]
+    );
     assert_eq!(reply(&replies, 2)["result"], json!({}));
 }
 
@@ -102,10 +105,15 @@ fn mcp_convert_then_extract_round_trips_through_the_cli() {
             ),
             call(3, "extract", json!({"pdf": pdf})),
             call(4, "capabilities", json!({})),
+            call(
+                5,
+                "ask",
+                json!({"source": pdf, "question": "Which fixture line?", "no_llm": true}),
+            ),
         ],
         dir.path(),
     );
-    for id in 1..=4 {
+    for id in 1..=5 {
         let result = &reply(&replies, id)["result"];
         assert_eq!(result["isError"], false, "call {id} failed: {result}");
         let text = result["content"][0]["text"].as_str().unwrap();
@@ -126,6 +134,9 @@ fn mcp_convert_then_extract_round_trips_through_the_cli() {
         reply(&replies, 4)["result"]["structuredContent"]["schema_version"],
         "anytopdf.capabilities/1"
     );
+    let ask = &reply(&replies, 5)["result"]["structuredContent"];
+    assert_eq!(ask["mode"], "retrieval");
+    assert_eq!(ask["passages"][0]["source"], "notes.txt");
 }
 
 #[test]
