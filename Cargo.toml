@@ -7,6 +7,7 @@ members = [
   "crates/anytopdf-cli",
   "crates/anytopdf-imap",
   "crates/anytopdf-index",
+  "crates/anytopdf-plugin-vlm",
   "crates/anytopdf-plugin-whisper",
   "crates/anytopdf-print",
 ]

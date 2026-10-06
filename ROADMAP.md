@@ -98,6 +98,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 ## Later media semantics
 - [ ] neutral face detection: presence/count/bounds
 - [ ] object detection provider (YOLO/DETR plugin)
+- [x] keyframe captions, questions and activities, video and scene summaries, and a video category (`anytopdf-plugin-vlm`)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction
 - [ ] audio chapter / speaker-turn annotations

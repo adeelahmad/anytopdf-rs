@@ -1,6 +1,7 @@
 use crate::{
-    Diagnostic, DiagnosticCode, DocumentGraph, ImportOutcome, JobContext, MemberImporter,
-    PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord, Stage,
+    Diagnostic, DiagnosticCode, DocumentGraph, GraphPhase, ImportOutcome, JobContext,
+    MemberImporter, PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord,
+    Stage,
 };
 use anyhow::{Context, Result};
 use std::cell::Cell;
@@ -265,27 +266,7 @@ impl Pipeline {
         // Graph enrichers handle cross-unit semantics such as associating a
         // complete transcript with sampled video frames while also preserving a
         // full transcript unit for RAG extraction.
-        for enricher in self.registry.graph_enrichers() {
-            let original = graph.clone();
-            match enricher
-                .enrich_graph(&ctx, &mut graph)
-                .and_then(|warnings| {
-                    graph.validate()?;
-                    Ok(warnings)
-                }) {
-                Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
-                Err(e) => {
-                    graph = original;
-                    warnings.push(Diagnostic::new(
-                        DiagnosticCode::EnrichmentFailed,
-                        format!(
-                            "{} graph enrichment failed: {e:#}",
-                            enricher.descriptor().name
-                        ),
-                    ));
-                }
-            }
-        }
+        self.enrich_graph_phase(&ctx, &mut graph, &mut warnings, GraphPhase::BeforeUnits);
 
         // One consistent snapshot per provider avoids cloning the entire graph for every unit.
         for enricher in self.registry.unit_enrichers() {
@@ -346,6 +327,9 @@ impl Pipeline {
             }
         }
 
+        // Late graph enrichers summarize what the unit enrichers found.
+        self.enrich_graph_phase(&ctx, &mut graph, &mut warnings, GraphPhase::AfterUnits);
+
         observer.on_event(&PipelineEvent::StageFinished(Stage::Enrich));
         graph.assign_content_ids()?;
         for unit in &mut graph.units {
@@ -362,6 +346,37 @@ impl Pipeline {
             _workspace_guard: workspace,
             context: ctx,
         })
+    }
+
+    fn enrich_graph_phase(
+        &self,
+        ctx: &JobContext,
+        graph: &mut DocumentGraph,
+        warnings: &mut Vec<Diagnostic>,
+        phase: GraphPhase,
+    ) {
+        for enricher in self.registry.graph_enrichers() {
+            if enricher.phase() != phase {
+                continue;
+            }
+            let original = graph.clone();
+            match enricher.enrich_graph(ctx, graph).and_then(|warnings| {
+                graph.validate()?;
+                Ok(warnings)
+            }) {
+                Ok(w) => warnings.extend(w.iter().map(|s| Diagnostic::from_wire(s))),
+                Err(e) => {
+                    *graph = original;
+                    warnings.push(Diagnostic::new(
+                        DiagnosticCode::EnrichmentFailed,
+                        format!(
+                            "{} graph enrichment failed: {e:#}",
+                            enricher.descriptor().name
+                        ),
+                    ));
+                }
+            }
+        }
     }
 
     pub fn render(
@@ -452,6 +467,55 @@ mod tests {
         assert!(workspace.is_dir());
         drop(run);
         assert!(!workspace.exists());
+    }
+
+    /// Appends a marker to the text unit so the test can read the run order.
+    struct Mark(&'static str, GraphPhase);
+    impl Plugin for Mark {
+        fn descriptor(&self) -> PluginDescriptor {
+            TextImport.descriptor()
+        }
+    }
+    impl UnitEnricher for Mark {
+        fn supports(&self, _: &DocumentGraph, _: &Unit) -> bool {
+            true
+        }
+        fn enrich_unit(
+            &self,
+            _: &JobContext,
+            _: &DocumentGraph,
+            unit: &mut Unit,
+        ) -> Result<Vec<String>> {
+            unit.visible_text.get_or_insert_default().push_str(self.0);
+            Ok(vec![])
+        }
+    }
+    impl GraphEnricher for Mark {
+        fn enrich_graph(&self, _: &JobContext, graph: &mut DocumentGraph) -> Result<Vec<String>> {
+            for unit in &mut graph.units {
+                unit.visible_text.get_or_insert_default().push_str(self.0);
+            }
+            Ok(vec![])
+        }
+        fn phase(&self) -> GraphPhase {
+            self.1
+        }
+    }
+
+    #[test]
+    fn after_units_graph_enrichers_run_after_unit_enrichers() {
+        let input = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(input.path(), "").unwrap();
+        let mut registry = Registry::default();
+        registry.register_importer(Arc::new(TextImport));
+        registry.register_graph_enricher(Arc::new(Mark("L", GraphPhase::AfterUnits)));
+        registry.register_unit_enricher(Arc::new(Mark("U", GraphPhase::BeforeUnits)));
+        registry.register_graph_enricher(Arc::new(Mark("E", GraphPhase::BeforeUnits)));
+        let run = Pipeline::new(registry)
+            .ingest(&[input.path().into()], true)
+            .unwrap();
+        assert!(run.warnings.is_empty(), "{:?}", run.warnings);
+        assert_eq!(run.graph.units[0].visible_text.as_deref(), Some("EUL"));
     }
 
     struct WarnImport;
