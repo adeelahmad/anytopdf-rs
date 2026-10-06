@@ -108,6 +108,53 @@ pub(crate) enum Commands {
     /// Reach the print helper from other devices: TLS front, users and discovery.
     #[command(subcommand)]
     Print(PrintCommand),
+    /// Record a live source and convert the recording into a searchable PDF.
+    #[command(subcommand)]
+    Capture(CaptureCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CaptureCommand {
+    /// Record the screen with FFmpeg until --duration or Ctrl-C, then convert it.
+    ///
+    /// Uses FFmpeg's platform grabber: avfoundation on macOS (needs the Screen
+    /// Recording permission), gdigrab or ddagrab on Windows, x11grab on Linux. Pages
+    /// are picked like any video: one frame every --interval seconds plus every scene
+    /// change, with near-duplicate frames dropped.
+    Screen(Box<ScreenArgs>),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ScreenArgs {
+    /// Screen to record: the macOS screen index, the Windows output index (ddagrab;
+    /// the whole desktop through gdigrab when omitted) or the X11 display number on
+    /// Linux ($DISPLAY when omitted).
+    #[arg(long)]
+    pub(crate) display: Option<u32>,
+    /// Seconds between sampled frames; scene changes are kept as well.
+    #[arg(long, default_value_t = 5.0)]
+    pub(crate) interval: f64,
+    /// Stop after this many seconds (default: record until Ctrl-C).
+    #[arg(long)]
+    pub(crate) duration: Option<f64>,
+    /// Frames recorded per second; scene changes shorter than a frame are missed.
+    #[arg(long, default_value_t = 2.0)]
+    pub(crate) framerate: f64,
+    /// FFmpeg input format to use instead of the platform grabber, e.g. kmsgrab.
+    #[arg(long, requires = "input")]
+    pub(crate) input_format: Option<String>,
+    /// FFmpeg input (`-i` value) for --input-format.
+    #[arg(long, requires = "input_format")]
+    pub(crate) input: Option<String>,
+    /// Keep the recording at this path (Matroska video) instead of deleting it.
+    #[arg(long)]
+    pub(crate) keep_recording: Option<PathBuf>,
+    /// Output PDF path (default: screen-<UTC time>.pdf in the current directory).
+    #[arg(short, long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Convert options after `--`, for example `-- --ocr off --scene-threshold 0.2`.
+    #[arg(last = true)]
+    pub(crate) convert: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -395,6 +442,21 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) no_provenance_page: bool,
 
+    /// Draw labelled boxes for detected regions over image and video-frame pages.
+    ///
+    /// KINDS is a comma-separated list of objects, faces and ocr, or all; a bare
+    /// --draw-boxes draws objects and faces. Face boxes show the matched person's name
+    /// when a recognizer supplied one. The source images are never modified.
+    #[arg(
+        long,
+        value_name = "KINDS",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "objects,faces",
+        value_parser = parse_draw_boxes
+    )]
+    pub(crate) draw_boxes: Option<String>,
+
     /// Suppress progress and diagnostic output on stderr.
     #[arg(short, long)]
     pub(crate) quiet: bool,
@@ -531,6 +593,10 @@ pub(crate) struct ImapArgs {
     /// Options passed to each `anytopdf convert` run (after `--`).
     #[arg(last = true)]
     pub(crate) convert_args: Vec<std::ffi::OsString>,
+}
+
+fn parse_draw_boxes(value: &str) -> Result<String, String> {
+    anytopdf_pdf::parse_box_kinds(value).map(|kinds| anytopdf_pdf::box_kinds_value(&kinds))
 }
 
 #[cfg(test)]
