@@ -39,6 +39,8 @@ class InstallScriptTests(unittest.TestCase):
             ANYTOPDF_TARGET=TARGET,
             ANYTOPDF_DOWNLOAD_URL=(self.root / "releases").as_uri(),
         )
+        for name in ("XDG_DATA_HOME", "ANYTOPDF_DATA_DIR", "ANYTOPDF_PLUGIN_DIR", "ANYTOPDF_INSTALL_DIR"):
+            env.pop(name, None)
         return subprocess.run(["sh", str(ROOT / "install.sh")], env=env, capture_output=True, text=True)
 
     def test_install_verifies_and_places_binary_and_plugins(self):
@@ -47,7 +49,9 @@ class InstallScriptTests(unittest.TestCase):
         installed = self.root / "home/.local/bin/anytopdf"
         self.assertTrue(os.access(installed, os.X_OK))
         self.assertEqual(subprocess.run([str(installed)], capture_output=True, text=True).stdout, "anytopdf fixture\n")
-        self.assertTrue((self.root / "home/.local/share/anytopdf/plugins/anytopdf-plugin-whisper").is_file())
+        data = "Library/Application Support/anytopdf" if sys.platform == "darwin" else ".local/share/anytopdf"
+        self.assertTrue((self.root / "home" / data / "plugins/anytopdf-plugin-whisper").is_file())
+        self.assertIn("anytopdf setup whisper", result.stderr)
         self.assertIn("ANYTOPDF_PLUGIN_PATH=", result.stderr)
 
     def test_install_rejects_checksum_mismatch(self):

@@ -34,6 +34,9 @@ pub struct Config {
     pub executable: Option<PathBuf>,
     pub model: Option<String>,
     pub language: Option<String>,
+    /// ggml model installed by `anytopdf setup whisper`; whisper.cpp uses it
+    /// when `ANYTOPDF_WHISPER_MODEL` does not name a model file.
+    pub recorded_model: Option<PathBuf>,
 }
 
 impl Config {
@@ -44,9 +47,26 @@ impl Config {
             executable: var("ANYTOPDF_WHISPER_BIN").map(PathBuf::from),
             model: var("ANYTOPDF_WHISPER_MODEL"),
             language: var("ANYTOPDF_WHISPER_LANGUAGE").filter(|l| l != "auto"),
+            recorded_model: crate::setup::recorded_model(),
         }
     }
 }
+
+/// How to get an engine on this platform.
+pub fn engine_hint() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "install whisper.cpp with `brew install whisper-cpp`"
+    } else if cfg!(windows) {
+        "install whisper.cpp by unpacking whisper-bin-x64.zip from \
+         https://github.com/ggml-org/whisper.cpp/releases and putting whisper-cli.exe on PATH, \
+         or run `pipx install whisper-ctranslate2`"
+    } else {
+        "install whisper.cpp (`brew install whisper-cpp`, or build whisper-cli from \
+         https://github.com/ggml-org/whisper.cpp) or run `pipx install whisper-ctranslate2`"
+    }
+}
+
+const SETUP_HINT: &str = "run `anytopdf setup whisper` to download a model";
 
 const CPP_NAMES: [&str; 2] = ["whisper-cli", "whisper-cpp"];
 const OPENAI_NAMES: [&str; 2] = ["whisper-ctranslate2", "whisper"];
@@ -83,7 +103,15 @@ pub fn detect(config: &Config, lookup: impl Fn(&str) -> Option<PathBuf>) -> Resu
             .clone()
             .or_else(|| names.iter().find_map(|n| lookup(n)))
     };
-    let cpp_model = config.model.as_deref().filter(|m| Path::new(m).is_file());
+    let recorded = config
+        .recorded_model
+        .as_deref()
+        .and_then(|path| path.to_str());
+    let cpp_model = config
+        .model
+        .as_deref()
+        .filter(|m| Path::new(m).is_file())
+        .or(recorded);
     let backend = |engine, executable, model: &str| Backend {
         engine,
         executable,
@@ -93,9 +121,18 @@ pub fn detect(config: &Config, lookup: impl Fn(&str) -> Option<PathBuf>) -> Resu
 
     match engine {
         Some(Engine::WhisperCpp) => {
-            let bin = find(&CPP_NAMES).context("whisper.cpp (whisper-cli) not found on PATH")?;
-            let model = cpp_model
-                .context("whisper.cpp needs ANYTOPDF_WHISPER_MODEL set to a ggml model file")?;
+            let bin = find(&CPP_NAMES).with_context(|| {
+                format!(
+                    "whisper.cpp (whisper-cli) not found on PATH; {}",
+                    engine_hint()
+                )
+            })?;
+            let model = cpp_model.with_context(|| {
+                format!(
+                    "whisper.cpp has no ggml model; {SETUP_HINT}, \
+                     or set ANYTOPDF_WHISPER_MODEL to a ggml model file"
+                )
+            })?;
             Ok(backend(Engine::WhisperCpp, bin, model))
         }
         Some(Engine::OpenAi) => {
@@ -113,11 +150,47 @@ pub fn detect(config: &Config, lookup: impl Fn(&str) -> Option<PathBuf>) -> Resu
             }
             if cpp.is_some() {
                 bail!(
-                    "whisper.cpp found but ANYTOPDF_WHISPER_MODEL does not name a ggml model file"
+                    "whisper.cpp found but has no ggml model; {SETUP_HINT}, \
+                     or set ANYTOPDF_WHISPER_MODEL to a ggml model file"
                 );
             }
-            bail!("no Whisper engine found; install whisper.cpp (whisper-cli) or openai-whisper")
+            if cpp_model.is_some() {
+                bail!("no Whisper engine found; {}", engine_hint());
+            }
+            bail!(
+                "no Whisper engine found; {}, then {SETUP_HINT}",
+                engine_hint()
+            )
         }
+    }
+}
+
+/// Whether the plugin can transcribe here, and what it found or still needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Readiness {
+    pub ready: bool,
+    pub detail: String,
+}
+
+/// Checks the engine, the model and FFmpeg without running anything.
+pub fn readiness(config: &Config, lookup: impl Fn(&str) -> Option<PathBuf>) -> Readiness {
+    match detect(config, &lookup) {
+        Err(e) => Readiness {
+            ready: false,
+            detail: format!("{e:#}"),
+        },
+        Ok(_) if lookup("ffmpeg").is_none() => Readiness {
+            ready: false,
+            detail: "ffmpeg is required to read audio; install FFmpeg and put it on PATH".into(),
+        },
+        Ok(backend) => Readiness {
+            ready: true,
+            detail: format!(
+                "{} via {}",
+                backend.provider(),
+                backend.executable.display()
+            ),
+        },
     }
 }
 
@@ -280,6 +353,63 @@ mod tests {
         );
         let error = detect(&config, on_path(&[])).unwrap_err();
         assert!(error.to_string().contains("no Whisper engine"), "{error}");
+    }
+
+    #[test]
+    fn recorded_setup_model_enables_whisper_cpp_without_env() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("ggml-base.bin");
+        fs::write(&model, b"model").unwrap();
+        let config = Config {
+            recorded_model: Some(model.clone()),
+            ..Config::default()
+        };
+        let chosen = detect(&config, on_path(&["whisper-cli"])).unwrap();
+        assert_eq!(chosen.engine, Engine::WhisperCpp);
+        assert_eq!(chosen.provider(), "whisper.cpp:ggml-base");
+
+        // An explicit model file still wins over the recorded one.
+        let explicit = dir.path().join("ggml-small.bin");
+        fs::write(&explicit, b"model").unwrap();
+        let config = Config {
+            model: Some(explicit.to_string_lossy().into_owned()),
+            ..config
+        };
+        let chosen = detect(&config, on_path(&["whisper-cli"])).unwrap();
+        assert_eq!(chosen.provider(), "whisper.cpp:ggml-small");
+
+        // A model but no engine names the engine to install, not the setup step.
+        let error = detect(&config, on_path(&[])).unwrap_err().to_string();
+        assert!(error.contains("no Whisper engine"), "{error}");
+        assert!(!error.contains("anytopdf setup whisper"), "{error}");
+    }
+
+    #[test]
+    fn readiness_explains_each_missing_piece() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("ggml-base.bin");
+        fs::write(&model, b"model").unwrap();
+        let bare = Config::default();
+        let ready = readiness(&bare, on_path(&[]));
+        assert!(!ready.ready);
+        assert!(ready.detail.contains("anytopdf setup whisper"), "{ready:?}");
+
+        let ready = readiness(&bare, on_path(&["whisper-cli", "ffmpeg"]));
+        assert!(!ready.ready);
+        assert!(ready.detail.contains("no ggml model"), "{ready:?}");
+        assert!(ready.detail.contains("anytopdf setup whisper"), "{ready:?}");
+
+        let configured = Config {
+            recorded_model: Some(model),
+            ..Config::default()
+        };
+        let ready = readiness(&configured, on_path(&["whisper-cli"]));
+        assert!(!ready.ready);
+        assert!(ready.detail.contains("ffmpeg"), "{ready:?}");
+
+        let ready = readiness(&configured, on_path(&["whisper-cli", "ffmpeg"]));
+        assert!(ready.ready, "{ready:?}");
+        assert_eq!(ready.detail, "whisper.cpp:ggml-base via /bin/whisper-cli");
     }
 
     #[test]

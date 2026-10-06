@@ -12,10 +12,11 @@ mod naming;
 mod print;
 mod publish;
 mod queue;
+mod setup;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
 use clap::Parser;
-use cli::{Cli, Commands, QueueCommand, WatchSource};
+use cli::{Cli, Commands, QueueCommand, SetupCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
 use exit::{CliError, ExitClass};
@@ -60,10 +61,11 @@ fn run(cli: Cli) -> Result<(), CliError> {
             mode: sandbox_mode,
             allow_read: cli.plugin_sandbox_allow_read,
         },
+        ..RuntimePluginPolicy::default()
     };
     match cli.command {
         Commands::Convert(args) => convert(*args, &policy),
-        Commands::Doctor { json } => Ok(doctor(json)?),
+        Commands::Doctor { json } => Ok(doctor(json, &policy)?),
         Commands::Plugins { json } => {
             check_sandbox(&policy)?;
             Ok(plugins(&policy, json)?)
@@ -103,6 +105,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         }
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
         Commands::Print(command) => print::print(command),
+        Commands::Setup(SetupCommand::Whisper(args)) => setup::whisper(args, &policy),
     }
 }
 

@@ -39,6 +39,7 @@ anytopdf-builtin = { path = "../anytopdf-builtin", default-features = false }
 anytopdf-pdf = { path = "../anytopdf-pdf" }
 anytopdf-imap = { path = "../anytopdf-imap", optional = true }
 anytopdf-print = { path = "../anytopdf-print" }
+anytopdf-plugin-whisper = { path = "../anytopdf-plugin-whisper" }
 rustls.workspace = true
 clap.workspace = true
 regex.workspace = true

@@ -35,6 +35,36 @@ Capability kinds:
 - `unit-enricher`
 - `renderer`
 
+Optional readiness fields (both may be omitted; `ready` defaults to `true`):
+
+```json
+{ "ready": false, "detail": "whisper.cpp has no ggml model; run `anytopdf setup whisper` to download a model" }
+```
+
+`detail` says what the plugin found or still needs; `anytopdf doctor` and
+`anytopdf capabilities` print it. `ready` decides whether a *bundled* plugin
+runs (see Discovery below). A plugin found on `PATH` or `ANYTOPDF_PLUGIN_PATH`
+is registered whatever it reports, so its own warnings explain a missing
+dependency during conversion.
+
+## Discovery
+
+The host looks for executables named `anytopdf-plugin-*` in:
+
+1. every directory on `PATH` and in `ANYTOPDF_PLUGIN_PATH` (platform path
+   separator): always registered;
+2. bundled folders: `plugins/` beside the `anytopdf` executable (release
+   archives, Scoop), `../libexec/plugins` from it (Homebrew; symlinks are
+   resolved first) and `<data dir>/plugins`: registered only when the manifest
+   reports `ready: true`, and skipped when a plugin with the same `name` was
+   found in (1).
+
+`<data dir>` is `ANYTOPDF_DATA_DIR` when set, otherwise
+`~/Library/Application Support/anytopdf` on macOS, `%LOCALAPPDATA%\anytopdf` on
+Windows and `${XDG_DATA_HOME:-~/.local/share}/anytopdf` elsewhere. Plugins
+inherit the host's environment, so they can read the same variable to find
+per-user state such as downloaded models. `--no-plugins` disables both.
+
 ## Request
 
 The core writes a JSON request into the job workspace:

@@ -5,7 +5,7 @@ use anytopdf_builtin::{
     BuiltinOptions, OcrEnricher, OcrProviderStatus, ProviderVersion, detect_providers,
 };
 use anytopdf_core::{
-    PluginDescriptor, RuntimePlugin, RuntimePluginPolicy, discover_runtime_plugins_with_policy,
+    PluginDescriptor, RuntimePlugin, RuntimePluginPolicy, discover_runtime_plugins_detailed,
 };
 use std::fmt::Write;
 
@@ -65,6 +65,8 @@ pub(crate) struct Probe {
     pub(crate) ocr: Vec<OcrProviderStatus>,
     pub(crate) builtins: Vec<PluginDescriptor>,
     pub(crate) plugins: Vec<RuntimePlugin>,
+    /// Bundled plugins waiting on a dependency (manifest `ready: false`).
+    pub(crate) idle: Vec<RuntimePlugin>,
     pub(crate) ignored: Vec<String>,
     pub(crate) policy: RuntimePluginPolicy,
     pub(crate) plugin_path: Option<String>,
@@ -77,13 +79,14 @@ impl Probe {
             ..policy.clone()
         };
         let (registry, _) = registry(BuiltinOptions::default(), &disabled);
-        let (plugins, ignored) = discover_runtime_plugins_with_policy(policy);
+        let found = discover_runtime_plugins_detailed(policy);
         Probe {
             tools: detect_providers(),
             ocr: OcrEnricher::status(),
             builtins: registry.descriptors(),
-            plugins,
-            ignored,
+            plugins: found.plugins,
+            idle: found.idle,
+            ignored: found.warnings,
             policy: policy.clone(),
             plugin_path: std::env::var_os("ANYTOPDF_PLUGIN_PATH")
                 .map(|p| p.to_string_lossy().into_owned()),
@@ -359,6 +362,30 @@ pub(crate) fn build(probe: &Probe) -> Report {
             });
         }
     }
+    for plugin in &probe.idle {
+        let detail = plugin
+            .manifest
+            .detail
+            .as_deref()
+            .unwrap_or("not ready in this environment");
+        for cap in &plugin.manifest.capabilities {
+            kinds[section_for(&cap.kind)].push(Entry {
+                state: State::Missing,
+                runtime: true,
+                name: format!("runtime:{}", plugin.manifest.name),
+                detail: format!(
+                    "{:<7} {} bundled, off until ready  [{}]",
+                    kind_label(&cap.kind),
+                    plugin.manifest.version,
+                    plugin.executable.display()
+                ),
+            });
+        }
+        hints.push(format!(
+            "turn on runtime:{}: {detail}",
+            plugin.manifest.name
+        ));
+    }
     let [importers, enrichers, renderers] = kinds;
     let ocr = probe.ocr.iter().map(|s| ocr_entry(s, &mut hints)).collect();
     let tools = probe.tools.iter().map(tool_entry).collect();
@@ -387,7 +414,7 @@ pub(crate) fn build(probe: &Probe) -> Report {
         "runtime plugins: disabled by --no-plugins".to_string()
     } else {
         format!(
-            "runtime plugins: {} found in PATH and ANYTOPDF_PLUGIN_PATH ({})",
+            "runtime plugins: {} found in PATH, ANYTOPDF_PLUGIN_PATH ({}) and beside anytopdf",
             probe.plugins.len(),
             probe.plugin_path.as_deref().unwrap_or("unset")
         )
@@ -500,6 +527,7 @@ mod tests {
                 descriptor("renderer", "pdf", &["pdf"]),
             ],
             plugins: vec![],
+            idle: vec![],
             ignored: vec![],
             policy: RuntimePluginPolicy::default(),
             plugin_path: None,
@@ -582,6 +610,8 @@ mod tests {
                         priority: 50,
                     })
                     .collect(),
+                ready: true,
+                detail: None,
             },
         });
         let report = build(&probe);
@@ -593,6 +623,42 @@ mod tests {
         assert_eq!(enricher.state, State::Missing);
         assert!(enricher.detail.contains("blocked"), "{}", enricher.detail);
         assert!(render(&report).contains(" AR runtime:igl"));
+    }
+
+    #[test]
+    fn idle_bundled_plugins_say_what_turns_them_on() {
+        let mut probe = probe(true);
+        probe.idle.push(RuntimePlugin {
+            timeout: Duration::from_secs(1),
+            sandbox: Default::default(),
+            executable: PathBuf::from("/opt/anytopdf/plugins/anytopdf-plugin-whisper"),
+            manifest: RuntimePluginManifest {
+                protocol: 1,
+                name: "whisper".into(),
+                version: "0.2.0".into(),
+                capabilities: vec![RuntimeCapability {
+                    kind: "graph-enricher".into(),
+                    extensions: vec![],
+                    mime_types: vec!["audio/*".into()],
+                    priority: 50,
+                }],
+                ready: false,
+                detail: Some("whisper.cpp has no ggml model; run `anytopdf setup whisper`".into()),
+            },
+        });
+        let report = build(&probe);
+        let entry = entry(&report, "Enrichers", "runtime:whisper");
+        assert_eq!(entry.state, State::Missing);
+        assert!(entry.detail.contains("off until ready"), "{}", entry.detail);
+        assert!(
+            report
+                .hints
+                .iter()
+                .any(|h| h.starts_with("turn on runtime:whisper:") && h.contains("setup whisper")),
+            "{:?}",
+            report.hints
+        );
+        assert!(render(&report).contains(" -R runtime:whisper"));
     }
 
     #[test]

@@ -94,6 +94,35 @@
           }
         }
       }
+    },
+    "transcription": {
+      "type": "object",
+      "required": [
+        "available",
+        "plugin",
+        "model",
+        "detail"
+      ],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "plugin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
     }
   }
 }
