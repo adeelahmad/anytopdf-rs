@@ -391,6 +391,21 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) no_provenance_page: bool,
 
+    /// Draw labelled boxes for detected regions over image and video-frame pages.
+    ///
+    /// KINDS is a comma-separated list of objects, faces and ocr, or all; a bare
+    /// --draw-boxes draws objects and faces. Face boxes show the matched person's name
+    /// when a recognizer supplied one. The source images are never modified.
+    #[arg(
+        long,
+        value_name = "KINDS",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "objects,faces",
+        value_parser = parse_draw_boxes
+    )]
+    pub(crate) draw_boxes: Option<String>,
+
     /// Suppress progress and diagnostic output on stderr.
     #[arg(short, long)]
     pub(crate) quiet: bool,
@@ -527,6 +542,10 @@ pub(crate) struct ImapArgs {
     /// Options passed to each `anytopdf convert` run (after `--`).
     #[arg(last = true)]
     pub(crate) convert_args: Vec<std::ffi::OsString>,
+}
+
+fn parse_draw_boxes(value: &str) -> Result<String, String> {
+    anytopdf_pdf::parse_box_kinds(value).map(|kinds| anytopdf_pdf::box_kinds_value(&kinds))
 }
 
 #[cfg(test)]
