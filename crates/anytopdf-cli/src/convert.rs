@@ -340,15 +340,11 @@ fn convert_inner(
     }
 
     let opts = BuiltinOptions {
-        video_interval: args.video_interval,
-        scene_threshold: args.scene_threshold,
-        dedupe_distance: args.dedupe_distance,
-        max_video_frames: args.max_video_frames,
-        max_image_frames: args.max_image_frames,
-        ocr: args.ocr,
-        ocr_language: args.lang,
         explicit_transcripts: args.transcripts,
-        embedded_subtitles: !args.no_embedded_subtitles,
+        ..tag(
+            ExitClass::Usage,
+            BuiltinOptions::from_tables(&policy.options),
+        )?
     };
 
     let (registry, mut warnings) = registry(opts, policy);

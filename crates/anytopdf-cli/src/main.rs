@@ -2,6 +2,7 @@ mod argv;
 mod capabilities;
 mod cli;
 mod commands;
+mod config;
 mod convert;
 mod environment;
 mod events;
@@ -14,7 +15,7 @@ mod publish;
 mod queue;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use cli::{Cli, Commands, QueueCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
@@ -22,8 +23,11 @@ use exit::{CliError, ExitClass};
 use std::{process::ExitCode, time::Duration};
 
 fn main() -> ExitCode {
-    let cli = match Cli::try_parse_from(argv::normalize_args(std::env::args_os().collect())) {
-        Ok(cli) => cli,
+    let parsed = Cli::command()
+        .try_get_matches_from(argv::normalize_args(std::env::args_os().collect()))
+        .and_then(|matches| Ok((Cli::from_arg_matches(&matches)?, matches)));
+    let (mut cli, matches) = match parsed {
+        Ok(parsed) => parsed,
         Err(e) => {
             let class = if e.use_stderr() {
                 ExitClass::Usage
@@ -35,7 +39,8 @@ fn main() -> ExitCode {
         }
     };
     let events = matches!(&cli.command, Commands::Convert(a) if a.events);
-    match run(cli) {
+    let configured = configure(&mut cli, &matches);
+    match configured.and_then(|resolved| run(cli, resolved)) {
         Ok(()) => ExitCode::from(ExitClass::Success.code()),
         Err(e) => {
             if !events {
@@ -47,8 +52,19 @@ fn main() -> ExitCode {
     }
 }
 
-fn run(cli: Cli) -> Result<(), CliError> {
+/// Resolves the layered configuration and writes it into `cli`.
+fn configure(cli: &mut Cli, matches: &clap::ArgMatches) -> Result<config::Resolved, CliError> {
+    let resolved = exit::tag(
+        ExitClass::Usage,
+        config::Resolved::load(cli, matches, &config::Environment::current()),
+    )?;
+    exit::tag(ExitClass::Usage, config::apply(cli, matches, &resolved))?;
+    Ok(resolved)
+}
+
+fn run(cli: Cli, resolved: config::Resolved) -> Result<(), CliError> {
     let forwarded = mcp::Forwarded::from_cli(&cli);
+    let config_flags = config::forward_flags(&cli);
     let sandbox_mode = cli.sandbox_mode();
     let policy = RuntimePluginPolicy {
         enabled: !cli.no_plugins,
@@ -60,6 +76,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             mode: sandbox_mode,
             allow_read: cli.plugin_sandbox_allow_read,
         },
+        options: std::sync::Arc::new(resolved.tables()),
     };
     match cli.command {
         Commands::Convert(args) => convert(*args, &policy),
@@ -93,7 +110,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
             source: WatchSource::Imap(args),
         } => {
             check_sandbox(&policy)?;
-            watch::watch_imap(*args, &policy)
+            watch::watch_imap(*args, &policy, config_flags)
         }
         Commands::Queue { command } => {
             if matches!(command, QueueCommand::Work(_)) {
@@ -102,6 +119,19 @@ fn run(cli: Cli) -> Result<(), CliError> {
             queue::run(command, forwarded.0)
         }
         Commands::Mcp => Ok(mcp::serve(forwarded)?),
+        Commands::Config { json: true, .. } => {
+            println!("{}", serde_json::to_string_pretty(&resolved.report())?);
+            Ok(())
+        }
+        Commands::Config { defaults, .. } => {
+            let shown = if defaults {
+                config::Resolved::defaults()
+            } else {
+                resolved
+            };
+            print!("{}", shown.render(!defaults));
+            Ok(())
+        }
         Commands::Print(command) => print::print(command),
     }
 }
@@ -130,7 +160,9 @@ mod tests {
     #[test]
     fn no_arguments_shows_help_without_converting_current_directory() {
         assert_eq!(
-            Cli::try_parse_from(["anytopdf"]).unwrap_err().kind(),
+            <Cli as clap::Parser>::try_parse_from(["anytopdf"])
+                .unwrap_err()
+                .kind(),
             clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
         );
     }

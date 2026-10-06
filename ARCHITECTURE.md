@@ -158,6 +158,17 @@ Protocol:
 
 Large data is exchanged through workspace file paths rather than base64 JSON.
 
+### Configuration
+
+`anytopdf-cli/src/config.rs` layers built-in defaults, a TOML file, `ANYTOPDF_*`
+variables, flags and `--set` into one document shaped like
+`schemas/config-file.schema.json`, validates it, and writes the global values back
+into the parsed command line. Per-plugin tables (`[importer.NAME]`,
+`[enricher.NAME]`, `[renderer.NAME]`) become `anytopdf_core::PluginOptions`:
+built-ins read typed structs from `anytopdf-builtin/src/options.rs`, and runtime
+plugins get their table as the request's `options`. Child conversions (queue,
+MCP, mail watcher) receive the same `--config`, `--no-config` and `--set` flags.
+
 ## Future plugin examples
 
 - `anytopdf-plugin-igl`

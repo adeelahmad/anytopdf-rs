@@ -292,6 +292,52 @@ anytopdf convert meeting.mp4 \
   -o meeting.pdf
 ```
 
+### Configuration file
+
+Every setting can come from a TOML file, an environment variable or a flag, so
+defaults you always want live in one place. Later layers win:
+
+1. built-in defaults
+2. `~/.config/anytopdf/config.toml` (`$XDG_CONFIG_HOME` if set;
+   `%APPDATA%\anytopdf\config.toml` on Windows), or instead the files named by
+   `--config PATH` (repeatable) or `ANYTOPDF_CONFIG`; `--no-config` or
+   `ANYTOPDF_NO_CONFIG=1` skips files
+3. `ANYTOPDF_<KEY>` for top-level keys and `ANYTOPDF_<SECTION>__<TABLE>__<KEY>`
+   for tables, e.g. `ANYTOPDF_PROFILE=share`,
+   `ANYTOPDF_IMPORTER__VIDEO__INTERVAL=2`; lists are comma-separated
+4. command-line flags such as `--video-interval 2`
+5. `--set KEY=VALUE` (repeatable), e.g. `--set importer.video.interval=2`
+
+```toml
+# ~/.config/anytopdf/config.toml
+profile = "share"
+renderer = "pdfa"          # shorthand for [renderer] use = "pdfa"
+plugin_timeout = 120
+
+[importer.video]
+interval = 2.0
+max_frames = 200
+
+[enricher.ocr]
+mode = "tesseract"
+lang = "eng+deu"
+
+[enricher.whisper]         # a runtime plugin's table, passed to it as `options`
+model = "base"
+```
+
+Top-level keys are global settings. `[importer.NAME]`, `[enricher.NAME]` and
+`[renderer.NAME]` hold one table per plugin: built-in tables reject unknown keys,
+and a runtime plugin receives its table (by manifest name; `-` and `_` match) in
+the `options` field of each request. `anytopdf config` prints the effective
+settings with the file, variable or flag each came from (`--json` emits
+`anytopdf.config/1`); `anytopdf config --defaults` prints a starter file. The file
+format is `schemas/config-file.schema.json`. An invalid value exits 2 and names
+the key and where it was set. Secrets (`ANYTOPDF_WEBHOOK_SECRET`,
+`ANYTOPDF_QUEUE_TOKEN`, IMAP credentials) and `ANYTOPDF_PLUGIN_PATH` stay
+environment-only, and no file is read from the current directory, so a folder
+you convert cannot change how plugins run.
+
 ### Progress events
 
 `anytopdf convert --events` writes one NDJSON object per line to stderr

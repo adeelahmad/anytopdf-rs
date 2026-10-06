@@ -3,7 +3,11 @@ use crate::exit::{CliError, ExitClass, fail};
 use anytopdf_core::RuntimePluginPolicy;
 
 #[cfg(not(feature = "imap"))]
-pub(crate) fn watch_imap(_args: ImapArgs, _policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+pub(crate) fn watch_imap(
+    _args: ImapArgs,
+    _policy: &RuntimePluginPolicy,
+    _config_flags: Vec<std::ffi::OsString>,
+) -> Result<(), CliError> {
     Err(fail(
         ExitClass::Usage,
         "this anytopdf build has no IMAP support; rebuild with `cargo build --features imap`",
@@ -167,7 +171,11 @@ mod imap {
         })
     }
 
-    pub(crate) fn watch_imap(args: ImapArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+    pub(crate) fn watch_imap(
+        args: ImapArgs,
+        policy: &RuntimePluginPolicy,
+        config_flags: Vec<OsString>,
+    ) -> Result<(), CliError> {
         let tls: TlsMode = tag(ExitClass::Usage, args.tls.parse())?;
         let credential = credential(&args)?;
         let senders = tag(
@@ -229,7 +237,10 @@ mod imap {
                 )?;
                 let sink = ConvertSink {
                     exe: std::env::current_exe().context("locate the anytopdf executable")?,
-                    global: plugin_flags(policy),
+                    global: plugin_flags(policy)
+                        .into_iter()
+                        .chain(config_flags.iter().cloned())
+                        .collect(),
                     output_dir: output_dir.clone(),
                     extra: args.convert_args.clone(),
                     timeout: Duration::from_secs(args.convert_timeout),
@@ -313,6 +324,7 @@ mod imap {
                     mode: anytopdf_core::SandboxMode::Strict,
                     allow_read: vec!["/opt/models".into()],
                 },
+                ..Default::default()
             };
             let flags: Vec<String> = plugin_flags(&policy)
                 .into_iter()

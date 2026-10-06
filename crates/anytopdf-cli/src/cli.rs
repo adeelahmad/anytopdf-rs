@@ -38,6 +38,16 @@ pub(crate) struct Cli {
     /// Extra file or directory a strict-sandboxed plugin may read (repeatable).
     #[arg(long, global = true, value_name = "PATH")]
     pub(crate) plugin_sandbox_allow_read: Vec<PathBuf>,
+    /// Read settings from this TOML file instead of the user config file
+    /// (repeatable; later files win). Also ANYTOPDF_CONFIG.
+    #[arg(long = "config", global = true, value_name = "PATH")]
+    pub(crate) config_files: Vec<PathBuf>,
+    /// Ignore configuration files; ANYTOPDF_* variables and flags still apply.
+    #[arg(long, global = true)]
+    pub(crate) no_config: bool,
+    /// Override one setting, e.g. --set importer.video.interval=2 (repeatable).
+    #[arg(long = "set", global = true, value_name = "KEY=VALUE")]
+    pub(crate) set: Vec<String>,
 }
 
 impl Cli {
@@ -105,6 +115,16 @@ pub(crate) enum Commands {
     },
     /// Serve convert, extract, probe and capabilities as MCP tools over stdio.
     Mcp,
+    /// Show the effective configuration and where each value came from.
+    #[command(after_long_help = crate::config::HELP_FOOTER)]
+    Config {
+        /// Emit one JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+        /// Print a starter config file holding every built-in default.
+        #[arg(long, conflicts_with = "json")]
+        defaults: bool,
+    },
     /// Reach the print helper from other devices: TLS front, users and discovery.
     #[command(subcommand)]
     Print(PrintCommand),
