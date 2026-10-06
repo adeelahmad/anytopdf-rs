@@ -110,6 +110,13 @@ For visual pages:
 4. write metadata/captions/semantic annotations invisibly;
 5. preserve source/timestamp/provider provenance in searchable text.
 
+With `convert --draw-boxes` (graph metadata `anytopdf.draw-boxes`), both renderers
+also draw a vector overlay between steps 1 and 2: a stroked rectangle per `Object`,
+`Face` or `Ocr` annotation region of the selected kinds, with a filled label for faces
+(`attributes.person` when set, else the annotation text) and objects (text and
+confidence). `boxes.rs` computes the geometry once, with a stable colour per kind; the
+image file is never modified, and `pdfa` tags the overlay as an artifact.
+
 Two built-in renderers share the layout helpers in `anytopdf-pdf` (`layout.rs`,
 `provenance.rs`) and therefore produce the same pages and `unit_pages`:
 
