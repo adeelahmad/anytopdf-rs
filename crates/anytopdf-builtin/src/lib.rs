@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
-pub use providers::{ProviderVersion, detect_providers};
+pub use providers::{ProviderVersion, chrome_path, detect_providers, ytdlp_path};
 
 #[derive(Debug, Clone)]
 pub struct BuiltinOptions {

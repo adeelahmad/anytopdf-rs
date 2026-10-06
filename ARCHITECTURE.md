@@ -51,6 +51,12 @@ into their native coordinate system.
 
 Find candidate paths. Discovery is intentionally separate from probing.
 
+URL arguments are fetched first (`crates/anytopdf-cli/src/fetch/`) into a temporary
+directory that lives for the conversion: a plain download (plus a headless-browser
+PDF snapshot for HTML pages) or a yt-dlp download whose captions are renamed to the
+media's sidecar name. The downloaded files replace the URL in the input list, so no
+importer knows about URLs; after import, each source from a URL gets `url.*` metadata.
+
 ### Probe
 
 Every importer can score an input. The registry chooses the highest-priority

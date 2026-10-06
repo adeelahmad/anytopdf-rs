@@ -54,6 +54,49 @@ const BLOCKS: &[&str] = &[
     "ul",
 ];
 
+/// Like [`html_to_text`], but keeps only the page's main content when it marks one:
+/// the single `<main>` element, else the single `<article>`. Navigation, headers and
+/// footers outside it are dropped. Returns the element used, if any.
+pub fn readable_text(html: &str) -> (HtmlText, Option<&'static str>) {
+    let full = html_to_text(html);
+    for scope in ["main", "article"] {
+        if let Some(inner) = only_element(html, scope) {
+            let part = html_to_text(inner);
+            if !part.text.trim().is_empty() {
+                let text = HtmlText {
+                    title: full.title,
+                    text: part.text,
+                };
+                return (text, Some(scope));
+            }
+        }
+    }
+    (full, None)
+}
+
+/// The content of `name` when the document has exactly one such element.
+fn only_element<'a>(html: &'a str, name: &str) -> Option<&'a str> {
+    // ASCII lowercasing keeps byte offsets valid for `html`.
+    let lower = html.to_ascii_lowercase();
+    let open = format!("<{name}");
+    let starts: Vec<usize> = lower
+        .match_indices(&open)
+        .map(|(i, _)| i)
+        .filter(|&i| {
+            lower[i + open.len()..]
+                .chars()
+                .next()
+                .is_some_and(|c| c == '>' || c == '/' || c.is_ascii_whitespace())
+        })
+        .collect();
+    let [start] = starts.as_slice() else {
+        return None;
+    };
+    let body = start + lower[*start..].find('>')? + 1;
+    let end = body + lower[body..].find(&format!("</{name}"))?;
+    Some(&html[body..end])
+}
+
 pub fn html_to_text(html: &str) -> HtmlText {
     let mut out = Writer::default();
     let mut title: Option<String> = None;
@@ -520,5 +563,28 @@ mod tests {
         assert_eq!(out.text, "a < b and <3\n\nc\n");
         assert_eq!(html_to_text("<p unterminated").text, "");
         assert_eq!(html_to_text("").text, "");
+    }
+
+    #[test]
+    fn readable_text_keeps_the_single_main_element_and_the_title() {
+        let html = "<html><head><title>Post</title></head><body><nav>Home About</nav>\
+                    <MAIN id=x><h1>Post</h1><p>Body text</p></MAIN><footer>(c) site</footer></body></html>";
+        let (page, scope) = readable_text(html);
+        assert_eq!(scope, Some("main"));
+        assert_eq!(page.title.as_deref(), Some("Post"));
+        assert!(page.text.contains("Body text"), "{}", page.text);
+        assert!(!page.text.contains("Home About"), "{}", page.text);
+        assert!(!page.text.contains("(c) site"), "{}", page.text);
+    }
+
+    #[test]
+    fn readable_text_falls_back_to_the_whole_page() {
+        let two = "<article>one</article><article>two</article><nav>menu</nav>";
+        let (page, scope) = readable_text(two);
+        assert_eq!(scope, None);
+        assert!(page.text.contains("menu") && page.text.contains("two"));
+        let empty_main = "<main></main><p>outside</p>";
+        assert_eq!(readable_text(empty_main).1, None);
+        assert_eq!(readable_text("<p>plain <mainly>x</p>").1, None);
     }
 }

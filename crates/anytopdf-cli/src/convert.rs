@@ -141,6 +141,7 @@ pub(crate) fn convert(args: ConvertArgs, policy: &RuntimePluginPolicy) -> Result
     for path in args
         .inputs
         .iter()
+        .filter(|p| !crate::fetch::is_url(p))
         .chain(&args.transcripts)
         .chain(args.output.iter())
         .chain(args.output_dir.iter())
@@ -261,6 +262,15 @@ fn convert_inner(
             .context("invalid --filter regex"),
     )?;
 
+    let fetched = crate::fetch::fetch_inputs(
+        &args.inputs,
+        &args.url.options(),
+        !args.quiet && sink.is_none(),
+    )?;
+    if let Some(dir) = &fetched.dir {
+        redactor.add_dir(dir.path());
+    }
+
     emit(
         sink,
         Event::StageStarted {
@@ -270,7 +280,7 @@ fn convert_inner(
     let inputs = tag(
         ExitClass::Input,
         discover_inputs(
-            &args.inputs,
+            &fetched.inputs,
             &DiscoveryOptions {
                 include_hidden: args.include_hidden,
                 filter,
@@ -286,7 +296,7 @@ fn convert_inner(
     );
 
     // Keep command-line order (stable within a directory) so source order is predictable.
-    let roots: Vec<PathBuf> = args
+    let roots: Vec<PathBuf> = fetched
         .inputs
         .iter()
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
@@ -310,7 +320,7 @@ fn convert_inner(
         let out_path = match args.output.clone() {
             Some(path) => path,
             None => {
-                let base = naming::default_output(&args.inputs, &std::env::current_dir()?);
+                let base = naming::default_output(&fetched.names, &std::env::current_dir()?);
                 if args.overwrite {
                     base
                 } else {
@@ -362,6 +372,7 @@ fn convert_inner(
         pipeline.ingest_observed(&inputs, args.quiet, &mut observer),
     )?;
     run.warnings.append(&mut warnings);
+    run.warnings.extend(fetched.warnings.iter().cloned());
 
     redactor.add_dir(&run.context.workspace.join("x"));
     let redactor = &*redactor;
@@ -432,6 +443,8 @@ fn convert_inner(
     for source in &mut run.graph.sources {
         source.metadata.extend(job.iter().cloned());
     }
+    let fetched_at = crate::queue::rfc3339(created.max(0) as u64);
+    crate::fetch::annotate(&mut run.graph, &fetched.origins, &fetched_at);
     let dump = args.dump_graph.as_ref().map(|_| {
         args.profile.filter(
             &strip_workspace_paths(&run.graph, &run.context.workspace),

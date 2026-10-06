@@ -255,7 +255,7 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {
                     "inputs": {"type": "array", "items": {"type": "string"}, "minItems": 1,
-                        "description": "Files or directories to convert."},
+                        "description": "Files, directories or http(s) URLs to convert."},
                     "output": {"type": "string", "description": "Output PDF path. Defaults to a name derived from the first input."},
                     "output_dir": {"type": "string", "description": "Write one PDF per input into this directory instead of one merged PDF."},
                     "overwrite": {"type": "boolean", "description": "Replace an existing output; source files are always protected."},

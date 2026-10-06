@@ -1,4 +1,4 @@
-use crate::html::html_to_text;
+use crate::html::readable_text;
 use anyhow::{Context, Result};
 use anytopdf_core::*;
 use std::fs;
@@ -70,7 +70,10 @@ impl Importer for HtmlImporter {
                 String::from_utf8_lossy(e.as_bytes()).into_owned()
             }
         };
-        let page = html_to_text(&html);
+        let (page, scope) = readable_text(&html);
+        if let Some(scope) = scope {
+            source.metadata.insert("html.content".into(), scope.into());
+        }
         let mut text = page.text;
         if let Some(title) = page.title {
             if !text.contains(&title) {
