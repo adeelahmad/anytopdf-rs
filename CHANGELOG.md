@@ -6,6 +6,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- URLs, email addresses, domains and app names found in OCR, captions, transcripts
+  and text become `custom` entity annotations, and dates and times become
+  `timestamp` annotations with an ISO 8601 value (relative ones such as "last
+  Friday" resolved against the capture date). Both are searchable in the hidden text
+  layer and listed per chunk under the new optional `entities` field of
+  `anytopdf.chunks/1`. App names come from a gazetteer, window titles and URL
+  domains, never bare capitalized words. `--no-entities` turns extraction off and
+  `--date-order dmy|mdy` sets how `03/04/2024` is read.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

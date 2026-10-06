@@ -10,6 +10,9 @@ pub struct Registry {
     source_enrichers: Vec<SourceEnricherRef>,
     graph_enrichers: Vec<GraphEnricherRef>,
     unit_enrichers: Vec<UnitEnricherRef>,
+    /// Trailing entries of `unit_enrichers` that always run after every other
+    /// unit enricher, including runtime plugins registered later.
+    late_unit_enrichers: usize,
     renderers: Vec<RendererRef>,
 }
 
@@ -27,7 +30,17 @@ impl Registry {
     }
 
     pub fn register_unit_enricher(&mut self, p: UnitEnricherRef) {
+        let at = self.unit_enrichers.len() - self.late_unit_enrichers;
+        self.unit_enrichers.insert(at, p);
+    }
+
+    /// Registers a unit enricher that reads what the others produced (for
+    /// example, entities from OCR, captions and transcripts). It runs after
+    /// every unit enricher registered with `register_unit_enricher`, whenever
+    /// that one was registered.
+    pub fn register_late_unit_enricher(&mut self, p: UnitEnricherRef) {
         self.unit_enrichers.push(p);
+        self.late_unit_enrichers += 1;
     }
 
     pub fn register_renderer(&mut self, p: RendererRef) {
@@ -141,5 +154,34 @@ mod tests {
                 .importer_for(&SourceRecord::new("x".into()))
                 .is_err()
         );
+    }
+
+    impl crate::UnitEnricher for Candidate {
+        fn supports(&self, _: &crate::DocumentGraph, _: &crate::Unit) -> bool {
+            true
+        }
+        fn enrich_unit(
+            &self,
+            _: &JobContext,
+            _: &crate::DocumentGraph,
+            _: &mut crate::Unit,
+        ) -> Result<Vec<String>> {
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn late_unit_enrichers_run_after_enrichers_registered_later() {
+        let mut registry = Registry::default();
+        let enricher = |name| Arc::new(Candidate(name, ProbeScore::NONE, 0));
+        registry.register_unit_enricher(enricher("ocr"));
+        registry.register_late_unit_enricher(enricher("entities"));
+        registry.register_unit_enricher(enricher("runtime-plugin"));
+        let order: Vec<String> = registry
+            .unit_enrichers()
+            .iter()
+            .map(|p| p.descriptor().name)
+            .collect();
+        assert_eq!(order, ["ocr", "runtime-plugin", "entities"]);
     }
 }

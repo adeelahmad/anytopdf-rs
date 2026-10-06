@@ -16,6 +16,7 @@ apple-vision = [
 [dependencies]
 anyhow.workspace = true
 anytopdf-core = { path = "../anytopdf-core" }
+chrono.workspace = true
 image.workspace = true
 flate2.workspace = true
 infer.workspace = true

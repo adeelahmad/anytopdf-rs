@@ -380,3 +380,68 @@ fn extract_accepts_share_profile_output_unchanged() {
     assert_eq!(doc["chunks"], embedded_json(&pdf, "anytopdf-chunks.json"));
     assert_eq!(doc["warnings"], serde_json::json!([]));
 }
+
+fn convert_links(dir: &Path, extra: &[&str]) -> Value {
+    let notes = dir.join("links.txt");
+    fs::write(
+        &notes,
+        "Docs at https://github.com/adeelahmad/anytopdf-rs.\nMail adeel@example.com by 03/04/2024\n",
+    )
+    .unwrap();
+    let pdf = dir.join("links.pdf");
+    let out = anytopdf()
+        .arg("convert")
+        .arg(&notes)
+        .args(["--ocr", "off"])
+        .args(extra)
+        .arg("-o")
+        .arg(&pdf)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "convert failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    extract_ok(&pdf)
+}
+
+#[test]
+fn convert_lists_urls_and_emails_as_chunk_entities() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = convert_links(dir.path(), &[]);
+    let chunk = &doc["chunks"]["chunks"][0];
+    assert_eq!(
+        chunk["entities"],
+        serde_json::json!([
+            {"kind": "url", "value": "https://github.com/adeelahmad/anytopdf-rs"},
+            {"kind": "email", "value": "adeel@example.com"},
+            {"kind": "date", "value": "2024-04-03"}
+        ])
+    );
+    assert!(
+        chunk["providers"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("text-entities"))
+    );
+    assert!(chunk["text"].as_str().unwrap().starts_with("Docs at"));
+}
+
+#[test]
+fn date_order_flag_reads_numeric_dates_month_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = convert_links(dir.path(), &["--date-order", "mdy"]);
+    let entities = doc["chunks"]["chunks"][0]["entities"].as_array().unwrap();
+    assert_eq!(
+        entities.last().unwrap(),
+        &serde_json::json!({"kind": "date", "value": "2024-03-04"})
+    );
+}
+
+#[test]
+fn no_entities_flag_leaves_chunks_without_entities() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = convert_links(dir.path(), &["--no-entities"]);
+    assert!(doc["chunks"]["chunks"][0].get("entities").is_none());
+}

@@ -72,6 +72,8 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `anytopdf mcp`: MCP server over stdio exposing convert, extract, probe and capabilities
 - [x] Homebrew formula, Scoop manifest, cargo-binstall metadata and a container image
 - [x] Rust toolchain 1.92.0
+- [x] URL, email, domain, app-name and date/time entities from OCR, captions, transcripts and text
+- [ ] people, organisation and keyword entities (NER runtime plugin)
 
 ## Backlog
 

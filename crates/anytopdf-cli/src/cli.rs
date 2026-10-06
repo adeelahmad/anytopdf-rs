@@ -418,6 +418,14 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) no_embedded_subtitles: bool,
 
+    /// Skip extracting URLs, email addresses, domains, app names, dates and times from text.
+    #[arg(long)]
+    pub(crate) no_entities: bool,
+
+    /// Order of day and month in all-numeric dates such as 03/04/2024.
+    #[arg(long, default_value = "dmy", value_parser = ["dmy", "mdy"])]
+    pub(crate) date_order: String,
+
     /// Write the normalized document graph as JSON to this path.
     #[arg(long)]
     pub(crate) dump_graph: Option<PathBuf>,

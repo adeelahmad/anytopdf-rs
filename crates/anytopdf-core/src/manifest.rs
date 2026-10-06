@@ -1,4 +1,4 @@
-use crate::{Anchor, DocumentGraph, PageRange, RenderReport, Unit, UnitKind, Uuid};
+use crate::{Anchor, Annotation, DocumentGraph, PageRange, RenderReport, Unit, UnitKind, Uuid};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -62,6 +62,21 @@ pub struct Chunk {
     pub anchor: Anchor,
     pub pages: PageRange,
     pub providers: Vec<String>,
+    /// Structured entities (URLs, emails, domains, app names, dates, times)
+    /// found in the unit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entities: Vec<ChunkEntity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkEntity {
+    pub kind: String,
+    pub value: String,
+}
+
+/// The entity kind of an annotation that records one (`attributes.entity`).
+pub fn annotation_entity(a: &Annotation) -> Option<&str> {
+    a.attributes.get("entity").map(String::as_str)
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -173,9 +188,25 @@ impl ChunkSet {
                         providers.push(a.provider.clone());
                     }
                 }
+                let mut entities: Vec<ChunkEntity> = Vec::new();
+                for a in &u.annotations {
+                    if let Some(kind) = annotation_entity(a) {
+                        // Dates and times list their normalized ISO 8601 value.
+                        let entity = ChunkEntity {
+                            kind: kind.into(),
+                            value: a.attributes.get("iso").unwrap_or(&a.text).clone(),
+                        };
+                        if !entities.contains(&entity) {
+                            entities.push(entity);
+                        }
+                    }
+                }
+                // Entities repeat text already in the chunk, so they are listed
+                // separately rather than appended to it.
                 let text = u.visible_text.clone().unwrap_or_else(|| {
                     u.annotations
                         .iter()
+                        .filter(|a| annotation_entity(a).is_none())
                         .map(|a| a.text.as_str())
                         .collect::<Vec<_>>()
                         .join("\n")
@@ -188,6 +219,7 @@ impl ChunkSet {
                     anchor: unit_anchor(graph, u)?,
                     pages: *report.unit_pages.get(&u.id)?,
                     providers,
+                    entities,
                 })
             })
             .collect();
@@ -354,6 +386,56 @@ mod tests {
         }
         assert_eq!(chunks.chunks[1].text, "OCR words");
         assert_eq!(chunks.chunks[1].providers, vec!["tesseract".to_string()]);
+    }
+
+    #[test]
+    fn entity_annotations_are_listed_once_and_kept_out_of_chunk_text() {
+        let a = source("a.png", "aa11", 10);
+        let mut visual = Unit::visual(a.id, "frame.png".into());
+        visual.annotations.push(Annotation::text(
+            AnnotationKind::Ocr,
+            "tesseract",
+            "github.com",
+        ));
+        for _ in 0..2 {
+            let mut app = Annotation::text(AnnotationKind::Custom, "text-entities", "GitHub");
+            app.attributes.insert("entity".into(), "app".into());
+            visual.annotations.push(app);
+        }
+        let report = report(&[(visual.id, range(1, 1))]);
+        let graph = DocumentGraph {
+            sources: vec![a],
+            units: vec![visual],
+            ..Default::default()
+        };
+        let chunks = ChunkSet::build(&graph, &report);
+        let chunk = &chunks.chunks[0];
+        assert_eq!(chunk.text, "github.com");
+        assert_eq!(
+            chunk.entities,
+            vec![ChunkEntity {
+                kind: "app".into(),
+                value: "GitHub".into()
+            }]
+        );
+        let value = serde_json::to_value(&chunks).unwrap();
+        assert_eq!(value["chunks"][0]["entities"][0]["kind"], json!("app"));
+        let errors = crate::schema::validate(&read_schema("chunks.schema.json"), &value);
+        assert!(errors.is_empty(), "chunks invalid: {errors:?}");
+
+        let mut bad = value.clone();
+        bad["chunks"][0]["entities"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("value");
+        assert!(!crate::schema::validate(&read_schema("chunks.schema.json"), &bad).is_empty());
+    }
+
+    #[test]
+    fn chunks_without_entities_omit_the_field() {
+        let (_, chunks) = valid_pair();
+        let value = serde_json::to_value(&chunks).unwrap();
+        assert!(value["chunks"][0].get("entities").is_none());
     }
 
     #[test]

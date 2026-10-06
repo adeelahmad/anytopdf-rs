@@ -349,6 +349,8 @@ fn convert_inner(
         ocr_language: args.lang,
         explicit_transcripts: args.transcripts,
         embedded_subtitles: !args.no_embedded_subtitles,
+        entities: !args.no_entities,
+        date_order: args.date_order.parse().map_err(anyhow::Error::msg)?,
     };
 
     let (registry, mut warnings) = registry(opts, policy);
