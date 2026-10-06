@@ -30,6 +30,10 @@ class ReleasePolicyTests(unittest.TestCase):
         self.git("config", "user.name", "Release Policy Test")
         self.git("config", "user.email", "policy@example.invalid")
         self.git("config", "commit.gpgsign", "false")
+        # No background auto-gc or maintenance: a detached git writing into
+        # .git races the temporary directory cleanup.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
         (self.root / "scripts").mkdir()
         shutil.copy2(ROOT / "scripts/release.py", self.root / "scripts/release.py")
         (self.root / "Cargo.toml").write_text(
