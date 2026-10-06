@@ -139,7 +139,9 @@ transcript annotations. `anytopdf-plugin-sentiment` is one: it answers
 `unit-enrich` with append-only `custom` annotations whose `attributes` carry
 `entity` (`sentiment`, `tone` or `sentiment-overall`), `label`, a signed `score`,
 and `from` (`transcript`, `caption`, `ocr` or `text`). Annotations with an `entity`
-attribute are written to the hidden text layer.
+attribute are written to the hidden text layer. It reads settings from the
+request's `options` object when present (keys such as `llm_model`), falling back
+to its `ANYTOPDF_SENTIMENT_*` environment variables.
 
 ## Host validation and execution policy
 

@@ -409,7 +409,30 @@ fn handle(request_path: &Path, var: impl Fn(&str) -> Option<String>) -> Result<V
         bail!("unit-enrich request has no unit");
     }
     let mut response = json!({"protocol": PROTOCOL, "ok": true, "warnings": [], "annotations": []});
-    let config = match Config::from_env(var) {
+    // The layered config (`[sentiment]` table, `--set sentiment.KEY=...`)
+    // arrives as request `options`; the plugin's own environment variables
+    // fill in whatever it leaves out.
+    let options = request["options"].clone();
+    let setting = |name: &str| {
+        let key = name
+            .strip_prefix("ANYTOPDF_SENTIMENT_")
+            .map(str::to_ascii_lowercase);
+        let from_options = key.and_then(|k| match &options[k.as_str()] {
+            Value::String(s) => Some(s.clone()),
+            Value::Bool(b) => Some(b.to_string()),
+            Value::Number(n) => Some(n.to_string()),
+            Value::Array(items) => Some(
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+            _ => None,
+        });
+        from_options.or_else(|| var(name))
+    };
+    let config = match Config::from_env(setting) {
         Ok(config) => config,
         Err(e) => {
             response["warnings"] = json!([format!("sentiment: {e:#}; nothing labelled")]);

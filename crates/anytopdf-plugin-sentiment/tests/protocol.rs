@@ -255,3 +255,48 @@ fn an_llm_endpoint_labels_segments_and_adds_formal_and_informal_tones() {
     let system = body["messages"][0]["content"].as_str().unwrap();
     assert!(system.contains("Never guess"), "{system}");
 }
+
+#[test]
+fn request_options_override_environment_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut command = plugin();
+    command.env("ANYTOPDF_SENTIMENT_BACKEND", "bert");
+    let request = dir.path().join("request.json");
+    let response = dir.path().join("response.json");
+    fs::write(
+        &request,
+        serde_json::to_vec(&json!({
+            "protocol": 1, "operation": "unit-enrich", "workspace": dir.path(),
+            "unit": transcript_unit(),
+            "options": {"backend": "vader", "neutral": true, "tones": false,
+                        "from": ["transcript"], "threshold": 0.05}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let status = command
+        .arg("--anytopdf-request")
+        .arg(&request)
+        .arg("--anytopdf-response")
+        .arg(&response)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let response: Value = serde_json::from_slice(&fs::read(&response).unwrap()).unwrap();
+    assert_eq!(response["warnings"], json!([]), "{response}");
+    let added = host_accepts(&transcript_unit(), &response);
+    let pairs = summary(&added);
+    let pairs: Vec<(&str, &str)> = pairs
+        .iter()
+        .map(|(a, b)| (a.as_str(), b.as_str()))
+        .collect();
+    assert_eq!(
+        pairs,
+        [
+            ("sentiment", "positive"),
+            ("sentiment", "negative"),
+            ("sentiment", "neutral"),
+            ("sentiment-overall", "overall neutral"),
+        ]
+    );
+}

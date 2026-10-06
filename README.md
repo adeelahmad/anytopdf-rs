@@ -170,6 +170,10 @@ export ANYTOPDF_SENTIMENT_LLM_MODEL=qwen2.5:3b
 | `ANYTOPDF_SENTIMENT_TONES` | `true` | Add tone tags |
 | `ANYTOPDF_SENTIMENT_THRESHOLD` | `0.05` | Lexicon score needed for positive or negative |
 
+A request `options` object (how anytopdf's layered configuration passes a
+`[sentiment]` table) takes precedence: `llm_model = "qwen2.5:3b"` there wins over
+`ANYTOPDF_SENTIMENT_LLM_MODEL`, and lists such as `from = ["ocr"]` are accepted.
+
 The plugin runs once per unit; with an LLM, raise `--plugin-timeout` for long
 transcripts. `--plugin-sandbox strict` blocks network access, so the LLM backend
 falls back to the lexicon there.
