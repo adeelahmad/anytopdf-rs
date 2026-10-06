@@ -4,12 +4,14 @@ use printpdf::*;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 mod attachments;
+mod boxes;
 mod fonts;
 mod layout;
 mod pdfa;
 mod pdfa_text;
 mod provenance;
 pub use attachments::{CHUNKS_FILE, EmbeddedFile, MANIFEST_FILE, embed_files, read_embedded_files};
+pub use boxes::{BoxKind, DRAW_BOXES_KEY, box_kinds_value, parse_box_kinds};
 use fonts::{find_system_font, subset_document_font};
 use layout::{
     TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM, annotation_line,
@@ -125,7 +127,17 @@ impl Renderer for SearchablePdfRenderer {
                     &font_handle,
                     &mut pdf_warnings,
                 ) {
-                    Ok(page) => pages.push(page),
+                    Ok(mut page) => {
+                        let (w, h) = (page.media_box.width.0, page.media_box.height.0);
+                        page.ops.extend(boxes::printpdf_ops(
+                            graph,
+                            unit,
+                            (w, h),
+                            &font_handle,
+                            &measure,
+                        ));
+                        pages.push(page)
+                    }
                     Err(e) => {
                         own_warnings.push(format!("visual page {} failed: {e:#}", visual.display()))
                     }

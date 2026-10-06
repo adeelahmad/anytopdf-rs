@@ -5,6 +5,7 @@
 //! (one section per unit, figures with alternate text, paragraphs per source line) and
 //! bookmarks per source, and the manifest and chunks are PDF/A-3 associated files.
 use crate::attachments::{CHUNKS_FILE, MANIFEST_FILE};
+use crate::boxes::{BoxKind, RectPt, overlay_boxes};
 use crate::fonts::{configured_font, find_fallback_fonts};
 use crate::layout::{
     SEARCH_X_MM, TEXT_FONT_PT, TEXT_LINE_PT, TEXT_MARGIN_MM, TEXT_PAGE_H_MM, TEXT_PAGE_W_MM,
@@ -25,9 +26,11 @@ use krilla::metadata::{DateTime, Metadata};
 use krilla::num::NormalizedF32;
 use krilla::outline::{Outline, OutlineNode};
 use krilla::page::PageSettings;
-use krilla::paint::Fill;
+use krilla::paint::{Fill, Stroke};
 use krilla::surface::Surface;
-use krilla::tagging::{ContentTag, Identifier, Node, SpanTag, Tag, TagGroup, TagTree};
+use krilla::tagging::{
+    Artifact, ArtifactType, ContentTag, Identifier, Node, SpanTag, Tag, TagGroup, TagTree,
+};
 use krilla::{Document, SerializeSettings};
 use std::collections::BTreeMap;
 use std::fs;
@@ -194,6 +197,7 @@ impl Renderer for PdfARenderer {
         let mut builder = Builder {
             doc: Document::new_with(settings),
             font: &font,
+            box_kinds: crate::boxes::requested_kinds(graph),
             pages: 0,
             tree: TagTree::new().with_lang(Some(LANGUAGE.into())),
         };
@@ -361,6 +365,7 @@ fn new_page(doc: &mut Document, w: f32, h: f32) -> krilla::page::Page<'_> {
 struct Builder<'a> {
     doc: Document,
     font: &'a FontSet,
+    box_kinds: Vec<BoxKind>,
     pages: usize,
     tree: TagTree,
 }
@@ -379,6 +384,7 @@ impl Builder<'_> {
             surface.draw_image(image, size);
         }
         surface.end_tagged();
+        draw_boxes(&mut surface, font, &self.box_kinds, unit, w, h);
 
         surface.set_fill(Some(hidden_fill()));
         // Positioned OCR layer, placed exactly as the printpdf renderer places it.
@@ -551,6 +557,68 @@ impl Builder<'_> {
         self.pages += 1;
         (ids, hidden)
     }
+}
+
+/// Vector overlay for `--draw-boxes`. It is decoration over the figure, so it is
+/// tagged as an artifact; the annotations it shows are already in the search layer.
+fn draw_boxes(
+    surface: &mut Surface,
+    font: &FontSet,
+    kinds: &[BoxKind],
+    unit: &Unit,
+    w: f32,
+    h: f32,
+) {
+    let overlay = overlay_boxes(kinds, unit, w, h, &|text| font.width(text));
+    if overlay.is_empty() {
+        return;
+    }
+    let solid = |kind: BoxKind| {
+        let (r, g, b) = kind.rgb();
+        rgb::Color::new(r, g, b)
+    };
+    let rect_path = |r: RectPt| {
+        let mut path = krilla::geom::PathBuilder::new();
+        path.push_rect(krilla::geom::Rect::from_xywh(r.x, r.y, r.w, r.h)?);
+        path.finish()
+    };
+    surface.start_tagged(ContentTag::Artifact(Artifact::with_kind(
+        ArtifactType::Other,
+    )));
+    for b in overlay {
+        if let Some(path) = rect_path(b.rect) {
+            surface.set_fill(None);
+            surface.set_stroke(Some(Stroke {
+                paint: solid(b.kind).into(),
+                width: b.stroke,
+                ..Default::default()
+            }));
+            surface.draw_path(&path);
+        }
+        surface.set_stroke(None);
+        if let Some(label) = b.label {
+            if let Some(path) = rect_path(label.rect) {
+                surface.set_fill(Some(Fill {
+                    paint: solid(b.kind).into(),
+                    opacity: NormalizedF32::ONE,
+                    rule: Default::default(),
+                }));
+                surface.draw_path(&path);
+            }
+            surface.set_fill(Some(Fill {
+                paint: rgb::Color::white().into(),
+                opacity: NormalizedF32::ONE,
+                rule: Default::default(),
+            }));
+            font.draw(
+                surface,
+                Point::from_xy(label.baseline_x, label.baseline_y),
+                label.size,
+                &label.text,
+            );
+        }
+    }
+    surface.end_tagged();
 }
 
 fn search_layer(
