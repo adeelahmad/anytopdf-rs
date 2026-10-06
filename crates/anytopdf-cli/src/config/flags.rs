@@ -18,6 +18,8 @@ const ALIASES: &[(&str, &str)] = &[
     ("video.dedupe_distance", "dedupe-distance"),
     ("video.max_frames", "max-video-frames"),
     ("image.max_frames", "max-image-frames"),
+    ("entities.date_order", "date-order"),
+    ("location.mode", "location"),
 ];
 
 /// One option of a built-in table.

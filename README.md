@@ -710,17 +710,15 @@ lang = "eng+deu"
 model = "base"
 ```
 
-Top-level keys are global settings. `[image]`, `[video]`, `[ocr]` and `[captions]`
-are the built-in tables and reject unknown keys; any other table is passed to the
+Top-level keys are global settings. `[image]`, `[video]`, `[ocr]`, `[captions]`,
+`[entities]`, `[colors]`, `[location]`, `[raw]` and `[scan]` are the built-in tables and reject unknown keys; any other table is passed to the
 runtime plugin with that manifest name (`-` and `_` match) in the `options` field
 of each request. A runtime plugin's keys are set with `--set whisper.model=base`,
 or `ANYTOPDF_WHISPER_MODEL` once `[whisper]` is in a config file
 (`ANYTOPDF_WHISPER__MODEL` always works). The older flag names (`--ocr`, `--lang`,
 `--scene-threshold`, `--dedupe-distance`, `--max-video-frames`,
-`--max-image-frames`, `--no-embedded-subtitles`) still work.
-Options that are not in a table yet, such as `--colors`, `--location`,
-`--no-entities`, `--raw-decode` and `--scan-mode`, are set by flag (some also by
-their own `ANYTOPDF_*` variable) and do not appear in `anytopdf config`.
+`--max-image-frames`, `--no-embedded-subtitles`, `--location`, `--date-order`,
+`--colors`, `--no-entities`) still work.
 
 `anytopdf config` prints the effective settings with the file, variable or flag
 each came from (`--json` emits `anytopdf.config/1`); `anytopdf config --defaults`

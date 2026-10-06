@@ -5,7 +5,9 @@
 //! target without downloading native libraries. The crate covers the parts
 //! every detector needs: loading a model with a fixed image input, letterbox
 //! preprocessing into an NCHW tensor, mapping boxes back to normalized source
-//! coordinates, and non-maximum suppression.
+//! coordinates, and non-maximum suppression. [`detector`] serves fixed-input
+//! detectors with named outputs and keypoints (faces), and [`encoder`] serves
+//! multi-input encoders and embedding maths (CLIP).
 
 use anyhow::{Context, Result, bail};
 use image::{DynamicImage, GenericImageView, imageops::FilterType};
@@ -15,6 +17,8 @@ use tract_onnx::tract_hir::{infer::Factoid, internal::DimLike};
 
 pub use tract_onnx::prelude::tract_ndarray as ndarray;
 
+pub mod detector;
+pub mod encoder;
 #[cfg(feature = "testing")]
 pub mod testing;
 
