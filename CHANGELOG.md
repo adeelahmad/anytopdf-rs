@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) chat exports become
+  conversation pages with a `time sender: text` line per message; attachments in the export
+  follow the message that sent them. New `--chat-date-order` and `--no-chat-attachments`.
+
 ## 0.2.0
 
 Searchable-PDF fidelity, identity, and CLI contract release.
