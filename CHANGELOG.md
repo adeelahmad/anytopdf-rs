@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
@@ -8,13 +10,6 @@
   layer and the chunks JSON (`color navy blue #141e64 31%`), so searching "red" or
   "blue" finds the frames those colours dominate. `--colors off` disables it.
   Runtime plugins' `custom` annotations with an `entity` attribute are now searchable too.
-
-## 0.2.0
-
-Searchable-PDF fidelity, identity, and CLI contract release.
-
-### Behaviour changes
-
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error
