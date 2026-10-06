@@ -67,7 +67,11 @@ impl OnnxModel {
         path: &Path,
         shape: impl Fn(usize, &str) -> Option<Vec<usize>>,
     ) -> Result<Self> {
+        // Exports often declare symbolic output shapes (a `batch` dim) that
+        // conflict with the concrete input shapes pinned below; tract re-derives them.
         let mut model = tract_onnx::onnx()
+            .with_ignore_output_shapes(true)
+            .with_ignore_value_info(true)
             .model_for_path(path)
             .map_err(anyhow_from)
             .with_context(|| format!("load ONNX model {}", path.display()))?;
