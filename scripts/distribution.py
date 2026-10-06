@@ -21,8 +21,8 @@ HOMEBREW = {
     ("linux", "intel"): "x86_64-unknown-linux-musl",
 }
 SCOOP = {"64bit": "x86_64-pc-windows-msvc"}
-# Runtime plugins shipped in each archive's plugins/ folder. They stay opt-in:
-# anytopdf only runs them once ANYTOPDF_PLUGIN_PATH names that folder.
+# Runtime plugins shipped in each archive's plugins/ folder. anytopdf finds them
+# there and runs each once its manifest reports ready.
 PLUGINS = [
     "anytopdf-plugin-audio-events",
     "anytopdf-plugin-clip",
@@ -103,12 +103,13 @@ def homebrew_formula(version, digests, repository, description):
         "      Video, metadata, OCR and transcription use optional providers.\n"
         "      Install the ones you need:\n"
         "        brew install ffmpeg exiftool tesseract whisper-cpp\n"
-        "      Bundled runtime plugins are opt-in. To transcribe audio and video with\n"
-        "      anytopdf-plugin-whisper and tag the sentiment and tone of text with\n"
-        "      anytopdf-plugin-sentiment, add to your shell profile:\n"
-        "        export ANYTOPDF_PLUGIN_PATH=\"#{opt_libexec}/plugins\"\n"
-        "        export ANYTOPDF_WHISPER_MODEL=/path/to/ggml-base.en.bin\n"
-        "      Then run `anytopdf doctor` to check what is available.\n"
+        "      Bundled runtime plugins in #{opt_libexec}/plugins are found\n"
+        "      automatically and turn on once they have what they need. Run\n"
+        "        anytopdf setup whisper\n"
+        "      for speech to text, and `anytopdf capabilities` to see how to turn\n"
+        "      on the others (object detection, CLIP scene tags, face recognition,\n"
+        "      vision-model captions). Set ANYTOPDF_PLUGIN_PATH to that folder to\n"
+        "      run every bundled plugin even when it reports something missing.\n"
         "    EOS\n"
         "  end\n"
         "\n"
@@ -144,9 +145,11 @@ def scoop_manifest(version, digests, repository, description):
         },
         "bin": "anytopdf.exe",
         "notes": [
-            "Bundled runtime plugins are opt-in. To transcribe audio and video, set",
-            "ANYTOPDF_PLUGIN_PATH to $dir\\plugins and ANYTOPDF_WHISPER_MODEL to a",
-            "whisper.cpp ggml model file.",
+            "Bundled runtime plugins in $dir\\plugins are found automatically and turn",
+            "on once they have what they need: run `anytopdf setup whisper` for speech",
+            "to text and `anytopdf capabilities` for the others. Set ANYTOPDF_PLUGIN_PATH",
+            "to $dir\\plugins to run every bundled plugin even when one reports",
+            "something missing.",
         ],
         "suggest": {"FFmpeg": "ffmpeg", "ExifTool": "exiftool", "Tesseract": "tesseract"},
         "checkver": "github",

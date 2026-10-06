@@ -43,9 +43,9 @@ downloads a checksummed ggml model into the user data folder. The container's
 `WHISPER=cpp` build includes the engine; mount a model as described below.
 `anytopdf doctor` lists whatever is still missing.
 
-The Homebrew caveats and Scoop notes are rendered for the latest release and still
-describe the 0.2.0 opt-in (`ANYTOPDF_PLUGIN_PATH` plus `ANYTOPDF_WHISPER_MODEL`),
-which keeps working; update them in `scripts/distribution.py` with the next release.
+The Homebrew caveats and Scoop notes point at `anytopdf setup whisper` and
+`anytopdf capabilities`; setting `ANYTOPDF_PLUGIN_PATH` to the plugins folder still
+runs every bundled plugin regardless of readiness.
 
 ## Homebrew tap
 

@@ -2,28 +2,28 @@
 class Anytopdf < Formula
   desc "Convert media and documents into searchable, RAG-friendly PDFs"
   homepage "https://github.com/adeelahmad/anytopdf-rs"
-  version "0.2.0"
+  version "0.3.0"
   license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
     on_arm do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.2.0/anytopdf-0.2.0-aarch64-apple-darwin.tar.gz"
-      sha256 "ade5bc88385bc8c9f44f0c92c496d8954aef20ab6b38eebeab2de1ce114fc911"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-aarch64-apple-darwin.tar.gz"
+      sha256 "29751b5a916a328cafdad52af19a6415a9b72c36ddc8784c8c11bbd936d435c3"
     end
     on_intel do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.2.0/anytopdf-0.2.0-x86_64-apple-darwin.tar.gz"
-      sha256 "7095bc484e3917da8e9e5fae36b901ac5fbc3dadc27a79535068f62e8619bad5"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-x86_64-apple-darwin.tar.gz"
+      sha256 "71b9170b75ac6b1783e91f15aaef9fba826d0bda5af7dbb6bbc0efcc9445f2bc"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.2.0/anytopdf-0.2.0-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "4f1540383cdcec1fcf9dd2d60f9c0c7ec7d3f0a07e35809ddac121b48ae886ed"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "9c6cc307a3e6dc7e7e44c390176ce62e7b77ebad640ea74c569272104a79f6dd"
     end
     on_intel do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.2.0/anytopdf-0.2.0-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "cb4021b6c658197aae8b53debb672afec667e18993236184f0b03b9567d1b910"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "2a789bf099cd14b5f68a147b44170d3f243299565b09b93b3a3329811a2492c0"
     end
   end
 
@@ -38,12 +38,13 @@ class Anytopdf < Formula
       Video, metadata, OCR and transcription use optional providers.
       Install the ones you need:
         brew install ffmpeg exiftool tesseract whisper-cpp
-      Bundled runtime plugins are opt-in. To transcribe audio and video with
-      anytopdf-plugin-whisper and tag the sentiment and tone of text with
-      anytopdf-plugin-sentiment, add to your shell profile:
-        export ANYTOPDF_PLUGIN_PATH="#{opt_libexec}/plugins"
-        export ANYTOPDF_WHISPER_MODEL=/path/to/ggml-base.en.bin
-      Then run `anytopdf doctor` to check what is available.
+      Bundled runtime plugins in #{opt_libexec}/plugins are found
+      automatically and turn on once they have what they need. Run
+        anytopdf setup whisper
+      for speech to text, and `anytopdf capabilities` to see how to turn
+      on the others (object detection, CLIP scene tags, face recognition,
+      vision-model captions). Set ANYTOPDF_PLUGIN_PATH to that folder to
+      run every bundled plugin even when it reports something missing.
     EOS
   end
 
