@@ -608,6 +608,7 @@ mod tests {
                         extensions: vec!["igl".into()],
                         mime_types: vec![],
                         priority: 50,
+                        phase: None,
                     })
                     .collect(),
                 ready: true,
@@ -641,6 +642,7 @@ mod tests {
                     extensions: vec![],
                     mime_types: vec!["audio/*".into()],
                     priority: 50,
+                    phase: None,
                 }],
                 ready: false,
                 detail: Some("whisper.cpp has no ggml model; run `anytopdf setup whisper`".into()),

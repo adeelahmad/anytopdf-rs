@@ -35,6 +35,12 @@ Capability kinds:
 - `unit-enricher`
 - `renderer`
 
+A `graph-enricher` capability may set `"phase"`: `"before-units"` (the default)
+runs before unit enrichers, and `"after-units"` runs after them, for summaries
+over what they found. The host skips a capability with any other phase and
+reports a discovery warning. Hosts that predate the field run every graph
+enricher before unit enrichers; the protocol stays at `"protocol": 1`.
+
 Optional readiness fields (both may be omitted; `ready` defaults to `true`):
 
 ```json

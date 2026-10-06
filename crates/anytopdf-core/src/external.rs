@@ -21,6 +21,20 @@ pub struct RuntimeCapability {
     pub mime_types: Vec<String>,
     #[serde(default)]
     pub priority: i32,
+    /// For `graph-enricher`: `before-units` (default) or `after-units`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+}
+
+impl RuntimeCapability {
+    /// The graph phase this capability declares; `None` for an unknown value.
+    pub fn graph_phase(&self) -> Option<GraphPhase> {
+        match self.phase.as_deref() {
+            None | Some("before-units") => Some(GraphPhase::BeforeUnits),
+            Some("after-units") => Some(GraphPhase::AfterUnits),
+            Some(_) => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -342,6 +356,11 @@ pub fn register_runtime_plugins_with_policy(
                         capability,
                     }))
                 }
+                "graph-enricher" if capability.graph_phase().is_none() => warnings.push(format!(
+                    "plugin {} declares unknown graph-enricher phase {}",
+                    plugin.manifest.name,
+                    capability.phase.as_deref().unwrap_or_default()
+                )),
                 "graph-enricher" => {
                     registry.register_graph_enricher(Arc::new(RuntimeGraphEnricher {
                         plugin: plugin.clone(),
@@ -561,6 +580,9 @@ impl Plugin for RuntimeGraphEnricher {
     }
 }
 impl GraphEnricher for RuntimeGraphEnricher {
+    fn phase(&self) -> GraphPhase {
+        self.capability.graph_phase().unwrap_or_default()
+    }
     fn enrich_graph(&self, ctx: &JobContext, graph: &mut DocumentGraph) -> Result<Vec<String>> {
         let response = invoke(
             &self.plugin,
@@ -819,6 +841,7 @@ mod process_tests {
             extensions: vec!["example".into()],
             mime_types: vec![],
             priority: 1,
+            phase: None,
         };
         let plugin = RuntimePlugin {
             executable,
@@ -867,6 +890,7 @@ mod process_tests {
             extensions: vec!["example".into()],
             mime_types: vec![],
             priority: 1,
+            phase: None,
         };
         let plugin = RuntimePlugin {
             executable,
@@ -966,6 +990,20 @@ mod process_tests {
             bundled_plugin_dirs(&link),
             [keg.join("bin/plugins"), keg.join("libexec/plugins")]
         );
+    }
+
+    #[test]
+    fn graph_enricher_phase_defaults_to_before_units() {
+        let parse = |json: &str| serde_json::from_str::<RuntimeCapability>(json).unwrap();
+        let plain = parse(r#"{"kind":"graph-enricher"}"#);
+        assert_eq!(plain.graph_phase(), Some(GraphPhase::BeforeUnits));
+        let late = parse(r#"{"kind":"graph-enricher","phase":"after-units"}"#);
+        assert_eq!(late.graph_phase(), Some(GraphPhase::AfterUnits));
+        assert_eq!(
+            parse(r#"{"kind":"graph-enricher","phase":"later"}"#).graph_phase(),
+            None
+        );
+        assert!(!serde_json::to_string(&plain).unwrap().contains("phase"));
     }
 
     #[test]

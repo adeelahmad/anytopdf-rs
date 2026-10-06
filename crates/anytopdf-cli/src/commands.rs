@@ -270,6 +270,7 @@ mod tests {
                     extensions: vec![],
                     mime_types: vec!["audio/*".into()],
                     priority: 50,
+                    phase: None,
                 }],
                 ready,
                 detail: Some(detail.into()),
