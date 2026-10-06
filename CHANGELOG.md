@@ -6,6 +6,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
+  gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
+  until `--duration` or Ctrl-C, then converts the recording with the video importer's
+  interval, scene-change and dedupe sampling. `anytopdf doctor` adds a "Screen capture"
+  section (`capture` in `--json`) with the grabber and, on macOS, the Screen Recording
+  permission.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's
