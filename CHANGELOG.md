@@ -10,6 +10,11 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
   pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
   confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
+- `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
+  (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
+  image and video-frame pages in both renderers. Face boxes show the matched person's
+  name when a recognizer supplies one. The source image is untouched and the overlay
+  is a PDF/A artifact, so the text layer and page count are unchanged.
 - OCR words in the PDF/A text layer are stretched to their OCR boxes, so search and
   selection highlights cover the word in the image instead of the font's natural width.
 - An OCR provider that fails during `--ocr auto` fallback is reported by its last error
