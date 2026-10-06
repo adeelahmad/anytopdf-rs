@@ -254,6 +254,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "anytopdf-plugin-vlm"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-core",
+ "base64 0.22.1",
+ "image",
+ "serde_json",
+ "tempfile",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
 name = "anytopdf-plugin-whisper"
 version = "0.2.0"
 dependencies = [
