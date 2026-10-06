@@ -150,6 +150,16 @@ continue on the page where the previous text unit of the same source ended
 instead of starting a new page; use it for many small records (rows, messages,
 log entries). Protocol version unchanged.
 
+Annotations of kind `scene` are searchable content (written to the PDF's hidden
+text layer) only when they carry the attribute `"entity": "scene-tag"`, as the
+CLIP plugin's zero-shot tags do; other `scene` annotations record how a keyframe
+was selected and stay out of it.
+
+Unit metadata is never written into the PDF. The CLIP plugin stores each visual
+unit's embedding there as `clip.embedding` (base64 of little-endian `f32`, unit
+length), with `clip.model` (an identifier that changes with the model files) and
+`clip.dim`; a cross-file search index may read these keys.
+
 Plugins may create derived files only under the supplied workspace unless the
 user explicitly configured otherwise.
 

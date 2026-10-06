@@ -51,6 +51,15 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
   pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
   confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
+- The new `anytopdf-plugin-clip` runtime plugin embeds every image, page and video
+  keyframe with CLIP (ViT-B/32 on the CPU through the pure-Rust `tract` ONNX runtime)
+  and tags it with zero-shot scene labels such as `screenshot`, `document`, `outdoors`
+  or `beach`. Tags are `scene` annotations with `entity = scene-tag` and land in the
+  PDF's hidden text layer, so searching a PDF for "beach" finds beach photos; other
+  `scene` annotations (keyframe selection notes) stay out of it. The embedding is
+  kept in unit metadata (`clip.embedding`) for the search index and never written
+  into the PDF. `anytopdf-plugin-clip --fetch-model` downloads the model with pinned
+  SHA-256 checksums. The shared `anytopdf-onnx` crate holds the ONNX helpers.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

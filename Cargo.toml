@@ -8,6 +8,7 @@ members = [
   "crates/anytopdf-imap",
   "crates/anytopdf-index",
   "crates/anytopdf-onnx",
+  "crates/anytopdf-plugin-clip",
   "crates/anytopdf-plugin-faces",
   "crates/anytopdf-plugin-objects",
   "crates/anytopdf-plugin-vlm",

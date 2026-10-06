@@ -19,13 +19,15 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
 }
 
 /// Whether an annotation belongs in the hidden text layer, which carries page
-/// content only. Extracted entities and place names read from that content
-/// qualify; a location derived from GPS metadata does not.
+/// content only. Extracted entities, scene tags (`entity = scene-tag`, such as
+/// "beach") and place names read from that content qualify; a location derived
+/// from GPS metadata and scene annotations recording keyframe selection do not.
 pub(crate) fn is_searchable_content(a: &Annotation) -> bool {
     use AnnotationKind::*;
     match a.kind {
         Ocr | Caption | Transcript | Object | Face | Barcode => true,
         Custom | Timestamp => a.attributes.contains_key("entity"),
+        Scene => a.attributes.get("entity").is_some_and(|e| e == "scene-tag"),
         Location => a.attributes.get("source").map(String::as_str) == Some("text"),
         _ => false,
     }
@@ -454,5 +456,17 @@ mod tests {
             "p",
             "x"
         )));
+    }
+
+    #[test]
+    fn only_scene_tags_are_searchable_scene_annotations() {
+        let selection =
+            Annotation::text(AnnotationKind::Scene, "ffmpeg-video", "selected keyframe");
+        assert!(!is_searchable_content(&selection));
+        let mut tag = Annotation::text(AnnotationKind::Scene, "clip", "beach");
+        tag.attributes.insert("entity".into(), "scene-tag".into());
+        assert!(is_searchable_content(&tag));
+        let metadata = Annotation::text(AnnotationKind::Metadata, "exiftool", "Camera: X");
+        assert!(!is_searchable_content(&metadata));
     }
 }

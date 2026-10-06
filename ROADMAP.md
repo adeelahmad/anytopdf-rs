@@ -100,8 +100,9 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 ## Later media semantics
 - [x] neutral face detection: presence/count/bounds (`anytopdf-plugin-faces`)
 - [x] object detection provider (`anytopdf-plugin-objects`, YOLO ONNX on a pure-Rust runtime)
+- [x] scene classification provider (zero-shot CLIP tags in `anytopdf-plugin-clip`)
+- [x] CLIP image embeddings for search by meaning (`anytopdf-plugin-clip`; `search --semantic` follows the cross-file index)
 - [x] keyframe captions, questions and activities, video and scene summaries, and a video category (`anytopdf-plugin-vlm`)
-- [ ] scene classification provider
 - [ ] barcode/QR extraction
 - [ ] audio chapter / speaker-turn annotations
 - [ ] OCR-text-aware video frame retention

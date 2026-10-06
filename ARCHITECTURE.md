@@ -248,6 +248,8 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
+- `anytopdf-plugin-clip` (shipped in `crates/anytopdf-plugin-clip`; CLIP embeddings
+  and scene tags, on the pure-Rust tract runtime)
 - `anytopdf-plugin-faces` (shipped in `crates/anytopdf-plugin-faces`; see `docs/faces.md`)
 - `anytopdf-plugin-objects` (shipped in `crates/anytopdf-plugin-objects`; YOLO ONNX
   models on the shared pure-Rust runtime in `crates/anytopdf-onnx`)
