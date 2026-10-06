@@ -294,49 +294,58 @@ anytopdf convert meeting.mp4 \
 
 ### Configuration file
 
-Every setting can come from a TOML file, an environment variable or a flag, so
-defaults you always want live in one place. Later layers win:
+Every option has three equivalent spellings, rclone-style, all derived from one
+definition: `interval` under `[video]` in the config file is
+`ANYTOPDF_VIDEO_INTERVAL` in the environment and `--video-interval` on
+`anytopdf convert`. `anytopdf convert --help` lists every option grouped by type
+(Video importer, OCR enricher, …) with its environment variable and default.
+Later layers win:
 
 1. built-in defaults
 2. `~/.config/anytopdf/config.toml` (`$XDG_CONFIG_HOME` if set;
    `%APPDATA%\anytopdf\config.toml` on Windows), or instead the files named by
    `--config PATH` (repeatable) or `ANYTOPDF_CONFIG`; `--no-config` or
    `ANYTOPDF_NO_CONFIG=1` skips files
-3. `ANYTOPDF_<KEY>` for top-level keys and `ANYTOPDF_<SECTION>__<TABLE>__<KEY>`
-   for tables, e.g. `ANYTOPDF_PROFILE=share`,
-   `ANYTOPDF_IMPORTER__VIDEO__INTERVAL=2`; lists are comma-separated
-4. command-line flags such as `--video-interval 2`
-5. `--set KEY=VALUE` (repeatable), e.g. `--set importer.video.interval=2`
+3. environment variables: `ANYTOPDF_PROFILE=share`, `ANYTOPDF_VIDEO_INTERVAL=2`;
+   lists are comma-separated
+4. flags: `--profile share`, `--video-interval 2`
+5. `--set TABLE.KEY=VALUE` (repeatable), e.g. `--set whisper.model=base`
 
 ```toml
 # ~/.config/anytopdf/config.toml
 profile = "share"
-renderer = "pdfa"          # shorthand for [renderer] use = "pdfa"
+renderer = "pdfa"
 plugin_timeout = 120
 
-[importer.video]
+[video]                    # ANYTOPDF_VIDEO_*, --video-*
 interval = 2.0
 max_frames = 200
 
-[enricher.ocr]
+[ocr]                      # ANYTOPDF_OCR_*, --ocr-*
 mode = "tesseract"
 lang = "eng+deu"
 
-[enricher.whisper]         # a runtime plugin's table, passed to it as `options`
+[whisper]                  # a runtime plugin's table, passed to it as `options`
 model = "base"
 ```
 
-Top-level keys are global settings. `[importer.NAME]`, `[enricher.NAME]` and
-`[renderer.NAME]` hold one table per plugin: built-in tables reject unknown keys,
-and a runtime plugin receives its table (by manifest name; `-` and `_` match) in
-the `options` field of each request. `anytopdf config` prints the effective
-settings with the file, variable or flag each came from (`--json` emits
-`anytopdf.config/1`); `anytopdf config --defaults` prints a starter file. The file
-format is `schemas/config-file.schema.json`. An invalid value exits 2 and names
-the key and where it was set. Secrets (`ANYTOPDF_WEBHOOK_SECRET`,
-`ANYTOPDF_QUEUE_TOKEN`, IMAP credentials) and `ANYTOPDF_PLUGIN_PATH` stay
-environment-only, and no file is read from the current directory, so a folder
-you convert cannot change how plugins run.
+Top-level keys are global settings. `[image]`, `[video]`, `[ocr]` and `[captions]`
+are the built-in tables and reject unknown keys; any other table is passed to the
+runtime plugin with that manifest name (`-` and `_` match) in the `options` field
+of each request. A runtime plugin's keys are set with `--set whisper.model=base`,
+or `ANYTOPDF_WHISPER_MODEL` once `[whisper]` is in a config file
+(`ANYTOPDF_WHISPER__MODEL` always works). The older flag names (`--ocr`, `--lang`,
+`--scene-threshold`, `--dedupe-distance`, `--max-video-frames`,
+`--max-image-frames`, `--no-embedded-subtitles`) still work.
+
+`anytopdf config` prints the effective settings with the file, variable or flag
+each came from (`--json` emits `anytopdf.config/1`); `anytopdf config --defaults`
+prints a starter file. The file format is `schemas/config-file.schema.json`. An
+invalid value exits 2 and names the key and where it was set. Secrets
+(`ANYTOPDF_WEBHOOK_SECRET`, `ANYTOPDF_QUEUE_TOKEN`, `ANYTOPDF_IMAP_*`) and
+`ANYTOPDF_PLUGIN_PATH` stay environment-only and are never read as settings, and
+no file is read from the current directory, so a folder you convert cannot change
+how plugins run.
 
 ### Progress events
 

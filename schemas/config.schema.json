@@ -24,7 +24,7 @@
     },
     "values": { "type": "object" },
     "origins": {
-      "description": "Where each effective value came from, keyed by dotted path such as importer.video.interval.",
+      "description": "Where each effective value came from, keyed by dotted path such as video.interval.",
       "type": "object",
       "additionalProperties": { "$ref": "#/$defs/origin" }
     }

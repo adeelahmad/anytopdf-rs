@@ -1,9 +1,9 @@
 use super::values::expected_type;
 use super::*;
-use clap::{CommandFactory, FromArgMatches};
+use clap::FromArgMatches;
 
 fn parse(args: &[&str]) -> (Cli, ArgMatches) {
-    let matches = Cli::command()
+    let matches = crate::cli::command()
         .try_get_matches_from(std::iter::once("anytopdf").chain(args.iter().copied()))
         .unwrap();
     (Cli::from_arg_matches(&matches).unwrap(), matches)
@@ -36,37 +36,34 @@ fn at(resolved: &Resolved, key: &str) -> Value {
 
 #[test]
 fn later_layers_override_earlier_ones_and_record_their_origin() {
-    let file = "plugin_timeout = 10\n[importer.video]\ninterval = 2.0\nscene_threshold = 0.5\n";
+    let file = "plugin_timeout = 10\n[video]\ninterval = 2.0\nscene_threshold = 0.5\n";
     let resolved = resolve(
         &["convert", "--scene-threshold", "0.9", "a.mp4"],
-        &[("ANYTOPDF_IMPORTER__VIDEO__INTERVAL", "3")],
+        &[("ANYTOPDF_VIDEO_INTERVAL", "3")],
         Some(file),
     )
     .unwrap();
     assert_eq!(at(&resolved, "plugin_timeout"), json!(10));
-    assert_eq!(at(&resolved, "importer.video.interval"), json!(3));
-    assert_eq!(at(&resolved, "importer.video.scene_threshold"), json!(0.9));
-    assert_eq!(at(&resolved, "importer.video.dedupe_distance"), json!(4));
+    assert_eq!(at(&resolved, "video.interval"), json!(3));
+    assert_eq!(at(&resolved, "video.scene_threshold"), json!(0.9));
+    assert_eq!(at(&resolved, "video.dedupe_distance"), json!(4));
     assert!(matches!(
         resolved.origins["plugin_timeout"],
         Origin::File { .. }
     ));
     assert_eq!(
-        resolved.origins["importer.video.interval"],
+        resolved.origins["video.interval"],
         Origin::Env {
-            name: "ANYTOPDF_IMPORTER__VIDEO__INTERVAL".into()
+            name: "ANYTOPDF_VIDEO_INTERVAL".into()
         }
     );
     assert_eq!(
-        resolved.origins["importer.video.scene_threshold"],
+        resolved.origins["video.scene_threshold"],
         Origin::Flag {
-            flag: "--scene-threshold".into()
+            flag: "--video-scene-threshold".into()
         }
     );
-    assert_eq!(
-        resolved.origins["importer.video.dedupe_distance"],
-        Origin::Default
-    );
+    assert_eq!(resolved.origins["video.dedupe_distance"], Origin::Default);
 }
 
 #[test]
@@ -76,9 +73,9 @@ fn set_wins_over_flags_and_reaches_runtime_plugin_tables() {
             "--set",
             "plugin_timeout=7",
             "--set",
-            "importer.json.max_records=100",
+            "json.max_records=100",
             "--set",
-            "enricher.face-detect.labels=[\"a\", \"b\"]",
+            "face-detect.labels=[\"a\", \"b\"]",
             "--plugin-timeout",
             "9",
             "doctor",
@@ -89,12 +86,9 @@ fn set_wins_over_flags_and_reaches_runtime_plugin_tables() {
     .unwrap();
     assert_eq!(at(&resolved, "plugin_timeout"), json!(7));
     let tables = resolved.tables();
+    assert_eq!(tables.table("json").unwrap()["max_records"], json!(100));
     assert_eq!(
-        tables.table("importer", "json").unwrap()["max_records"],
-        json!(100)
-    );
-    assert_eq!(
-        tables.for_kind("unit-enricher", "face-detect").unwrap()["labels"],
+        tables.table("face_detect").unwrap()["labels"],
         json!(["a", "b"])
     );
 }
@@ -127,10 +121,10 @@ fn unrelated_anytopdf_variables_are_not_settings() {
 
 #[test]
 fn invalid_values_name_the_key_and_where_they_came_from() {
-    let err = resolve(&["doctor"], &[], Some("[importer.video]\nintervall = 2\n")).unwrap_err();
+    let err = resolve(&["doctor"], &[], Some("[video]\nintervall = 2\n")).unwrap_err();
     let text = format!("{err:#}");
     assert!(
-        text.contains("importer.video.intervall") && text.contains("config.toml"),
+        text.contains("video.intervall") && text.contains("config.toml"),
         "{text}"
     );
 
@@ -144,8 +138,8 @@ fn invalid_values_name_the_key_and_where_they_came_from() {
         "{err:#}"
     );
 
-    let err = resolve(&["doctor"], &[], Some("[renderer]\nuse = 3\n")).unwrap_err();
-    assert!(format!("{err:#}").contains("renderer.use"), "{err:#}");
+    let err = resolve(&["doctor"], &[], Some("renderer = 3\n")).unwrap_err();
+    assert!(format!("{err:#}").contains("renderer"), "{err:#}");
 
     assert!(resolve(&["doctor"], &[], Some("not toml = =")).is_err());
     assert!(resolve(&["--set", "novalue", "doctor"], &[], None).is_err());
@@ -195,7 +189,7 @@ fn effective_values_are_written_back_into_the_command_line() {
     std::fs::write(
         &user,
         "plugins = false\nprofile = \"share\"\nfilter = \"x\"\n\
-         [renderer]\nuse = \"pdf\"\n[enricher.ocr]\nmode = \"off\"\n[importer.video]\ninterval = 9.0\n",
+         renderer = \"pdf\"\n[ocr]\nmode = \"off\"\n[video]\ninterval = 9.0\n",
     )
     .unwrap();
     let (mut cli, matches) = parse(&["convert", "--filter", "keep", "a.txt"]);
@@ -208,8 +202,9 @@ fn effective_values_are_written_back_into_the_command_line() {
     assert_eq!(args.renderer, "pdf");
     assert_eq!(args.profile, anytopdf_core::Profile::Share);
     assert_eq!(args.filter.as_deref(), Some("keep"));
-    assert_eq!(args.ocr, anytopdf_builtin::OcrMode::Off);
-    assert_eq!(args.video_interval, 9.0);
+    let builtin = BuiltinOptions::from_tables(&resolved.tables()).unwrap();
+    assert_eq!(builtin.ocr.mode, anytopdf_builtin::OcrMode::Off);
+    assert_eq!(builtin.video.interval, 9.0);
 }
 
 #[test]
@@ -238,7 +233,7 @@ fn every_bound_flag_has_a_typed_schema_key() {
             binding.key
         );
     }
-    let commands = Cli::command();
+    let commands = crate::cli::command();
     let convert = commands.find_subcommand("convert").unwrap();
     for binding in GLOBAL_FLAGS {
         assert!(
@@ -259,15 +254,15 @@ fn every_bound_flag_has_a_typed_schema_key() {
 #[test]
 fn rendered_toml_parses_back_to_the_same_values() {
     let resolved = resolve(
-        &["--set", "importer.json.max_records=1", "doctor"],
+        &["--set", "json.max_records=1", "doctor"],
         &[],
         Some(
-            "renderer = \"pdf\"\n[enricher.whisper]\nmodel = \"base\"\n\"odd key\" = 1\n\
-             nested = { a = 1 }\n[enricher.\"two words\"]\nx = 1\n",
+            "renderer = \"pdf\"\n[whisper]\nmodel = \"base\"\n\"odd key\" = 1\n\
+             nested = { a = 1 }\n[\"two words\"]\nx = 1\n",
         ),
     )
     .unwrap();
-    assert_eq!(at(&resolved, "renderer.use"), json!("pdf"));
+    assert_eq!(at(&resolved, "renderer"), json!("pdf"));
     for annotate in [true, false] {
         let text = resolved.render(annotate);
         let parsed: toml::Table = toml::from_str(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
@@ -296,27 +291,163 @@ fn forwarded_flags_reproduce_the_configuration_sources() {
 }
 
 #[test]
-fn every_builtin_table_has_a_strict_schema_entry() {
-    let schema = file_schema();
+fn every_builtin_table_matches_its_schema_entry() {
     for table in anytopdf_builtin::option_tables() {
-        let path = [table.section.to_string(), table.name.to_string()];
-        let node = super::values::schema_node(&path).unwrap();
+        let node = super::values::schema_node(&[table.name.to_string()]).unwrap();
         assert_eq!(
             node["additionalProperties"],
             json!(false),
-            "{}.{} needs a $defs entry in config-file.schema.json",
-            table.section,
+            "[{}] needs a $defs entry in config-file.schema.json",
             table.name
         );
-        let keys: Vec<&String> = table.defaults.as_object().unwrap().keys().collect();
-        for key in keys {
+        let defaults = table.defaults.as_object().unwrap();
+        let declared = node["properties"].as_object().unwrap();
+        assert_eq!(
+            defaults.keys().collect::<Vec<_>>(),
+            declared.keys().collect::<Vec<_>>(),
+            "[{}] keys differ between the struct and the schema",
+            table.name
+        );
+        for (key, value) in defaults {
+            assert_eq!(
+                &declared[key]["default"], value,
+                "[{}] {key}: schema default differs from the struct default",
+                table.name
+            );
             assert!(
-                node["properties"].get(key).is_some(),
-                "{}.{}.{key} is missing from the schema",
-                table.section,
+                declared[key]["description"].is_string(),
+                "[{}] {key} needs a description for its --help line",
                 table.name
             );
         }
     }
-    assert!(schema["properties"]["importer"].is_object());
+}
+
+/// A value other than the default, valid for `option`.
+fn other_value(option: &super::flags::OptionDef) -> (Value, String) {
+    match option.kind.as_str() {
+        "boolean" => {
+            let v = !option.default.as_bool().unwrap();
+            (json!(v), v.to_string())
+        }
+        "integer" => {
+            let v = option.default.as_i64().unwrap() + 3;
+            (json!(v), v.to_string())
+        }
+        "number" => {
+            let v = option.default.as_f64().unwrap() + 0.25;
+            (json!(v), v.to_string())
+        }
+        _ if !option.values.is_empty() => {
+            let v = option
+                .values
+                .iter()
+                .find(|v| json!(v) != option.default)
+                .unwrap()
+                .clone();
+            (json!(v), v)
+        }
+        _ => (json!("xyz"), "xyz".to_string()),
+    }
+}
+
+#[test]
+fn every_builtin_option_has_three_equivalent_spellings() {
+    let options = super::flags::builtin_options();
+    assert!(options.len() >= 8, "{options:?}");
+    for option in options {
+        let (expected, raw) = other_value(&option);
+        let toml_value = super::render::toml_value(&expected);
+        let file = format!("[{}]\n{} = {toml_value}\n", option.table, option.key);
+        let from_file = resolve(&["doctor"], &[], Some(&file)).unwrap();
+        let env_name = option.env();
+        let from_env = resolve(&["doctor"], &[(env_name.as_str(), raw.as_str())], None).unwrap();
+        let flag = format!("--{}={raw}", option.flag());
+        let from_flag = resolve(&["convert", &flag, "a.txt"], &[], None).unwrap();
+        for (label, resolved) in [
+            ("file", &from_file),
+            ("env", &from_env),
+            ("flag", &from_flag),
+        ] {
+            assert_eq!(
+                at(resolved, &option.dotted()),
+                expected,
+                "{} via {label}",
+                option.dotted()
+            );
+        }
+        assert_eq!(
+            from_flag.origins[&option.dotted()],
+            Origin::Flag {
+                flag: format!("--{}", option.flag())
+            }
+        );
+        assert_eq!(
+            from_env.origins[&option.dotted()],
+            Origin::Env { name: env_name }
+        );
+    }
+}
+
+#[test]
+fn older_flag_names_still_work() {
+    let resolved = resolve(
+        &[
+            "convert",
+            "--ocr",
+            "off",
+            "--lang",
+            "deu",
+            "--scene-threshold",
+            "0.5",
+            "--dedupe-distance",
+            "6",
+            "--max-video-frames",
+            "3",
+            "--max-image-frames",
+            "2",
+            "--no-embedded-subtitles",
+            "a.txt",
+        ],
+        &[],
+        None,
+    )
+    .unwrap();
+    for (key, value) in [
+        ("ocr.mode", json!("off")),
+        ("ocr.lang", json!("deu")),
+        ("video.scene_threshold", json!(0.5)),
+        ("video.dedupe_distance", json!(6)),
+        ("video.max_frames", json!(3)),
+        ("image.max_frames", json!(2)),
+        ("captions.embedded_subtitles", json!(false)),
+    ] {
+        assert_eq!(at(&resolved, key), value, "{key}");
+    }
+}
+
+#[test]
+fn environment_names_map_to_tables_and_globals() {
+    let tables = vec![
+        "video".to_string(),
+        "whisper".to_string(),
+        "imap".to_string(),
+    ];
+    let path = |name: &str| super::env_path(name, &tables);
+    let v = |parts: &[&str]| Some(parts.iter().map(|p| p.to_string()).collect::<Vec<_>>());
+    assert_eq!(
+        path("ANYTOPDF_VIDEO_MAX_FRAMES"),
+        v(&["video", "max_frames"])
+    );
+    assert_eq!(path("ANYTOPDF_PLUGIN_TIMEOUT"), v(&["plugin_timeout"]));
+    assert_eq!(path("ANYTOPDF_WHISPER_MODEL"), v(&["whisper", "model"]));
+    assert_eq!(
+        path("ANYTOPDF_FACE_DETECT__MIN_SIZE"),
+        v(&["face_detect", "min_size"])
+    );
+    assert_eq!(path("ANYTOPDF_FACE_DETECT_MIN_SIZE"), None);
+    assert_eq!(path("ANYTOPDF_IMAP_PASSWORD"), None);
+    assert_eq!(path("ANYTOPDF_WEBHOOK_SECRET"), None);
+    assert_eq!(path("ANYTOPDF_CONFIG"), None);
+    assert_eq!(path("ANYTOPDF_VIDEO"), None);
 }

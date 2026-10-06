@@ -1,5 +1,4 @@
-use super::{Resolved, as_object, user_config_path};
-use anytopdf_core::OPTION_SECTIONS;
+use super::{Resolved, flags::builtin_tables, user_config_path};
 use serde_json::{Map, Value};
 
 impl Resolved {
@@ -28,38 +27,31 @@ impl Resolved {
             out.push_str("# filter = \"invoice|receipt\"\n# plugin_sandbox = \"contain\"\n");
         }
         let mut rows: Vec<(String, String, String)> = Vec::new();
-        // (header, rank, entries): a section's own keys such as `renderer.use`
-        // come before its plugin tables.
-        let mut tables: Vec<(String, usize, Map<String, Value>)> = Vec::new();
+        let builtin = builtin_tables();
+        let mut tables: Vec<(&String, &Map<String, Value>)> = Vec::new();
         for (key, value) in &self.document {
-            let section = OPTION_SECTIONS.iter().position(|s| s == key);
-            match (section, value) {
-                (Some(rank), Value::Object(entries)) => {
-                    let (own, plugins): (Map<_, _>, Map<_, _>) = entries
-                        .clone()
-                        .into_iter()
-                        .partition(|(_, v)| !v.is_object());
-                    if !own.is_empty() {
-                        tables.push((key.clone(), rank * 2, own));
-                    }
-                    for (name, table) in plugins {
-                        tables.push((
-                            format!("{key}.{}", toml_key(&name)),
-                            rank * 2 + 1,
-                            as_object(table),
-                        ));
-                    }
-                }
+            match value {
+                Value::Object(table) => tables.push((key, table)),
                 _ => rows.push(self.row(key, key, value)),
             }
         }
         write_rows(&mut out, &rows, annotate);
-        tables.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-        for (header, _, table) in tables {
-            out.push_str(&format!("\n[{header}]\n"));
+        let rank = |name: &String| {
+            builtin
+                .iter()
+                .position(|b| b == name)
+                .unwrap_or(builtin.len())
+        };
+        tables.sort_by(|a, b| rank(a.0).cmp(&rank(b.0)).then_with(|| a.0.cmp(b.0)));
+        for (name, table) in tables {
+            out.push_str(&format!("\n[{}]", toml_key(name)));
+            if annotate && !builtin.contains(name) {
+                out.push_str(&format!("  # passed to the runtime plugin named {name}"));
+            }
+            out.push('\n');
             let rows: Vec<_> = table
                 .iter()
-                .map(|(k, v)| self.row(k, &format!("{}.{k}", header.replace('"', "")), v))
+                .map(|(k, v)| self.row(k, &format!("{name}.{k}"), v))
                 .collect();
             write_rows(&mut out, &rows, annotate);
         }
@@ -104,7 +96,7 @@ fn toml_key(key: &str) -> String {
     }
 }
 
-fn toml_value(value: &Value) -> String {
+pub(super) fn toml_value(value: &Value) -> String {
     toml::Value::try_from(value)
         .map(|v| v.to_string())
         .unwrap_or_else(|_| value.to_string())

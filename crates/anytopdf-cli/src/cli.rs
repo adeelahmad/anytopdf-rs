@@ -1,4 +1,3 @@
-use anytopdf_builtin::OcrMode;
 use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
 use std::path::PathBuf;
@@ -48,6 +47,23 @@ pub(crate) struct Cli {
     /// Override one setting, e.g. --set importer.video.interval=2 (repeatable).
     #[arg(long = "set", global = true, value_name = "KEY=VALUE")]
     pub(crate) set: Vec<String>,
+}
+
+/// The full command line: the derived arguments plus one generated flag per
+/// built-in option (`--video-interval`, `--ocr-mode`, …) on `convert`.
+pub(crate) fn command() -> clap::Command {
+    use clap::CommandFactory;
+    crate::config::augment(Cli::command())
+}
+
+/// Parses a full command line, generated option flags included.
+pub(crate) fn try_parse_from<I, T>(args: I) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    use clap::FromArgMatches;
+    Cli::from_arg_matches(&command().try_get_matches_from(args)?)
 }
 
 impl Cli {
@@ -349,43 +365,9 @@ pub(crate) struct ConvertArgs {
     #[arg(long)]
     pub(crate) include_hidden: bool,
 
-    /// OCR provider selection.
-    #[arg(long, default_value = "auto", value_parser = clap::builder::PossibleValuesParser::new([
-        clap::builder::PossibleValue::new("auto"),
-        clap::builder::PossibleValue::new("vision"),
-        clap::builder::PossibleValue::new("doctr"),
-        clap::builder::PossibleValue::new("tesseract"),
-        clap::builder::PossibleValue::new("off").alias("none"),
-    ]).try_map(|s| s.parse::<OcrMode>()))]
-    pub(crate) ocr: OcrMode,
-
-    /// OCR language code.
-    #[arg(long, default_value = "eng")]
-    pub(crate) lang: String,
-
     /// Transcript file to attach to media (repeatable).
     #[arg(long = "transcript")]
     pub(crate) transcripts: Vec<PathBuf>,
-
-    /// Seconds between sampled video frames.
-    #[arg(long, default_value_t = 5.0)]
-    pub(crate) video_interval: f64,
-
-    /// Scene-change sensitivity for video frame selection.
-    #[arg(long, default_value_t = 0.30)]
-    pub(crate) scene_threshold: f64,
-
-    /// Perceptual-hash distance below which video frames count as duplicates.
-    #[arg(long, default_value_t = 4)]
-    pub(crate) dedupe_distance: u32,
-
-    /// Maximum video frames to keep (0 means unlimited).
-    #[arg(long, default_value_t = 0)]
-    pub(crate) max_video_frames: usize,
-
-    /// Maximum frames to import from a multi-frame TIFF or GIF (0 means unlimited).
-    #[arg(long, default_value_t = 0)]
-    pub(crate) max_image_frames: usize,
 
     /// Ignore subtitle tracks embedded in video files.
     #[arg(long)]
@@ -563,10 +545,9 @@ fn parse_draw_boxes(value: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::Parser;
 
     fn mode(args: &[&str]) -> SandboxMode {
-        Cli::try_parse_from(std::iter::once("anytopdf").chain(args.iter().copied()))
+        try_parse_from(std::iter::once("anytopdf").chain(args.iter().copied()))
             .unwrap()
             .sandbox_mode()
     }

@@ -15,7 +15,7 @@ mod publish;
 mod queue;
 mod watch;
 use anytopdf_core::{RuntimePluginPolicy, SandboxPolicy, validate_sandbox_policy};
-use clap::{CommandFactory, FromArgMatches};
+use clap::FromArgMatches;
 use cli::{Cli, Commands, QueueCommand, WatchSource};
 use commands::{doctor, plugins, probe};
 use convert::convert;
@@ -23,7 +23,7 @@ use exit::{CliError, ExitClass};
 use std::{process::ExitCode, time::Duration};
 
 fn main() -> ExitCode {
-    let parsed = Cli::command()
+    let parsed = cli::command()
         .try_get_matches_from(argv::normalize_args(std::env::args_os().collect()))
         .and_then(|matches| Ok((Cli::from_arg_matches(&matches)?, matches)));
     let (mut cli, matches) = match parsed {
@@ -203,9 +203,8 @@ mod tests {
 
     #[test]
     fn every_subcommand_and_argument_has_help() {
-        use clap::CommandFactory;
         let mut offenders = Vec::new();
-        help_offenders(&Cli::command(), "anytopdf", &mut offenders);
+        help_offenders(&cli::command(), "anytopdf", &mut offenders);
         assert!(
             offenders.is_empty(),
             "missing help text: {}",

@@ -74,18 +74,13 @@ pub struct RuntimePlugin {
     pub sandbox: SandboxPolicy,
     pub executable: PathBuf,
     pub manifest: RuntimePluginManifest,
-    /// Configuration tables; each capability sends the one for its section.
+    /// Configuration tables; requests carry the one named after the plugin.
     pub options: Arc<PluginOptions>,
 }
 
 impl RuntimePlugin {
-    fn options(
-        &self,
-        capability: &RuntimeCapability,
-    ) -> Option<serde_json::Map<String, serde_json::Value>> {
-        self.options
-            .for_kind(&capability.kind, &self.manifest.name)
-            .cloned()
+    fn options(&self) -> Option<serde_json::Map<String, serde_json::Value>> {
+        self.options.table(&self.manifest.name).cloned()
     }
 }
 
@@ -425,7 +420,7 @@ impl Importer for RuntimeImporter {
                 unit: None,
                 graph: None,
                 output: None,
-                options: self.plugin.options(&self.capability),
+                options: self.plugin.options(),
             },
         )?;
         let updated = response.source.unwrap_or_else(|| source.clone());
@@ -474,7 +469,7 @@ impl SourceEnricher for RuntimeSourceEnricher {
                 unit: None,
                 graph: None,
                 output: None,
-                options: self.plugin.options(&self.capability),
+                options: self.plugin.options(),
             },
         )?;
         if let Some(updated) = response.source {
@@ -507,7 +502,7 @@ impl GraphEnricher for RuntimeGraphEnricher {
                 unit: None,
                 graph: Some(graph.clone()),
                 output: None,
-                options: self.plugin.options(&self.capability),
+                options: self.plugin.options(),
             },
         )?;
         if let Some(updated) = response.graph {
@@ -564,7 +559,7 @@ impl UnitEnricher for RuntimeUnitEnricher {
                 unit: Some(unit.clone()),
                 graph: None,
                 output: None,
-                options: self.plugin.options(&self.capability),
+                options: self.plugin.options(),
             },
         )?;
         if let Some(updated) = response.unit {
@@ -617,7 +612,7 @@ impl Renderer for RuntimeRenderer {
                 unit: None,
                 graph: Some(graph.clone()),
                 output: Some(target.clone()),
-                options: self.plugin.options(&self.capability),
+                options: self.plugin.options(),
             },
         )?;
         let report = response.render_report.ok_or_else(|| {
@@ -808,8 +803,8 @@ printf '%s' '{{"protocol":1,"ok":true,"units":[{{"kind":"text","visible_text":"x
             priority: 1,
         };
         let options = PluginOptions::from_document(&serde_json::json!({
-            "importer": {"my-format": {"layers": ["a"], "dpi": 300}},
-            "enricher": {"my-format": {"ignored": true}},
+            "my-format": {"layers": ["a"], "dpi": 300},
+            "other": {"ignored": true},
         }));
         let plugin = RuntimePlugin {
             executable,

@@ -5,7 +5,7 @@ use serde_json::Value;
 pub(super) fn key_path(key: &str) -> Result<Vec<String>> {
     let path: Vec<String> = key.split('.').map(|s| s.trim().to_string()).collect();
     if key.is_empty() || path.iter().any(String::is_empty) {
-        bail!("{key:?} is not a dotted key such as importer.video.interval");
+        bail!("{key:?} is not a dotted key such as video.interval");
     }
     Ok(path)
 }

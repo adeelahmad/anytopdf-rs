@@ -20,7 +20,6 @@ pub(crate) use imap::watch_imap;
 #[cfg(feature = "imap")]
 mod imap {
     use super::*;
-    use crate::cli::Cli;
     use crate::exit::tag;
     use crate::queue::{Job, Origin, Queue, check_convert_args};
     use anyhow::{Context, Result, bail};
@@ -29,7 +28,6 @@ mod imap {
         Credential, Delivery, ImapConfig, Mailbox, MessageSink, SenderPolicy, SpooledMessage,
         TlsMode, WatchOptions, Watcher, connect, read_password,
     };
-    use clap::Parser;
     use std::{ffi::OsString, path::PathBuf, process::Command, time::Duration};
 
     const PASSWORD_ENV: &str = "ANYTOPDF_IMAP_PASSWORD";
@@ -215,9 +213,9 @@ mod imap {
                     "message.pdf".as_ref(),
                     &args.convert_args,
                 );
-                if let Err(e) =
-                    Cli::try_parse_from(std::iter::once(OsString::from("anytopdf")).chain(probe))
-                {
+                if let Err(e) = crate::cli::try_parse_from(
+                    std::iter::once(OsString::from("anytopdf")).chain(probe),
+                ) {
                     let first = e.to_string();
                     let first = first.lines().next().unwrap_or_default();
                     return Err(fail(

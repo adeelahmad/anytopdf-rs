@@ -215,19 +215,27 @@ fn convert_inner(
             anytopdf_core::validate_sandbox_policy(&policy.sandbox),
         )?;
     }
-    if !args.video_interval.is_finite() || args.video_interval <= 0.0 {
+    let opts = BuiltinOptions {
+        explicit_transcripts: args.transcripts.clone(),
+        ..tag(
+            ExitClass::Usage,
+            BuiltinOptions::from_tables(&policy.options),
+        )?
+    };
+    let video = &opts.video;
+    if !video.interval.is_finite() || video.interval <= 0.0 {
         return Err(fail(
             ExitClass::Usage,
             "--video-interval must be finite and greater than zero",
         ));
     }
-    if !args.scene_threshold.is_finite() || !(0.0..=1.0).contains(&args.scene_threshold) {
+    if !video.scene_threshold.is_finite() || !(0.0..=1.0).contains(&video.scene_threshold) {
         return Err(fail(
             ExitClass::Usage,
             "--scene-threshold must be between 0 and 1",
         ));
     }
-    if args.dedupe_distance > 64 {
+    if video.dedupe_distance > 64 {
         return Err(fail(
             ExitClass::Usage,
             "--dedupe-distance must be between 0 and 64",
@@ -339,14 +347,7 @@ fn convert_inner(
         dump_dest = Some(graph);
     }
 
-    let opts = BuiltinOptions {
-        explicit_transcripts: args.transcripts,
-        ..tag(
-            ExitClass::Usage,
-            BuiltinOptions::from_tables(&policy.options),
-        )?
-    };
-
+    let ocr_mode = opts.ocr.mode;
     let (registry, mut warnings) = registry(opts, policy);
     let pipeline = Pipeline::new(registry);
     let mut observer = EventObserver {
@@ -400,7 +401,7 @@ fn convert_inner(
         }
     }
 
-    if let Some(d) = exhausted_provider(&run.warnings, args.ocr) {
+    if let Some(d) = exhausted_provider(&run.warnings, ocr_mode) {
         return Err(fail(ExitClass::Provider, &d.message));
     }
     if run.graph.units.is_empty() {

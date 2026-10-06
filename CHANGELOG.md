@@ -6,11 +6,13 @@ Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
-- Settings can come from a TOML config file (`~/.config/anytopdf/config.toml`, or
-  `--config PATH`), `ANYTOPDF_*` environment variables, flags and `--set KEY=VALUE`,
-  later layers winning. Each importer, enricher and renderer has its own table
-  (`[importer.video]`, `[enricher.ocr]`, `[renderer.NAME]`); runtime plugins receive
-  theirs in a new optional `options` request field (protocol stays 1).
+- Every option can be set three equivalent ways, rclone-style: `[video] interval` in a
+  TOML config file (`~/.config/anytopdf/config.toml`, or `--config PATH`),
+  `ANYTOPDF_VIDEO_INTERVAL`, or `--video-interval`, with `--set TABLE.KEY=VALUE` on top;
+  later layers win. Each built-in type has a table (`[image]`, `[video]`, `[ocr]`,
+  `[captions]`) whose options are generated as `--TABLE-KEY` flags, grouped by type in
+  `anytopdf convert --help`; older flag names stay as aliases. Runtime plugins receive
+  their table in a new optional `options` request field (protocol stays 1).
   `anytopdf config` shows the effective settings and where each came from; new
   `anytopdf.config/1` and config-file schemas.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions

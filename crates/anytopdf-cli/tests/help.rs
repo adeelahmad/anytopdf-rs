@@ -13,13 +13,17 @@ fn ocr_help_lists_every_choice() {
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout).to_string();
     let clause = text
-        .split("--ocr")
+        .split("--ocr-mode")
         .nth(1)
-        .unwrap_or_else(|| panic!("no --ocr option in:\n{text}"))
+        .unwrap_or_else(|| panic!("no --ocr-mode option in:\n{text}"))
         .split("possible values")
         .nth(1)
         .unwrap_or_else(|| panic!("no `possible values` clause in:\n{text}"));
     let clause = clause.lines().next().unwrap_or_default();
+    assert!(
+        text.contains("[alias: --ocr]"),
+        "--ocr must stay an alias:\n{text}"
+    );
     for choice in ["auto", "vision", "doctr", "tesseract", "off"] {
         assert!(clause.contains(choice), "missing {choice} in `{clause}`");
     }

@@ -43,15 +43,15 @@ fn config_json_reports_every_layer_and_matches_the_schemas() {
     let file = dir.path().join("anytopdf.toml");
     fs::write(
         &file,
-        "profile = \"share\"\n[importer.video]\ninterval = 2.0\n[enricher.whisper]\nmodel = \"base\"\n",
+        "profile = \"share\"\n[video]\ninterval = 2.0\n[whisper]\nmodel = \"base\"\n",
     )
     .unwrap();
     let report = single_document(&stdout_of(
         anytopdf(dir.path())
-            .env("ANYTOPDF_IMPORTER__VIDEO__SCENE_THRESHOLD", "0.5")
+            .env("ANYTOPDF_VIDEO_SCENE_THRESHOLD", "0.5")
             .arg("--config")
             .arg(&file)
-            .args(["--plugin-timeout", "9", "--set", "enricher.ocr.lang=deu"])
+            .args(["--plugin-timeout", "9", "--set", "ocr.lang=deu"])
             .args(["config", "--json"]),
     ));
     assert_valid("config", &report);
@@ -59,11 +59,11 @@ fn config_json_reports_every_layer_and_matches_the_schemas() {
     let values = &report["values"];
     assert_eq!(values["profile"], "share");
     assert_eq!(values["plugin_timeout"], 9);
-    assert_eq!(values["importer"]["video"]["interval"], 2.0);
-    assert_eq!(values["importer"]["video"]["scene_threshold"], 0.5);
-    assert_eq!(values["importer"]["video"]["max_frames"], 0);
-    assert_eq!(values["enricher"]["ocr"]["lang"], "deu");
-    assert_eq!(values["enricher"]["whisper"]["model"], "base");
+    assert_eq!(values["video"]["interval"], 2.0);
+    assert_eq!(values["video"]["scene_threshold"], 0.5);
+    assert_eq!(values["video"]["max_frames"], 0);
+    assert_eq!(values["ocr"]["lang"], "deu");
+    assert_eq!(values["whisper"]["model"], "base");
     let origins = &report["origins"];
     assert_eq!(origins["profile"]["kind"], "file");
     assert_eq!(
@@ -71,14 +71,11 @@ fn config_json_reports_every_layer_and_matches_the_schemas() {
         json!({"kind": "flag", "flag": "--plugin-timeout"})
     );
     assert_eq!(
-        origins["importer.video.scene_threshold"],
-        json!({"kind": "env", "name": "ANYTOPDF_IMPORTER__VIDEO__SCENE_THRESHOLD"})
+        origins["video.scene_threshold"],
+        json!({"kind": "env", "name": "ANYTOPDF_VIDEO_SCENE_THRESHOLD"})
     );
-    assert_eq!(origins["enricher.ocr.lang"], json!({"kind": "set"}));
-    assert_eq!(
-        origins["importer.video.max_frames"],
-        json!({"kind": "default"})
-    );
+    assert_eq!(origins["ocr.lang"], json!({"kind": "set"}));
+    assert_eq!(origins["video.max_frames"], json!({"kind": "default"}));
     assert_eq!(report["files"][0]["loaded"], true);
     assert_eq!(report["files"][0]["explicit"], true);
 }
@@ -139,7 +136,7 @@ fn the_defaults_template_is_a_valid_config_file() {
 fn an_invalid_setting_exits_2_naming_the_key_and_its_source() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("bad.toml");
-    fs::write(&file, "[importer.video]\ninterval = \"fast\"\n").unwrap();
+    fs::write(&file, "[video]\ninterval = \"fast\"\n").unwrap();
     let out = anytopdf(dir.path())
         .arg("--config")
         .arg(&file)
@@ -149,7 +146,7 @@ fn an_invalid_setting_exits_2_naming_the_key_and_its_source() {
     assert_eq!(out.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("importer.video.interval") && stderr.contains("bad.toml"),
+        stderr.contains("video.interval") && stderr.contains("bad.toml"),
         "{stderr}"
     );
 }
@@ -160,7 +157,7 @@ fn config_settings_reach_convert_and_flags_override_them() {
     let file = dir.path().join("anytopdf.toml");
     fs::write(
         &file,
-        "profile = \"share\"\nplugins = false\n[enricher.ocr]\nmode = \"off\"\n",
+        "profile = \"share\"\nplugins = false\n[ocr]\nmode = \"off\"\n",
     )
     .unwrap();
     let note = dir.path().join("note.txt");
@@ -227,12 +224,50 @@ printf '%s' '{{"protocol":1,"ok":true,"units":[{{"kind":"text","visible_text":"c
         anytopdf(dir.path())
             .env("PATH", "/usr/bin:/bin")
             .env("ANYTOPDF_PLUGIN_PATH", &plugins)
-            .env("ANYTOPDF_IMPORTER__CFG_PROBE__DEPTH", "3")
-            .args(["--set", "importer.cfg-probe.layers=[\"walls\"]", "convert"])
+            .env("ANYTOPDF_CFG_PROBE__DEPTH", "3")
+            .args(["--set", "cfg-probe.layers=[\"walls\"]", "convert"])
             .arg(&source)
             .args(["--ocr", "off", "-o"])
             .arg(dir.path().join("out.pdf")),
     );
     let request: Value = serde_json::from_slice(&fs::read(&seen).unwrap()).unwrap();
     assert_eq!(request["options"], json!({"depth": 3, "layers": ["walls"]}));
+}
+
+#[test]
+fn convert_help_lists_every_option_by_type_with_its_env_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let help =
+        String::from_utf8(stdout_of(anytopdf(dir.path()).args(["convert", "--help"]))).unwrap();
+    for (heading, flag, env) in [
+        (
+            "Video importer options ([video]",
+            "--video-interval",
+            "ANYTOPDF_VIDEO_INTERVAL",
+        ),
+        (
+            "Image importer options ([image]",
+            "--image-max-frames",
+            "ANYTOPDF_IMAGE_MAX_FRAMES",
+        ),
+        (
+            "OCR enricher options ([ocr]",
+            "--ocr-mode",
+            "ANYTOPDF_OCR_MODE",
+        ),
+        (
+            "Captions enricher options ([captions]",
+            "--captions-embedded-subtitles",
+            "ANYTOPDF_CAPTIONS_EMBEDDED_SUBTITLES",
+        ),
+    ] {
+        let section = help
+            .split(heading)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no `{heading}` section in:\n{help}"));
+        assert!(
+            section.contains(flag) && section.contains(env),
+            "{flag} / {env} in:\n{help}"
+        );
+    }
 }

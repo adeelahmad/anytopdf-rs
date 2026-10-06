@@ -1,6 +1,6 @@
 //! Typed option tables for the built-in plugins.
 //!
-//! Each struct is one configuration table, such as `[importer.video]`. Keys a
+//! Each struct is one configuration table, such as `[video]`. Keys a
 //! table leaves out keep their defaults; unknown keys are errors so typos do
 //! not pass silently. A new table needs a struct here, a field on
 //! [`BuiltinOptions`], an entry in [`option_tables`] and a `$defs` entry in
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 
-/// `[importer.image]`: still images and print rasters.
+/// `[image]`: still images and print rasters.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ImageOptions {
@@ -21,7 +21,7 @@ pub struct ImageOptions {
     pub max_frames: usize,
 }
 
-/// `[importer.video]`: keyframe sampling through FFmpeg.
+/// `[video]`: keyframe sampling through FFmpeg.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VideoOptions {
@@ -46,7 +46,7 @@ impl Default for VideoOptions {
     }
 }
 
-/// `[enricher.ocr]`: the OCR provider chain.
+/// `[ocr]`: the OCR provider chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OcrOptions {
@@ -65,7 +65,7 @@ impl Default for OcrOptions {
     }
 }
 
-/// `[enricher.captions]`: sidecar and embedded captions.
+/// `[captions]`: sidecar and embedded captions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct CaptionOptions {
@@ -95,10 +95,10 @@ impl BuiltinOptions {
     /// Reads every built-in table from resolved configuration tables.
     pub fn from_tables(tables: &PluginOptions) -> Result<Self> {
         Ok(Self {
-            image: tables.get("importer", "image")?,
-            video: tables.get("importer", "video")?,
-            ocr: tables.get("enricher", "ocr")?,
-            captions: tables.get("enricher", "captions")?,
+            image: tables.get("image")?,
+            video: tables.get("video")?,
+            ocr: tables.get("ocr")?,
+            captions: tables.get("captions")?,
             explicit_transcripts: Vec::new(),
         })
     }
@@ -107,14 +107,12 @@ impl BuiltinOptions {
 /// One built-in configuration table and its defaults.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptionTable {
-    pub section: &'static str,
     pub name: &'static str,
     pub defaults: Value,
 }
 
-fn table(section: &'static str, name: &'static str, defaults: impl Serialize) -> OptionTable {
+fn table(name: &'static str, defaults: impl Serialize) -> OptionTable {
     OptionTable {
-        section,
         name,
         defaults: serde_json::to_value(defaults).expect("option defaults serialize"),
     }
@@ -123,10 +121,10 @@ fn table(section: &'static str, name: &'static str, defaults: impl Serialize) ->
 /// Every built-in table with its defaults, in the order `anytopdf config` prints them.
 pub fn option_tables() -> Vec<OptionTable> {
     vec![
-        table("importer", "image", ImageOptions::default()),
-        table("importer", "video", VideoOptions::default()),
-        table("enricher", "ocr", OcrOptions::default()),
-        table("enricher", "captions", CaptionOptions::default()),
+        table("image", ImageOptions::default()),
+        table("video", VideoOptions::default()),
+        table("ocr", OcrOptions::default()),
+        table("captions", CaptionOptions::default()),
     ]
 }
 
@@ -137,8 +135,8 @@ mod tests {
     #[test]
     fn missing_tables_and_keys_keep_the_defaults() {
         let tables = PluginOptions::from_document(&serde_json::json!({
-            "importer": {"video": {"interval": 2.5}},
-            "enricher": {"ocr": {"mode": "none"}},
+            "video": {"interval": 2.5},
+            "ocr": {"mode": "none"},
         }));
         let options = BuiltinOptions::from_tables(&tables).unwrap();
         assert_eq!(options.video.interval, 2.5);
@@ -151,12 +149,12 @@ mod tests {
     #[test]
     fn a_misspelled_key_names_its_table() {
         let tables = PluginOptions::from_document(&serde_json::json!({
-            "importer": {"video": {"intervall": 2.5}},
+            "video": {"intervall": 2.5},
         }));
         let err = BuiltinOptions::from_tables(&tables).unwrap_err();
         let text = format!("{err:#}");
         assert!(
-            text.contains("[importer.video]") && text.contains("intervall"),
+            text.contains("[video]") && text.contains("intervall"),
             "{text}"
         );
     }
@@ -168,11 +166,7 @@ mod tests {
         }
         let mut doc = serde_json::Map::new();
         for t in option_tables() {
-            doc.entry(t.section)
-                .or_insert_with(|| serde_json::json!({}))
-                .as_object_mut()
-                .unwrap()
-                .insert(t.name.into(), t.defaults);
+            doc.insert(t.name.into(), t.defaults);
         }
         let tables = PluginOptions::from_document(&Value::Object(doc));
         assert_eq!(

@@ -4,20 +4,25 @@
 //! file (or the files named by `--config`), `ANYTOPDF_*` environment variables,
 //! command-line flags, and `--set KEY=VALUE`. The merged document has the shape
 //! of `schemas/config-file.schema.json`: global keys at the top level and one
-//! table per plugin under `importer`, `enricher` and `renderer`.
+//! table per plugin (`[video]`, `[ocr]`, `[whisper]`). Each built-in option has
+//! the same three spellings rclone uses: `[video] interval`,
+//! `ANYTOPDF_VIDEO_INTERVAL` and `--video-interval` (see `flags.rs`).
 
 use crate::cli::{Cli, Commands};
 use anyhow::{Context, Result, anyhow, bail};
 use anytopdf_builtin::{BuiltinOptions, option_tables};
-use anytopdf_core::{OPTION_SECTIONS, PluginOptions, SandboxMode, option_table_name, schema};
+use anytopdf_core::{PluginOptions, SandboxMode, option_table_name, schema};
 use clap::{ArgMatches, parser::ValueSource};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+mod flags;
 mod render;
 #[cfg(test)]
 mod tests;
 mod values;
 
+pub(crate) use flags::augment;
+use flags::{builtin_options, builtin_tables};
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -28,26 +33,39 @@ use values::{allowed_values, file_schema, flag_value, key_path, parse_value, poi
 
 pub(crate) const SCHEMA_VERSION: &str = "anytopdf.config/1";
 pub(crate) const HELP_FOOTER: &str = "\
-Layers, later ones winning:
+Every option has three spellings, later layers winning:
   1. built-in defaults
-  2. the user config file (~/.config/anytopdf/config.toml, or %APPDATA%\\anytopdf\\config.toml
-     on Windows), or the files named by --config or ANYTOPDF_CONFIG instead
-  3. environment variables: ANYTOPDF_<KEY> for top-level keys (ANYTOPDF_PROFILE=share)
-     and ANYTOPDF_<SECTION>__<TABLE>__<KEY> for tables
-     (ANYTOPDF_IMPORTER__VIDEO__INTERVAL=2)
-  4. command-line flags (--video-interval 2)
-  5. --set KEY=VALUE (--set importer.video.interval=2)
+  2. the config file: `interval = 2.0` under `[video]` in ~/.config/anytopdf/config.toml
+     (%APPDATA%\\anytopdf\\config.toml on Windows), or in the files named by --config
+     or ANYTOPDF_CONFIG instead
+  3. the environment: ANYTOPDF_VIDEO_INTERVAL=2 (top-level keys: ANYTOPDF_PROFILE=share)
+  4. the flag: anytopdf convert --video-interval 2 (`anytopdf convert --help` lists
+     every option, grouped by type)
+  5. --set video.interval=2, which also reaches runtime plugin tables
 
-Top-level keys are global settings; [importer.NAME], [enricher.NAME] and
-[renderer.NAME] hold one table per plugin, and runtime plugins receive theirs
-in each request. Start from `anytopdf config --defaults`. Schema:
-schemas/config-file.schema.json.";
+Top-level keys are global settings. [image], [video], [ocr] and [captions] are
+the built-in tables; any other table, such as [whisper], is passed to the
+runtime plugin of that name in each request (env ANYTOPDF_WHISPER_MODEL works
+once the table is in a config file, ANYTOPDF_WHISPER__MODEL always). Start from
+`anytopdf config --defaults`. Schema: schemas/config-file.schema.json.";
 const FILE_SCHEMA: &str = include_str!("../../../../schemas/config-file.schema.json");
 const ENV_PREFIX: &str = "ANYTOPDF_";
 /// Path list (platform separator) used instead of the user config file.
 pub(crate) const CONFIG_ENV: &str = "ANYTOPDF_CONFIG";
 /// Any non-empty value ignores every configuration file.
 pub(crate) const NO_CONFIG_ENV: &str = "ANYTOPDF_NO_CONFIG";
+/// `ANYTOPDF_*` variables that are secrets or other inputs, never settings.
+const RESERVED_ENV: &[&str] = &[
+    CONFIG_ENV,
+    NO_CONFIG_ENV,
+    "ANYTOPDF_FONT",
+    "ANYTOPDF_PLUGIN_PATH",
+    "ANYTOPDF_QUEUE_TOKEN",
+    "ANYTOPDF_REQUIRE_OFFICE",
+    "ANYTOPDF_SANDBOX_PROBE",
+    "ANYTOPDF_WEBHOOK_SECRET",
+];
+const RESERVED_ENV_PREFIXES: &[&str] = &["ANYTOPDF_IMAP_", "ANYTOPDF_PRINT_"];
 
 /// Where an effective value came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -126,7 +144,7 @@ const GLOBAL_FLAGS: &[Binding] = &[
 const CONVERT_FLAGS: &[Binding] = &[
     bind("strict", "--strict", "strict"),
     bind("fail_fast", "--fail-fast", "fail_fast"),
-    bind("renderer", "--renderer", "renderer.use"),
+    bind("renderer", "--renderer", "renderer"),
     bind("filter", "--filter", "filter"),
     bind("include_hidden", "--include-hidden", "include_hidden"),
     bind("profile", "--profile", "profile"),
@@ -135,55 +153,26 @@ const CONVERT_FLAGS: &[Binding] = &[
         "--no-provenance-page",
         "provenance_page",
     ),
-    bind("ocr", "--ocr", "enricher.ocr.mode"),
-    bind("lang", "--lang", "enricher.ocr.lang"),
-    bind(
-        "video_interval",
-        "--video-interval",
-        "importer.video.interval",
-    ),
-    bind(
-        "scene_threshold",
-        "--scene-threshold",
-        "importer.video.scene_threshold",
-    ),
-    bind(
-        "dedupe_distance",
-        "--dedupe-distance",
-        "importer.video.dedupe_distance",
-    ),
-    bind(
-        "max_video_frames",
-        "--max-video-frames",
-        "importer.video.max_frames",
-    ),
-    bind(
-        "max_image_frames",
-        "--max-image-frames",
-        "importer.image.max_frames",
-    ),
     negate(
         "no_embedded_subtitles",
         "--no-embedded-subtitles",
-        "enricher.captions.embedded_subtitles",
+        "captions.embedded_subtitles",
     ),
 ];
 
-/// Global settings with defaults; must match the clap defaults in `cli.rs`.
-fn global_defaults() -> Value {
-    json!({
-        "profile": "archive",
-        "strict": false,
-        "fail_fast": false,
-        "include_hidden": false,
-        "provenance_page": true,
-        "plugins": true,
-        "plugin_timeout": 60,
-        "allow_plugin_kind": [],
-        "deny_plugin_kind": [],
-        "plugin_sandbox_allow_read": [],
-        "renderer": {"use": "pdfa"},
-    })
+/// Every default the schema declares, plus the built-in tables' struct defaults.
+fn defaults_document() -> Map<String, Value> {
+    let schema = file_schema();
+    let mut defaults = Map::new();
+    for (key, node) in schema["properties"].as_object().into_iter().flatten() {
+        if let Some(default) = node.get("default") {
+            defaults.insert(key.clone(), default.clone());
+        }
+    }
+    for table in option_tables() {
+        defaults.insert(table.name.to_string(), table.defaults);
+    }
+    defaults
 }
 
 /// The merged configuration and where each value came from.
@@ -239,11 +228,7 @@ impl Resolved {
             origins: BTreeMap::new(),
             files: Vec::new(),
         };
-        let mut defaults = global_defaults();
-        for table in option_tables() {
-            defaults[table.section][table.name] = table.defaults;
-        }
-        resolved.merge(as_object(defaults), &Origin::Default);
+        resolved.merge(defaults_document(), &Origin::Default);
         resolved
     }
 
@@ -292,29 +277,18 @@ impl Resolved {
     }
 
     fn apply_env(&mut self, env: &Environment) -> Result<()> {
-        let schema = file_schema();
-        let globals = schema["properties"].as_object().expect("schema properties");
+        let mut tables = builtin_tables();
+        tables.extend(
+            self.document
+                .iter()
+                .filter(|(_, v)| v.is_object())
+                .map(|(k, _)| k.clone()),
+        );
         for (name, value) in &env.vars {
             let Some(name) = name.to_str() else { continue };
-            let Some(rest) = name.strip_prefix(ENV_PREFIX) else {
+            let Some(path) = env_path(name, &tables) else {
                 continue;
             };
-            let path: Vec<String> = if rest.contains("__") {
-                rest.split("__").map(str::to_ascii_lowercase).collect()
-            } else {
-                vec![rest.to_ascii_lowercase()]
-            };
-            // Other ANYTOPDF_* variables (secrets, IMAP, plugin path) are not settings.
-            let first = path[0].as_str();
-            let known = if path.len() == 1 {
-                globals.contains_key(first)
-                    && (first == "renderer" || !OPTION_SECTIONS.contains(&first))
-            } else {
-                OPTION_SECTIONS.contains(&first) && path.iter().all(|s| !s.is_empty())
-            };
-            if !known {
-                continue;
-            }
             let raw = value
                 .to_str()
                 .ok_or_else(|| anyhow!("{name} is not valid UTF-8"))?;
@@ -334,6 +308,22 @@ impl Resolved {
         let mut groups = vec![(matches, GLOBAL_FLAGS)];
         if let Some(convert) = matches.subcommand_matches("convert") {
             groups.push((convert, CONVERT_FLAGS));
+        }
+        if let Some(convert) = matches.subcommand_matches("convert") {
+            for option in builtin_options() {
+                let Some(raw) = option.given(convert) else {
+                    continue;
+                };
+                let path = vec![option.table.clone(), option.key.clone()];
+                let value = flag_value(&path, vec![raw]);
+                self.set(
+                    &path,
+                    value,
+                    &Origin::Flag {
+                        flag: format!("--{}", option.flag()),
+                    },
+                );
+            }
         }
         for (matches, bindings) in groups {
             for binding in bindings {
@@ -427,13 +417,7 @@ struct Settings {
     allow_plugin_kind: Vec<String>,
     deny_plugin_kind: Vec<String>,
     plugin_sandbox_allow_read: Vec<PathBuf>,
-    renderer: RendererChoice,
-}
-
-#[derive(Debug, Deserialize)]
-struct RendererChoice {
-    #[serde(rename = "use")]
-    name: String,
+    renderer: String,
 }
 
 impl Settings {
@@ -466,7 +450,7 @@ pub(crate) fn apply(cli: &mut Cli, matches: &ArgMatches, resolved: &Resolved) ->
         (&mut cli.command, matches.subcommand_matches("convert"))
     {
         let builtin = BuiltinOptions::from_tables(&resolved.tables())?;
-        args.renderer = settings.renderer.name;
+        args.renderer = settings.renderer;
         args.profile = settings
             .profile
             .parse()
@@ -478,13 +462,6 @@ pub(crate) fn apply(cli: &mut Cli, matches: &ArgMatches, resolved: &Resolved) ->
             args.filter = settings.filter;
         }
         args.no_provenance_page = !settings.provenance_page;
-        args.ocr = builtin.ocr.mode;
-        args.lang = builtin.ocr.lang;
-        args.video_interval = builtin.video.interval;
-        args.scene_threshold = builtin.video.scene_threshold;
-        args.dedupe_distance = builtin.video.dedupe_distance;
-        args.max_video_frames = builtin.video.max_frames;
-        args.max_image_frames = builtin.image.max_frames;
         args.no_embedded_subtitles = !builtin.captions.embedded_subtitles;
     }
     Ok(())
@@ -570,13 +547,8 @@ fn merge_into(
     origins: &mut BTreeMap<String, Origin>,
 ) {
     for (key, value) in layer {
-        // `renderer = "pdf"` is shorthand for `[renderer] use = "pdf"`.
-        let value = match value {
-            Value::String(name) if prefix.is_empty() && key == "renderer" => json!({ "use": name }),
-            value => value,
-        };
-        // `[enricher.face-detect]` and ANYTOPDF_ENRICHER__FACE_DETECT__… name one table.
-        let key = if OPTION_SECTIONS.contains(&prefix) {
+        // `[face-detect]` and ANYTOPDF_FACE_DETECT_… name one table.
+        let key = if prefix.is_empty() && value.is_object() {
             option_table_name(&key)
         } else {
             key
@@ -603,4 +575,36 @@ fn merge_into(
             }
         }
     }
+}
+
+/// The configuration key an `ANYTOPDF_*` variable sets, if it is a setting:
+/// `ANYTOPDF_PROFILE` is the global `profile`, `ANYTOPDF_VIDEO_INTERVAL` is
+/// `interval` in the known table `video` (longest table name wins), and
+/// `ANYTOPDF_WHISPER__MODEL` spells the table boundary out for any table.
+fn env_path(name: &str, tables: &[String]) -> Option<Vec<String>> {
+    if RESERVED_ENV.contains(&name) || RESERVED_ENV_PREFIXES.iter().any(|p| name.starts_with(p)) {
+        return None;
+    }
+    let rest = name.strip_prefix(ENV_PREFIX)?.to_ascii_lowercase();
+    if let Some((table, key)) = rest.split_once("__") {
+        let path: Vec<String> = std::iter::once(table)
+            .chain(key.split("__"))
+            .map(str::to_string)
+            .collect();
+        return path.iter().all(|s| !s.is_empty()).then_some(path);
+    }
+    let schema = file_schema();
+    let is_global = schema["properties"]
+        .get(&rest)
+        .is_some_and(|node| node.get("$ref").is_none());
+    if is_global {
+        return Some(vec![rest]);
+    }
+    tables
+        .iter()
+        .filter_map(|table| {
+            let key = rest.strip_prefix(&format!("{table}_"))?;
+            (!key.is_empty()).then(|| vec![table.clone(), key.to_string()])
+        })
+        .max_by_key(|path| path[0].len())
 }
