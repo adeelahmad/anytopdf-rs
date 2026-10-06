@@ -91,6 +91,12 @@ ExifTool, ffprobe, hashes, provenance, GPS, dates, etc.
 Adds OCR, captions, transcripts, object labels, scene labels, face bounds, and
 other annotations to individual units.
 
+Graph enrichers run before unit enrichers by default (for example, Whisper adds a
+transcript unit that later enrichers can see). A graph enricher whose `phase()`
+is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs
+after them instead, so it can summarize their annotations; `anytopdf-plugin-vlm`
+writes video and scene summaries this way.
+
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text
@@ -188,6 +194,7 @@ request's `options`. Child conversions (queue, MCP, mail watcher) receive the sa
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
+- `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
 - `anytopdf-plugin-yolo`
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`

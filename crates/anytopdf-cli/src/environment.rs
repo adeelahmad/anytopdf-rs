@@ -581,6 +581,7 @@ mod tests {
                         extensions: vec!["igl".into()],
                         mime_types: vec![],
                         priority: 50,
+                        phase: None,
                     })
                     .collect(),
             },
