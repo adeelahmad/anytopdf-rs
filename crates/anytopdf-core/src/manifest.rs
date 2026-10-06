@@ -1,4 +1,7 @@
-use crate::{Anchor, Annotation, DocumentGraph, PageRange, RenderReport, Unit, UnitKind, Uuid};
+use crate::{
+    Anchor, Annotation, AnnotationKind, DocumentGraph, PageRange, RenderReport, Unit, UnitKind,
+    Uuid,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -83,6 +86,34 @@ pub fn annotation_entity(a: &Annotation) -> Option<&str> {
 pub struct ChunkSet {
     pub schema_version: String,
     pub chunks: Vec<Chunk>,
+}
+
+/// Annotation texts, one per line, except that consecutive word-level OCR boxes on
+/// the same visual line are joined with spaces, so OCR chunks read as lines of text.
+fn annotation_text<'a>(annotations: impl Iterator<Item = &'a Annotation>) -> String {
+    let mut text = String::new();
+    let mut previous: Option<&Annotation> = None;
+    for a in annotations {
+        if let Some(p) = previous {
+            text.push(if same_ocr_line(p, a) { ' ' } else { '\n' });
+        }
+        text.push_str(&a.text);
+        previous = Some(a);
+    }
+    text
+}
+
+/// Whether `b` continues `a`'s OCR line: both are OCR boxes, `b` starts to the right
+/// of where `a` starts, and their vertical centres are within half a line height.
+fn same_ocr_line(a: &Annotation, b: &Annotation) -> bool {
+    let (Some(ra), Some(rb)) = (a.region, b.region) else {
+        return false;
+    };
+    if a.kind != AnnotationKind::Ocr || b.kind != AnnotationKind::Ocr || rb.x <= ra.x {
+        return false;
+    }
+    let centre = |r: crate::Region| r.y + r.height / 2.0;
+    (centre(ra) - centre(rb)).abs() <= ra.height.max(rb.height) / 2.0
 }
 
 fn page_span(report: &RenderReport, units: &[&Unit]) -> Option<PageRange> {
@@ -204,12 +235,11 @@ impl ChunkSet {
                 // Entities repeat text already in the chunk, so they are listed
                 // separately rather than appended to it.
                 let text = u.visible_text.clone().unwrap_or_else(|| {
-                    u.annotations
-                        .iter()
-                        .filter(|a| annotation_entity(a).is_none())
-                        .map(|a| a.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n")
+                    annotation_text(
+                        u.annotations
+                            .iter()
+                            .filter(|a| annotation_entity(a).is_none()),
+                    )
                 });
                 Some(Chunk {
                     id: u.id,
@@ -293,6 +323,35 @@ mod tests {
             Manifest::build(&graph, &report),
             ChunkSet::build(&graph, &report),
         )
+    }
+
+    #[test]
+    fn ocr_words_on_one_line_join_with_spaces_in_chunk_text() {
+        let word = |text: &str, x: f32, y: f32| {
+            let mut a = Annotation::text(AnnotationKind::Ocr, "tesseract", text);
+            a.region = Some(crate::Region {
+                x,
+                y,
+                width: 0.1,
+                height: 0.04,
+            });
+            a
+        };
+        let caption = Annotation::text(AnnotationKind::Caption, "test", "a caption");
+        let annotations = [
+            word("TOTAL", 0.1, 0.50),
+            word("GBP", 0.4, 0.505),
+            word("128.40", 0.6, 0.498),
+            word("Paid:", 0.1, 0.60),
+            word("VISA", 0.3, 0.60),
+            caption,
+            word("x", 0.2, 0.70),
+            word("y", 0.1, 0.70),
+        ];
+        assert_eq!(
+            annotation_text(annotations.iter()),
+            "TOTAL GBP 128.40\nPaid: VISA\na caption\nx\ny"
+        );
     }
 
     #[test]

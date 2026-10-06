@@ -43,7 +43,7 @@ THEMES = {
     },
 }
 
-INPUTS = [".jpg", ".heic", ".pdf", ".mp4", ".mp3", ".srt", ".eml", ".docx", ".html", ".zip"]
+INPUTS = [".jpg", ".cr3", ".pdf", ".mp4", ".mp3", "chat.txt", ".eml", ".docx", "https://", ".zip"]
 
 
 def font(name, size):
@@ -141,7 +141,7 @@ def banner(theme):
     draw.text(s(66, 192), "Turn anything into a searchable PDF.", font=font("DejaVuSans-Bold.ttf", 25), fill=t["ink"])
     draw.text(
         s(66, 232),
-        "Photos, scans, video, audio, email, Office, archives  →  one offline evidence file.",
+        "Photos, video, voice notes, chats, email, Office  \u2192  searchable, askable, offline.",
         font=font("DejaVuSans.ttf", 16),
         fill=t["muted"],
     )
@@ -163,13 +163,13 @@ def social_preview():
     draw.text(s(82, 284), "searchable PDF.", font=font("DejaVuSans-Bold.ttf", 44), fill=t["accent"])
     draw.text(
         s(84, 362),
-        "OCR, transcripts, captions and metadata in an invisible\ntext layer, plus an embedded manifest for RAG and agents.",
+        "OCR, transcripts, objects, scenes and places in an invisible\ntext layer. Then search and ask across all of it, offline.",
         font=font("DejaVuSans.ttf", 22),
         fill=t["muted"],
         spacing=8 * SCALE,
     )
     f = font("DejaVuSansMono.ttf", 18)
-    cmd = "$ anytopdf scan.jpg meeting.mp4 inbox.mbox -o evidence.pdf"
+    cmd = "$ anytopdf ask inbox.pdf \"How much was the Northwind receipt?\""
     draw.rounded_rectangle(s(80, 470, 1200, 530), radius=12 * SCALE, fill=t["chip"], outline=t["wire"], width=SCALE)
     draw.text(s(104, 487), cmd, font=f, fill=t["chip_ink"])
     draw.text(

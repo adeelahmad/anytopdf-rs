@@ -5,12 +5,14 @@
     python3 docs/demo/record.py [--bin target/release/anytopdf]
 
 Needs Pillow, Tesseract and Poppler (pdftoppm, pdftotext). It draws a phone
-photo of a receipt, converts it with the anytopdf binary, then renders:
+photo of a receipt taken at an angle and a WhatsApp chat export, converts them
+with the anytopdf binary, then renders:
 
 - receipt.jpg: the input photo
-- before-after.png: the photo next to the produced PDF page, with the words a
-  search for "total" finds in the PDF's text layer highlighted
-- demo.gif: a terminal recording whose output is the commands' real output
+- before-after.png: the photo next to the produced (flattened) PDF page, with the
+  words a search for "total" finds in the PDF's text layer highlighted
+- demo.gif: a terminal recording (convert a folder into an index, search it, ask
+  it a question) whose output is the commands' real output
 """
 
 import argparse
@@ -31,6 +33,14 @@ FONTS = Path("/usr/share/fonts/truetype/dejavu")
 MONO = FONTS / "DejaVuSansMono.ttf"
 MONO_BOLD = FONTS / "DejaVuSansMono-Bold.ttf"
 
+CHAT = """\
+[18/09/2026, 17:42:10] Sam: Did you get the hinges for the shed?
+[18/09/2026, 17:43:02] Me: Yes, Northwind Hardware had everything. Came to £128.40 with VAT
+[18/09/2026, 17:43:30] Sam: Nice. Send me the receipt and I'll pay half
+[18/09/2026, 17:44:12] Me: Will do. Can we fix the door on Saturday at 10am?
+[18/09/2026, 17:44:40] Sam: Saturday works
+"""
+
 RECEIPT = [
     ("NORTHWIND HARDWARE", "bold", 44),
     ("118 Harbour Road, Portsmouth", "", 26),
@@ -50,6 +60,25 @@ RECEIPT = [
     ("Paid: VISA **** 4821", "", 26),
     ("Thank you for shopping local!", "", 26),
 ]
+
+
+def perspective_coeffs(dst, src):
+    """PIL PERSPECTIVE coefficients mapping output points dst onto input points src."""
+    rows, rhs = [], []
+    for (x, y), (u, v) in zip(dst, src):
+        rows.append([x, y, 1, 0, 0, 0, -u * x, -u * y])
+        rows.append([0, 0, 0, x, y, 1, -v * x, -v * y])
+        rhs += [u, v]
+    n = len(rows)
+    m = [row + [b] for row, b in zip(rows, rhs)]
+    for col in range(n):  # Gauss-Jordan elimination with partial pivoting
+        pivot = max(range(col, n), key=lambda r: abs(m[r][col]))
+        m[col], m[pivot] = m[pivot], m[col]
+        for r in range(n):
+            if r != col:
+                f = m[r][col] / m[col][col]
+                m[r] = [a - f * b for a, b in zip(m[r], m[col])]
+    return [m[i][n] / m[i][i] for i in range(n)]
 
 
 def make_photo(path):
@@ -79,13 +108,17 @@ def make_photo(path):
         dd.line([(0, i), (1000, i + rng.randint(-8, 8))], fill=(shade + 12, shade - 6, shade - 30), width=3)
     desk = desk.filter(ImageFilter.GaussianBlur(2))
 
-    rotated = paper.rotate(-1.2, resample=Image.BICUBIC, expand=True, fillcolor=(0, 0, 0, 0))
-    mask = Image.new("L", paper.size, 255).rotate(-1.2, resample=Image.BICUBIC, expand=True)
+    # Shot at an angle: the sheet lands on the desk as a rotated trapezoid.
+    corners = [(170, 120), (850, 185), (880, 1105), (115, 1060)]
+    w, h = paper.size
+    coeffs = perspective_coeffs(corners, [(0, 0), (w, 0), (w, h), (0, h)])
+    warped = paper.transform(desk.size, Image.PERSPECTIVE, coeffs, Image.BICUBIC)
+    mask = Image.new("L", paper.size, 255).transform(desk.size, Image.PERSPECTIVE, coeffs, Image.BICUBIC)
     shadow = Image.new("RGBA", desk.size, (0, 0, 0, 0))
-    shadow.paste((0, 0, 0, 150), (130, 130), mask)
+    shadow.paste((0, 0, 0, 150), (22, 28), mask)
     shadow = shadow.filter(ImageFilter.GaussianBlur(18))
     desk = Image.alpha_composite(desk.convert("RGBA"), shadow).convert("RGB")
-    desk.paste(rotated, (105, 95), mask)
+    desk.paste(warped, (0, 0), mask)
 
     # uneven light from a desk lamp
     light = Image.radial_gradient("L").resize(desk.size).point(lambda v: 255 - v // 3)
@@ -135,7 +168,7 @@ def before_after(photo, pdf, cwd, out):
     d = ImageDraw.Draw(canvas)
     label = ImageFont.truetype(str(MONO_BOLD), 22)
     d.text((pad, pad), "receipt.jpg  (phone photo)", font=label, fill="#f4f1ea")
-    d.text((pad + left.width + gap, pad), 'receipt.pdf  (search: "total")', font=label, fill="#f4f1ea")
+    d.text((pad + left.width + gap, pad), 'receipt.pdf  (flattened, search: "total")', font=label, fill="#f4f1ea")
     canvas.paste(left, (pad, pad + head))
     canvas.paste(right, (pad + left.width + gap, pad + head))
     ax, ay = pad + left.width + 18, pad + head + h // 2
@@ -145,7 +178,7 @@ def before_after(photo, pdf, cwd, out):
 
 
 class Terminal:
-    W, H, PAD, LINE = 1000, 560, 22, 24
+    W, H, PAD, LINE = 1000, 700, 22, 24
 
     def __init__(self):
         self.font = ImageFont.truetype(str(MONO), 17)
@@ -210,27 +243,37 @@ def main():
 
     photo = HERE / "receipt.jpg"
     make_photo(photo)
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        shutil.copy(photo, work / "receipt.jpg")
+    # A fixed, short folder keeps the absolute paths `search` prints readable.
+    work = Path(tempfile.gettempdir()) / "anytopdf-demo"
+    shutil.rmtree(work, ignore_errors=True)
+    inbox = work / "inbox"
+    inbox.mkdir(parents=True)
+    try:
+        shutil.copy(photo, inbox / "receipt.jpg")
+        (inbox / "WhatsApp Chat with Sam.txt").write_text(CHAT, encoding="utf-8")
         bindir = work / "bin"
         bindir.mkdir()
         (bindir / "anytopdf").symlink_to(binary)
-        env = f"PATH={shlex.quote(str(bindir))}:$PATH SOURCE_DATE_EPOCH=1790000000"
+        env = (f"PATH={shlex.quote(str(bindir))}:$PATH SOURCE_DATE_EPOCH=1790000000 "
+               f"ANYTOPDF_INDEX={shlex.quote(str(work / 'index.sqlite'))}")
 
         term = Terminal()
         term.frame(700, cursor=False)
         steps = [
-            ("anytopdf receipt.jpg -o receipt.pdf", None, 1600),
-            ("pdftotext -layout receipt.pdf - | grep -i total", "total", 2000),
-            ("anytopdf extract receipt.pdf --json | jq -r '.manifest.sources[0].sha256'", None, 4000),
+            ("ls inbox", None, 1200),
+            ("anytopdf inbox --index -o inbox.pdf", None, 1600),
+            ("anytopdf search northwind", "northwind", 2200),
+            ('anytopdf ask inbox.pdf "How much was the Northwind receipt?" --top 2 | head -12', "128.40", 4500),
         ]
         for cmd, highlight, ms in steps:
             out = run(f"{env} sh -c {shlex.quote(cmd)}", work)
             term.type(cmd)
             term.output(out, highlight=highlight, ms=ms)
         term.save(HERE / "demo.gif")
-        before_after(photo, work / "receipt.pdf", work, HERE / "before-after.png")
+        run(f"{env} anytopdf receipt.jpg -o receipt.pdf", inbox)
+        before_after(photo, inbox / "receipt.pdf", inbox, HERE / "before-after.png")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     print("wrote receipt.jpg, before-after.png, demo.gif")
 
 
