@@ -130,6 +130,22 @@ invocation transcribes every media source in the job, so raise
 missing FFmpeg or a source without an audio track becomes a `plugin.warning`;
 the PDF is still written.
 
+### Face detection
+
+`anytopdf-plugin-faces` finds faces in images and video keyframes with a
+compiled-in YuNet detector, so it needs no download or Python. Each face becomes
+a searchable `face` annotation with its box, five landmarks and confidence, plus
+a per-frame count (`2 faces`). It never estimates age, gender, emotion or other
+traits. It ships beside the Whisper plugin and is enabled the same way:
+
+```bash
+cargo build --release -p anytopdf-plugin-faces
+ANYTOPDF_PLUGIN_PATH="$PWD/target/release" anytopdf convert meeting.mp4 -o meeting.pdf
+```
+
+`ANYTOPDF_FACES=off`, `ANYTOPDF_FACES_THRESHOLD`, `ANYTOPDF_FACES_MIN_SIZE` and
+the annotation format are described in [docs/faces.md](docs/faces.md).
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -173,7 +189,7 @@ Every fact becomes an `Annotation` with provenance:
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, time ranges); source paths and file
+(OCR, captions, transcripts, objects, face counts, barcodes, time ranges); source paths and file
 metadata are never written into it. Text/transcript units become normal
 visible text pages.
 
@@ -241,6 +257,8 @@ Rendering:
 - plain searchable PDF via `printpdf` (`--renderer pdf`)
 
 Bundled runtime plugins (separate executables in this workspace):
+- `anytopdf-plugin-faces`: neutral face boxes, landmarks and counts for images
+  and video keyframes with an embedded YuNet detector
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
 
@@ -588,7 +606,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 
 ### Media enrichment
 - [x] Whisper transcription as a runtime plugin
-- [ ] Face presence, count and bounds
+- [x] Face presence, count, bounds and landmarks as a runtime plugin
 - [ ] Object detection and scene classification providers
 - [ ] Barcode and QR extraction
 - [ ] Audio chapters and speaker turns

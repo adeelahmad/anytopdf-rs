@@ -500,6 +500,8 @@ pub(crate) mod tests {
             "test",
             "caption marker",
         ));
+        unit.annotations
+            .push(Annotation::text(AnnotationKind::Face, "yunet", "2 faces"));
         let graph = DocumentGraph {
             units: vec![unit.clone()],
             sources: vec![source],
@@ -519,6 +521,7 @@ pub(crate) mod tests {
             .unwrap();
         let hidden: Vec<String> = invisible_items(&[page]).into_iter().flatten().collect();
         assert!(hidden.iter().any(|t| t.contains("caption marker")));
+        assert!(hidden.iter().any(|t| t.contains("2 faces")));
         assert!(hidden.iter().any(|t| t.contains("[TIME]")));
         let path_str = visual.display().to_string();
         for item in &hidden {

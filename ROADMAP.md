@@ -94,7 +94,7 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 - [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
 
 ## Later media semantics
-- [ ] neutral face detection: presence/count/bounds
+- [x] neutral face detection: presence/count/bounds (`anytopdf-plugin-faces`)
 - [ ] object detection provider (YOLO/DETR plugin)
 - [ ] scene classification provider
 - [ ] barcode/QR extraction

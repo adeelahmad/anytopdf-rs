@@ -20,7 +20,7 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
 
 pub(crate) fn is_searchable_content(kind: &AnnotationKind) -> bool {
     use AnnotationKind::*;
-    matches!(*kind, Ocr | Caption | Transcript | Object | Barcode)
+    matches!(*kind, Ocr | Caption | Transcript | Object | Face | Barcode)
 }
 
 pub(crate) fn annotation_line(a: &Annotation) -> String {
@@ -166,6 +166,13 @@ mod tests {
         });
         assert_eq!(lines[0], "    abc");
         assert_eq!(lines[1..], ["界界", "界界", "界"]);
+    }
+
+    #[test]
+    fn face_annotations_are_searchable_but_metadata_is_not() {
+        assert!(is_searchable_content(&AnnotationKind::Face));
+        assert!(is_searchable_content(&AnnotationKind::Object));
+        assert!(!is_searchable_content(&AnnotationKind::Metadata));
     }
 
     #[test]

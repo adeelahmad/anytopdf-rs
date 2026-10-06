@@ -50,7 +50,10 @@ class Anytopdf < Formula
     assert_match version.to_s, shell_output("#{bin}/anytopdf --version")
     assert_match "anytopdf.capabilities/1",
                  shell_output("#{bin}/anytopdf --no-plugins capabilities --json")
-    assert_match "\"protocol\":1",
-                 shell_output("#{libexec}/plugins/anytopdf-plugin-whisper --anytopdf-manifest")
+    plugins = Dir["#{libexec}/plugins/anytopdf-plugin-*"]
+    refute_empty plugins
+    plugins.each do |plugin|
+      assert_match "\"protocol\":1", shell_output("#{plugin} --anytopdf-manifest")
+    end
   end
 end

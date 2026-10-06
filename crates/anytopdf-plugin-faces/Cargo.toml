@@ -1,0 +1,21 @@
+[package]
+name = "anytopdf-plugin-faces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "anytopdf runtime plugin that detects faces (boxes, landmarks, count) in images and video keyframes"
+
+[[bin]]
+name = "anytopdf-plugin-faces"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+anytopdf-onnx = { path = "../anytopdf-onnx" }
+image.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+tempfile.workspace = true

@@ -23,7 +23,7 @@ HOMEBREW = {
 SCOOP = {"64bit": "x86_64-pc-windows-msvc"}
 # Runtime plugins shipped in each archive's plugins/ folder. They stay opt-in:
 # anytopdf only runs them once ANYTOPDF_PLUGIN_PATH names that folder.
-PLUGINS = ["anytopdf-plugin-whisper"]
+PLUGINS = ["anytopdf-plugin-faces", "anytopdf-plugin-whisper"]
 SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?")
 
 
@@ -106,9 +106,13 @@ def homebrew_formula(version, digests, repository, description):
         "    assert_match version.to_s, shell_output(\"#{bin}/anytopdf --version\")\n"
         "    assert_match \"anytopdf.capabilities/1\",\n"
         "                 shell_output(\"#{bin}/anytopdf --no-plugins capabilities --json\")\n"
-        + "".join(f"    assert_match \"\\\"protocol\\\":1\",\n"
-                  f"                 shell_output(\"#{{libexec}}/plugins/{plugin} --anytopdf-manifest\")\n"
-                  for plugin in PLUGINS) +
+        # A glob, not PLUGINS, so a formula rendered for an older release stays
+        # valid after a plugin is added.
+        "    plugins = Dir[\"#{libexec}/plugins/anytopdf-plugin-*\"]\n"
+        "    refute_empty plugins\n"
+        "    plugins.each do |plugin|\n"
+        "      assert_match \"\\\"protocol\\\":1\", shell_output(\"#{plugin} --anytopdf-manifest\")\n"
+        "    end\n"
         "  end\n"
         "end\n")
 
