@@ -409,12 +409,15 @@ impl LlmConfig {
     }
 
     fn answer(&self, question: &str, passages: &[Passage]) -> anyhow::Result<String> {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let mut config = ureq::Agent::config_builder()
             .timeout_global(Some(self.timeout))
             .http_status_as_error(false)
-            .user_agent(concat!("anytopdf/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .into();
+            .user_agent(concat!("anytopdf/", env!("CARGO_PKG_VERSION")));
+        // A local model server must not be reached through an outbound proxy.
+        if is_loopback(&self.url) {
+            config = config.proxy(None);
+        }
+        let agent: ureq::Agent = config.build().into();
         let url = format!("{}/chat/completions", self.url);
         let mut request = agent.post(&url).header("Content-Type", "application/json");
         if let Some(key) = &self.api_key {
@@ -439,13 +442,40 @@ impl LlmConfig {
         }
         let value: Value = serde_json::from_str(&text)
             .map_err(|e| anyhow::anyhow!("LLM response is not JSON: {e}"))?;
-        value["choices"][0]["message"]["content"]
-            .as_str()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_owned)
-            .ok_or_else(|| anyhow::anyhow!("LLM response has no choices[0].message.content"))
+        let answer = chat_content(&value)?;
+        let answer = answer.trim();
+        if answer.is_empty() {
+            anyhow::bail!("LLM response has an empty answer");
+        }
+        Ok(answer.to_string())
     }
+}
+
+/// The reply text, given as a string or as an array of text parts.
+fn chat_content(response: &Value) -> anyhow::Result<String> {
+    let content = &response["choices"][0]["message"]["content"];
+    if let Some(text) = content.as_str() {
+        return Ok(text.to_string());
+    }
+    if let Some(parts) = content.as_array() {
+        return Ok(parts.iter().filter_map(|p| p["text"].as_str()).collect());
+    }
+    anyhow::bail!("LLM response has no choices[0].message.content")
+}
+
+fn is_loopback(url: &str) -> bool {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let authority = rest.split('/').next().unwrap_or_default();
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or_default()
+    } else {
+        authority.split(':').next().unwrap_or_default()
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 fn chat_request(model: &str, question: &str, passages: &[Passage]) -> Value {
@@ -456,6 +486,7 @@ fn chat_request(model: &str, question: &str, passages: &[Passage]) -> Value {
     json!({
         "model": model,
         "temperature": 0,
+        "stream": false,
         "messages": [
             {"role": "system", "content": "Answer the question using only the numbered passages \
                 from the user's converted files. Cite every supporting passage as [n]. If the \
@@ -538,6 +569,27 @@ mod tests {
             citation(&p),
             "meeting.pdf p.3-4 00:01:05-01:02:05 (meeting.mp4)"
         );
+    }
+
+    #[test]
+    fn loopback_hosts_skip_the_proxy() {
+        assert!(is_loopback("http://localhost:11434/v1"));
+        assert!(is_loopback("http://127.0.0.1:2020/v1"));
+        assert!(is_loopback("http://[::1]:8080"));
+        assert!(is_loopback("http://user:pw@LOCALHOST/v1"));
+        assert!(!is_loopback("https://api.example.com/v1"));
+        assert!(!is_loopback("http://192.168.1.4:11434/v1"));
+    }
+
+    #[test]
+    fn chat_content_accepts_strings_and_text_parts() {
+        let plain = json!({"choices": [{"message": {"content": "due [1]"}}]});
+        assert_eq!(chat_content(&plain).unwrap(), "due [1]");
+        let parts = json!({"choices": [{"message": {"content": [
+            {"type": "text", "text": "due "}, {"type": "text", "text": "[1]"}
+        ]}}]});
+        assert_eq!(chat_content(&parts).unwrap(), "due [1]");
+        assert!(chat_content(&json!({"error": "x"})).is_err());
     }
 
     #[test]
