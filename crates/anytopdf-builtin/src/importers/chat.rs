@@ -876,7 +876,10 @@ mod tests {
         register_builtins(
             &mut registry,
             BuiltinOptions {
-                ocr: crate::OcrMode::Off,
+                ocr: crate::OcrOptions {
+                    mode: crate::OcrMode::Off,
+                    ..Default::default()
+                },
                 chat,
                 ..Default::default()
             },

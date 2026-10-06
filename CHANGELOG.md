@@ -51,6 +51,35 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
   pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
   confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
+- The new `anytopdf-plugin-clip` runtime plugin embeds every image, page and video
+  keyframe with CLIP (ViT-B/32 on the CPU through the pure-Rust `tract` ONNX runtime)
+  and tags it with zero-shot scene labels such as `screenshot`, `document`, `outdoors`
+  or `beach`. Tags are `scene` annotations with `entity = scene-tag` and land in the
+  PDF's hidden text layer, so searching a PDF for "beach" finds beach photos; other
+  `scene` annotations (keyframe selection notes) stay out of it. The embedding is
+  kept in unit metadata (`clip.embedding`) for the search index and never written
+  into the PDF. `anytopdf-plugin-clip --fetch-model` downloads the model with pinned
+  SHA-256 checksums. The shared `anytopdf-onnx` crate holds the ONNX helpers.
+- `anytopdf-plugin-sentiment`, a bundled opt-in runtime plugin, labels transcript
+  segments, caption cues, OCR blocks and text paragraphs `positive`, `negative` or
+  `neutral` and tags them `question`, `complaint` or `urgent` (`formal`/`informal`
+  with an LLM). Labels are `custom` annotations with `entity` `sentiment`, `tone` or
+  `sentiment-overall` and the segment's time range or region, written to the hidden
+  text layer so "negative" or "complaint" is searchable. English works offline
+  through a built-in VADER lexicon port; `ANYTOPDF_SENTIMENT_LLM_URL` and
+  `ANYTOPDF_SENTIMENT_LLM_MODEL` use a local OpenAI-compatible endpoint instead,
+  falling back to the lexicon with a warning. Text only: nothing is inferred from
+  faces or voices.
+
+- Every option can be set three equivalent ways, rclone-style: `[video] interval` in a
+  TOML config file (`~/.config/anytopdf/config.toml`, or `--config PATH`),
+  `ANYTOPDF_VIDEO_INTERVAL`, or `--video-interval`, with `--set TABLE.KEY=VALUE` on top;
+  later layers win. Each built-in type has a table (`[image]`, `[video]`, `[ocr]`,
+  `[captions]`) whose options are generated as `--TABLE-KEY` flags, grouped by type in
+  `anytopdf convert --help`; older flag names stay as aliases. Runtime plugins receive
+  their table in a new optional `options` request field (protocol stays 1).
+  `anytopdf config` shows the effective settings and where each came from; new
+  `anytopdf.config/1` and config-file schemas.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

@@ -154,6 +154,19 @@ is `GraphPhase::AfterUnits` (runtime capability `"phase": "after-units"`) runs
 after them instead, so it can summarize their annotations; `anytopdf-plugin-vlm`
 writes video and scene summaries this way.
 
+### Face recognition
+
+Detection, embedding and identity are separate. A detector plugin adds `face`
+annotations with five-point `landmarks`. `anytopdf-plugin-face-id` (graph
+enricher in the `after-units` phase) aligns each face onto the ArcFace template, embeds it with
+an ONNX model through tract, tags the annotation with `face.ref` and writes the
+vector to `face-id/` in the job workspace, never into the graph. With
+`--recognize-faces` the CLI reads those vectors after the pipeline, matches them
+against the local face index (`anytopdf-faces`, SQLite), clusters faces that
+match nobody as `person-N`, records sightings, sets `attributes.person` and the
+annotation text, and appends a "People in …" text unit per source. Face
+annotations are part of the hidden search layer.
+
 ### Planning
 
 The current default is one visual unit per visual PDF page plus visible text
@@ -240,6 +253,21 @@ Protocol:
 
 Large data is exchanged through workspace file paths rather than base64 JSON.
 
+### Configuration
+
+`anytopdf-cli/src/config/` layers built-in defaults, a TOML file, `ANYTOPDF_*`
+variables, flags and `--set` into one document shaped like
+`schemas/config-file.schema.json`, validates it, and writes the global values back
+into the parsed command line. The schema is the single definition of every
+built-in option: its title, description, type and default generate the
+`--TABLE-KEY` flag (grouped by type in `convert --help`) and the
+`ANYTOPDF_TABLE_KEY` variable, so the file key, variable and flag cannot drift.
+Top-level tables become `anytopdf_core::PluginOptions`: built-ins read typed
+structs from `anytopdf-builtin/src/options.rs` (a test keeps their defaults equal
+to the schema's), and runtime plugins get the table named after them as the
+request's `options`. Child conversions (queue, MCP, mail watcher) receive the same
+`--config`, `--no-config` and `--set` flags.
+
 ## Future plugin examples
 
 - `anytopdf-plugin-igl`
@@ -248,8 +276,13 @@ Large data is exchanged through workspace file paths rather than base64 JSON.
 - `anytopdf-plugin-email`
 - `anytopdf-plugin-archive`
 - `anytopdf-plugin-whisper` (shipped in `crates/anytopdf-plugin-whisper`)
+- `anytopdf-plugin-clip` (shipped in `crates/anytopdf-plugin-clip`; CLIP embeddings
+  and scene tags, on the pure-Rust tract runtime)
+- `anytopdf-plugin-faces` (shipped in `crates/anytopdf-plugin-faces`; see `docs/faces.md`)
 - `anytopdf-plugin-objects` (shipped in `crates/anytopdf-plugin-objects`; YOLO ONNX
   models on the shared pure-Rust runtime in `crates/anytopdf-onnx`)
+- `anytopdf-plugin-sentiment` (shipped in `crates/anytopdf-plugin-sentiment`)
+- `anytopdf-plugin-audio-events` (shipped in `crates/anytopdf-plugin-audio-events`)
 - `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
 - `anytopdf-plugin-paddleocr`
 - `anytopdf-plugin-cloud-vision`

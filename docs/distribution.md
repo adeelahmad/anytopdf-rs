@@ -17,7 +17,8 @@ the container image on GHCR.
 ## Bundled plugins
 
 Every archive carries the workspace's runtime plugins (`PLUGINS` in the
-Makefile, currently `anytopdf-plugin-whisper`) in a `plugins/` folder. anytopdf
+Makefile, currently `anytopdf-plugin-audio-events`, `anytopdf-plugin-faces`,
+`anytopdf-plugin-sentiment` and `anytopdf-plugin-whisper`) in a `plugins/` folder. anytopdf
 finds them there (and in Homebrew's `libexec/plugins` and `<data dir>/plugins`)
 without `ANYTOPDF_PLUGIN_PATH`, but runs a bundled plugin only once its manifest
 reports `ready: true`: an enabled Whisper plugin without an engine would warn on

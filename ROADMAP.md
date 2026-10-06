@@ -62,6 +62,7 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `anytopdf queue serve`: HTTP upload intake with a bearer token, localhost by default, TLS for any other address, 100 MB default upload cap
 - [x] archive importer (zip, tar, tar.gz) with path-traversal and zip-bomb limits
 - [x] Whisper transcription runtime plugin
+- [x] Audio events runtime plugin (speech/music/silence, raised voices; laughter, applause and other sounds with an AudioSet ONNX model)
 - [x] `anytopdf watch imap`: IMAP watcher with IDLE or polling, a sender allowlist with a DMARC check, XOAUTH2 and queue hand-off
 - [x] `--plugin-sandbox off|contain|strict`: opt-in process containment for runtime plugins on every platform, plus a filesystem and network sandbox on Linux and macOS
 - [x] PDF importer (Poppler page images plus the PDF's own text as the hidden layer; OCR only for textless pages) and HEIC/HEIF/AVIF importer
@@ -98,10 +99,12 @@ Priority order as of sprint 4 sign-off, with status on `main`.
 - [ ] resolve the threat model's open maintainer questions (§1.18: Q4, Q6, Q8, Q9, Q11, Q13, Q14, Q15, Q17); answers with tests are in review
 
 ## Later media semantics
-- [ ] neutral face detection: presence/count/bounds
+- [x] neutral face detection: presence/count/bounds (`anytopdf-plugin-faces`)
 - [x] object detection provider (`anytopdf-plugin-objects`, YOLO ONNX on a pure-Rust runtime)
+- [x] scene classification provider (zero-shot CLIP tags in `anytopdf-plugin-clip`)
+- [x] CLIP image embeddings for search by meaning (`anytopdf-plugin-clip`; `search --semantic` follows the cross-file index)
+- [x] face recognition against a local, user-enrolled face index: `--recognize-faces`, `anytopdf faces enroll|import|list|name|rename|merge|forget|find`, `anytopdf-plugin-face-id`
 - [x] keyframe captions, questions and activities, video and scene summaries, and a video category (`anytopdf-plugin-vlm`)
-- [ ] scene classification provider
 - [ ] barcode/QR extraction
 - [ ] audio chapter / speaker-turn annotations
 - [ ] OCR-text-aware video frame retention

@@ -631,6 +631,7 @@ mod tests {
         probe.plugins.push(RuntimePlugin {
             timeout: Duration::from_secs(1),
             sandbox: Default::default(),
+            options: Default::default(),
             executable: PathBuf::from("/opt/anytopdf-plugin-igl"),
             manifest: RuntimePluginManifest {
                 protocol: 1,
@@ -667,6 +668,7 @@ mod tests {
         probe.idle.push(RuntimePlugin {
             timeout: Duration::from_secs(1),
             sandbox: Default::default(),
+            options: Default::default(),
             executable: PathBuf::from("/opt/anytopdf/plugins/anytopdf-plugin-whisper"),
             manifest: RuntimePluginManifest {
                 protocol: 1,

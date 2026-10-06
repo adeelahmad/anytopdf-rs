@@ -37,7 +37,8 @@ Capability kinds:
 
 A `graph-enricher` capability may set `"phase"`: `"before-units"` (the default)
 runs before unit enrichers, and `"after-units"` runs after them, for summaries
-over what they found. The host skips a capability with any other phase and
+over what they found or to consume their annotations (`anytopdf-plugin-face-id`
+embeds the faces a detector added). The host skips a capability with any other phase and
 reports a discovery warning. Hosts that predate the field run every graph
 enricher before unit enrichers; the protocol stays at `"protocol": 1`.
 
@@ -85,6 +86,21 @@ The core writes a JSON request into the job workspace:
     "path": "/data/file.igl",
     "detected_type": "application/x-igl"
   }
+}
+```
+
+Requests may carry an optional `options` object: the plugin's table from the
+configuration (`[NAME]` in the config file, where `NAME` is the manifest name and
+`-` matches `_`; `ANYTOPDF_NAME_KEY` or `ANYTOPDF_NAME__KEY` in the environment;
+`--set NAME.KEY=VALUE` on the command line). Every capability of the plugin gets
+the same table. It is omitted when no table is configured; plugins supply their
+own defaults. Additive; the protocol stays at `"protocol": 1`.
+
+```json
+{
+  "protocol": 1,
+  "operation": "import",
+  "options": {"layers": ["walls"], "dpi": 300}
 }
 ```
 
@@ -150,6 +166,16 @@ continue on the page where the previous text unit of the same source ended
 instead of starting a new page; use it for many small records (rows, messages,
 log entries). Protocol version unchanged.
 
+Annotations of kind `scene` are searchable content (written to the PDF's hidden
+text layer) only when they carry the attribute `"entity": "scene-tag"`, as the
+CLIP plugin's zero-shot tags do; other `scene` annotations record how a keyframe
+was selected and stay out of it.
+
+Unit metadata is never written into the PDF. The CLIP plugin stores each visual
+unit's embedding there as `clip.embedding` (base64 of little-endian `f32`, unit
+length), with `clip.model` (an identifier that changes with the model files) and
+`clip.dim`; a cross-file search index may read these keys.
+
 Plugins may create derived files only under the supplied workspace unless the
 user explicitly configured otherwise.
 
@@ -173,6 +199,16 @@ Runtime plugins may receive:
 This allows model-heavy providers (Whisper, YOLO, scene classifiers, proprietary
 decoders) to ship independently while still emitting the same normalized
 annotation model.
+
+Built-in unit enrichers (such as OCR) run before runtime unit enrichers, and graph
+enrichers (such as Whisper) before both, so a unit enricher sees OCR, caption and
+transcript annotations. `anytopdf-plugin-sentiment` is one: it answers
+`unit-enrich` with append-only `custom` annotations whose `attributes` carry
+`entity` (`sentiment`, `tone` or `sentiment-overall`), `label`, a signed `score`,
+and `from` (`transcript`, `caption`, `ocr` or `text`). Annotations with an `entity`
+attribute are written to the hidden text layer. It reads settings from the
+request's `options` object when present (keys such as `llm_model`), falling back
+to its `ANYTOPDF_SENTIMENT_*` environment variables.
 
 ## Host validation and execution policy
 

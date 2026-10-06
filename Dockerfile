@@ -10,9 +10,11 @@
 # binaries to dist/docker/<arch>/, so the image ships the exact binaries that
 # were smoke-tested and checksummed instead of rebuilding them.
 #
-# anytopdf-plugin-whisper is installed in /opt/anytopdf/plugins but stays off
-# unless ANYTOPDF_PLUGIN_PATH names that folder. --build-arg WHISPER=cpp also
-# compiles whisper.cpp's whisper-cli and turns the plugin on; mount a ggml model
+# anytopdf-plugin-audio-events, anytopdf-plugin-faces, anytopdf-plugin-sentiment and
+# anytopdf-plugin-whisper are installed in
+# /opt/anytopdf/plugins but stay off unless ANYTOPDF_PLUGIN_PATH names that
+# folder. --build-arg WHISPER=cpp also compiles whisper.cpp's whisper-cli and
+# turns the Whisper plugin on; mount a ggml model
 # at /models/ggml-base.en.bin (or set ANYTOPDF_WHISPER_MODEL):
 #
 #   docker build --build-arg WHISPER=cpp -t anytopdf:whisper .
@@ -24,12 +26,14 @@ ARG WHISPER=none
 FROM rust:1.92-bookworm AS source
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
-    && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-whisper /
+RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-audio-events -p anytopdf-plugin-faces -p anytopdf-plugin-sentiment -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
+    && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-audio-events target/release/anytopdf-plugin-faces \
+        target/release/anytopdf-plugin-sentiment target/release/anytopdf-plugin-whisper /
 
 FROM scratch AS prebuilt
 ARG TARGETARCH
-COPY dist/docker/${TARGETARCH}/anytopdf dist/docker/${TARGETARCH}/anytopdf-plugin-whisper /
+COPY dist/docker/${TARGETARCH}/anytopdf dist/docker/${TARGETARCH}/anytopdf-plugin-audio-events dist/docker/${TARGETARCH}/anytopdf-plugin-faces \
+     dist/docker/${TARGETARCH}/anytopdf-plugin-sentiment dist/docker/${TARGETARCH}/anytopdf-plugin-whisper /
 
 FROM ${BINARY} AS binary
 
@@ -59,6 +63,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 anytopdf
 COPY --from=binary --chmod=0755 /anytopdf /usr/local/bin/anytopdf
+COPY --from=binary --chmod=0755 /anytopdf-plugin-audio-events /opt/anytopdf/plugins/anytopdf-plugin-audio-events
+COPY --from=binary --chmod=0755 /anytopdf-plugin-faces /opt/anytopdf/plugins/anytopdf-plugin-faces
+COPY --from=binary --chmod=0755 /anytopdf-plugin-sentiment /opt/anytopdf/plugins/anytopdf-plugin-sentiment
 COPY --from=binary --chmod=0755 /anytopdf-plugin-whisper /opt/anytopdf/plugins/anytopdf-plugin-whisper
 COPY --from=whisper --chmod=0755 /out/bin/ /usr/local/bin/
 ENV ANYTOPDF_WHISPER_MODEL=/models/ggml-base.en.bin

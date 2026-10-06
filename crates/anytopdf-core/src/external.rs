@@ -66,6 +66,10 @@ pub struct RuntimeRequest {
     pub unit: Option<Unit>,
     pub graph: Option<DocumentGraph>,
     pub output: Option<PathBuf>,
+    /// The plugin's configuration table (`[importer.NAME]`, `[enricher.NAME]`
+    /// or `[renderer.NAME]`), omitted when the configuration has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +100,14 @@ pub struct RuntimePlugin {
     pub sandbox: SandboxPolicy,
     pub executable: PathBuf,
     pub manifest: RuntimePluginManifest,
+    /// Configuration tables; requests carry the one named after the plugin.
+    pub options: Arc<PluginOptions>,
+}
+
+impl RuntimePlugin {
+    fn options(&self) -> Option<serde_json::Map<String, serde_json::Value>> {
+        self.options.table(&self.manifest.name).cloned()
+    }
 }
 
 /// Controls discovery and registered capabilities; plugins remain trusted native code.
@@ -110,6 +122,8 @@ pub struct RuntimePluginPolicy {
     /// user's `<data dir>/plugins`. Their plugins run without
     /// `ANYTOPDF_PLUGIN_PATH`, but only once they report ready.
     pub bundled_dirs: Vec<PathBuf>,
+    /// Per-plugin configuration tables passed in each request.
+    pub options: Arc<PluginOptions>,
 }
 
 impl Default for RuntimePluginPolicy {
@@ -126,6 +140,7 @@ impl Default for RuntimePluginPolicy {
                 .into_iter()
                 .chain(user_data_dir().map(|dir| dir.join("plugins")))
                 .collect(),
+            options: Arc::default(),
         }
     }
 }
@@ -275,6 +290,7 @@ pub fn discover_runtime_plugins_detailed(policy: &RuntimePluginPolicy) -> Plugin
             manifest,
             timeout: policy.timeout,
             sandbox: policy.sandbox.clone(),
+            options: policy.options.clone(),
         }),
         Err(e) => {
             warnings.push(format!(
@@ -524,6 +540,7 @@ impl Importer for RuntimeImporter {
                 unit: None,
                 graph: None,
                 output: None,
+                options: self.plugin.options(),
             },
         )?;
         let updated = response.source.unwrap_or_else(|| source.clone());
@@ -572,6 +589,7 @@ impl SourceEnricher for RuntimeSourceEnricher {
                 unit: None,
                 graph: None,
                 output: None,
+                options: self.plugin.options(),
             },
         )?;
         if let Some(updated) = response.source {
@@ -607,6 +625,7 @@ impl GraphEnricher for RuntimeGraphEnricher {
                 unit: None,
                 graph: Some(graph.clone()),
                 output: None,
+                options: self.plugin.options(),
             },
         )?;
         if let Some(updated) = response.graph {
@@ -663,6 +682,7 @@ impl UnitEnricher for RuntimeUnitEnricher {
                 unit: Some(unit.clone()),
                 graph: None,
                 output: None,
+                options: self.plugin.options(),
             },
         )?;
         if let Some(updated) = response.unit {
@@ -715,6 +735,7 @@ impl Renderer for RuntimeRenderer {
                 unit: None,
                 graph: Some(graph.clone()),
                 output: Some(target.clone()),
+                options: self.plugin.options(),
             },
         )?;
         let report = response.render_report.ok_or_else(|| {
@@ -868,6 +889,7 @@ mod process_tests {
                 ready: true,
                 detail: None,
             },
+            options: Arc::default(),
         };
         let source = SourceRecord::new(source_path);
         let id = source.id;
@@ -883,6 +905,59 @@ mod process_tests {
         assert_eq!(
             outcome.units[0].visible_text.as_deref(),
             Some("plugin content")
+        );
+    }
+
+    #[test]
+    fn runtime_importer_receives_its_configuration_table() {
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("input.example");
+        fs::write(&source_path, "input").unwrap();
+        let seen = dir.path().join("seen-request.json");
+        let executable = script(
+            dir.path(),
+            &format!(
+                r#"cp "$2" '{}'
+printf '%s' '{{"protocol":1,"ok":true,"units":[{{"kind":"text","visible_text":"x"}}]}}' > "$4""#,
+                seen.display()
+            ),
+        );
+        let capability = RuntimeCapability {
+            kind: "importer".into(),
+            extensions: vec!["example".into()],
+            mime_types: vec![],
+            priority: 1,
+            phase: None,
+        };
+        let options = PluginOptions::from_document(&serde_json::json!({
+            "my-format": {"layers": ["a"], "dpi": 300},
+            "other": {"ignored": true},
+        }));
+        let plugin = RuntimePlugin {
+            executable,
+            timeout: Duration::from_secs(2),
+            sandbox: SandboxPolicy::default(),
+            manifest: RuntimePluginManifest {
+                protocol: 1,
+                name: "my-format".into(),
+                version: "1".into(),
+                capabilities: vec![capability.clone()],
+                ready: true,
+                detail: None,
+            },
+            options: Arc::new(options),
+        };
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        RuntimeImporter { plugin, capability }
+            .import(&ctx, SourceRecord::new(source_path))
+            .unwrap();
+        let request: serde_json::Value = serde_json::from_slice(&fs::read(&seen).unwrap()).unwrap();
+        assert_eq!(
+            request["options"],
+            serde_json::json!({"layers": ["a"], "dpi": 300})
         );
     }
 
@@ -920,6 +995,7 @@ mod process_tests {
                 ready: true,
                 detail: None,
             },
+            options: Arc::default(),
         };
         let source = SourceRecord::new(source_path);
         let id = source.id;

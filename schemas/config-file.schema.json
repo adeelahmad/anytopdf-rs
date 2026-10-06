@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/adeelahmad/anytopdf-rs/schemas/config-file/v1",
+  "title": "anytopdf configuration file",
+  "description": "The TOML file read from the user config directory or --config. Top-level scalar keys are global settings. Every other top-level table holds one plugin's options: [image], [video], [ocr] and [captions] for built-ins (unknown keys rejected), and [NAME] for a runtime plugin, passed to it verbatim in each request. Each option KEY in table [TYPE] is also ANYTOPDF_TYPE_KEY in the environment and --type-key on `anytopdf convert`.",
+  "type": "object",
+  "additionalProperties": {
+    "$ref": "#/$defs/plugin_table"
+  },
+  "properties": {
+    "profile": {
+      "description": "Output profile (--profile).",
+      "enum": [
+        "archive",
+        "share"
+      ],
+      "default": "archive"
+    },
+    "strict": {
+      "description": "Fail before publishing when ingestion or rendering reports warnings (--strict).",
+      "type": "boolean",
+      "default": false
+    },
+    "fail_fast": {
+      "description": "Abort without publishing when any input fails (--fail-fast).",
+      "type": "boolean",
+      "default": false
+    },
+    "include_hidden": {
+      "description": "Include hidden files and directories during discovery (--include-hidden).",
+      "type": "boolean",
+      "default": false
+    },
+    "filter": {
+      "description": "Only convert discovered inputs whose path matches this regular expression (--filter).",
+      "type": "string"
+    },
+    "provenance_page": {
+      "description": "Add the provenance page to the PDF (false = --no-provenance-page).",
+      "type": "boolean",
+      "default": true
+    },
+    "plugins": {
+      "description": "Discover and run runtime plugins (false = --no-plugins).",
+      "type": "boolean",
+      "default": true
+    },
+    "plugin_timeout": {
+      "description": "Maximum seconds for each runtime plugin invocation (--plugin-timeout).",
+      "type": "integer",
+      "minimum": 1,
+      "default": 60
+    },
+    "plugin_sandbox": {
+      "description": "Confine runtime plugins (--plugin-sandbox); unset keeps the per-command default.",
+      "enum": [
+        "off",
+        "contain",
+        "strict"
+      ]
+    },
+    "allow_plugin_kind": {
+      "description": "Register only these plugin capability kinds (--allow-plugin-kind).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/kind"
+      },
+      "default": []
+    },
+    "deny_plugin_kind": {
+      "description": "Deny these plugin capability kinds (--deny-plugin-kind).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/kind"
+      },
+      "default": []
+    },
+    "plugin_sandbox_allow_read": {
+      "description": "Extra paths a strict-sandboxed plugin may read (--plugin-sandbox-allow-read).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "renderer": {
+      "description": "Renderer that writes the output: pdfa (tagged PDF/A-3a), pdf (printpdf) or runtime:NAME (--renderer).",
+      "type": "string",
+      "default": "pdfa"
+    },
+    "image": {
+      "$ref": "#/$defs/image"
+    },
+    "video": {
+      "$ref": "#/$defs/video"
+    },
+    "ocr": {
+      "$ref": "#/$defs/ocr"
+    },
+    "captions": {
+      "$ref": "#/$defs/captions"
+    }
+  },
+  "$defs": {
+    "kind": {
+      "enum": [
+        "importer",
+        "source-enricher",
+        "graph-enricher",
+        "unit-enricher",
+        "renderer"
+      ]
+    },
+    "plugin_table": {
+      "description": "Options for a runtime plugin, passed verbatim in its requests.",
+      "type": "object"
+    },
+    "image": {
+      "title": "Image importer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_frames": {
+          "description": "Frames to import from a multi-frame TIFF or GIF; 0 means unlimited.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "video": {
+      "title": "Video importer",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interval": {
+          "description": "Seconds between sampled frames.",
+          "type": "number",
+          "minimum": 0,
+          "default": 5.0
+        },
+        "scene_threshold": {
+          "description": "Scene-change sensitivity for frame selection.",
+          "type": "number",
+          "minimum": 0,
+          "default": 0.3
+        },
+        "dedupe_distance": {
+          "description": "Perceptual-hash distance below which frames count as duplicates.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 4
+        },
+        "max_frames": {
+          "description": "Frames to keep; 0 means unlimited.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "ocr": {
+      "title": "OCR enricher",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "description": "OCR provider selection.",
+          "enum": [
+            "auto",
+            "vision",
+            "doctr",
+            "tesseract",
+            "off",
+            "none"
+          ],
+          "default": "auto"
+        },
+        "lang": {
+          "description": "OCR language code.",
+          "type": "string",
+          "default": "eng"
+        }
+      }
+    },
+    "captions": {
+      "title": "Captions enricher",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "embedded_subtitles": {
+          "description": "Read subtitle tracks embedded in video files.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  }
+}

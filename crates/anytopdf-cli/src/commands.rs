@@ -275,6 +275,7 @@ mod tests {
         RuntimePlugin {
             timeout: Duration::from_secs(1),
             sandbox: Default::default(),
+            options: Default::default(),
             executable: PathBuf::from("/opt/anytopdf/plugins/anytopdf-plugin-whisper"),
             manifest: RuntimePluginManifest {
                 protocol: 1,

@@ -3,7 +3,11 @@ use crate::exit::{CliError, ExitClass, fail};
 use anytopdf_core::RuntimePluginPolicy;
 
 #[cfg(not(feature = "imap"))]
-pub(crate) fn watch_imap(_args: ImapArgs, _policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+pub(crate) fn watch_imap(
+    _args: ImapArgs,
+    _policy: &RuntimePluginPolicy,
+    _config_flags: Vec<std::ffi::OsString>,
+) -> Result<(), CliError> {
     Err(fail(
         ExitClass::Usage,
         "this anytopdf build has no IMAP support; rebuild with `cargo build --features imap`",
@@ -16,7 +20,6 @@ pub(crate) use imap::watch_imap;
 #[cfg(feature = "imap")]
 mod imap {
     use super::*;
-    use crate::cli::Cli;
     use crate::exit::tag;
     use crate::queue::{Job, Origin, Queue, check_convert_args};
     use anyhow::{Context, Result, bail};
@@ -25,7 +28,6 @@ mod imap {
         Credential, Delivery, ImapConfig, Mailbox, MessageSink, SenderPolicy, SpooledMessage,
         TlsMode, WatchOptions, Watcher, connect, read_password,
     };
-    use clap::Parser;
     use std::{ffi::OsString, path::PathBuf, process::Command, time::Duration};
 
     const PASSWORD_ENV: &str = "ANYTOPDF_IMAP_PASSWORD";
@@ -167,7 +169,11 @@ mod imap {
         })
     }
 
-    pub(crate) fn watch_imap(args: ImapArgs, policy: &RuntimePluginPolicy) -> Result<(), CliError> {
+    pub(crate) fn watch_imap(
+        args: ImapArgs,
+        policy: &RuntimePluginPolicy,
+        config_flags: Vec<OsString>,
+    ) -> Result<(), CliError> {
         let tls: TlsMode = tag(ExitClass::Usage, args.tls.parse())?;
         let credential = credential(&args)?;
         let senders = tag(
@@ -207,9 +213,9 @@ mod imap {
                     "message.pdf".as_ref(),
                     &args.convert_args,
                 );
-                if let Err(e) =
-                    Cli::try_parse_from(std::iter::once(OsString::from("anytopdf")).chain(probe))
-                {
+                if let Err(e) = crate::cli::try_parse_from(
+                    std::iter::once(OsString::from("anytopdf")).chain(probe),
+                ) {
                     let first = e.to_string();
                     let first = first.lines().next().unwrap_or_default();
                     return Err(fail(
@@ -229,7 +235,10 @@ mod imap {
                 )?;
                 let sink = ConvertSink {
                     exe: std::env::current_exe().context("locate the anytopdf executable")?,
-                    global: plugin_flags(policy),
+                    global: plugin_flags(policy)
+                        .into_iter()
+                        .chain(config_flags.iter().cloned())
+                        .collect(),
                     output_dir: output_dir.clone(),
                     extra: args.convert_args.clone(),
                     timeout: Duration::from_secs(args.convert_timeout),
@@ -314,6 +323,7 @@ mod imap {
                     allow_read: vec!["/opt/models".into()],
                 },
                 bundled_dirs: Vec::new(),
+                ..Default::default()
             };
             let flags: Vec<String> = plugin_flags(&policy)
                 .into_iter()

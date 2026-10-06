@@ -152,6 +152,177 @@ the PDF is still written. Under `--plugin-sandbox strict`, pass
 `--plugin-sandbox-allow-read` for the data folder (or the model file) so the
 plugin can load the model.
 
+### Face detection
+
+`anytopdf-plugin-faces` finds faces in images and video keyframes with a
+compiled-in YuNet detector, so it needs no download or Python. Each face becomes
+a searchable `face` annotation with its box, five landmarks and confidence, plus
+a per-frame count (`2 faces`). It never estimates age, gender, emotion or other
+traits. It ships beside the Whisper plugin and is enabled the same way:
+
+```bash
+cargo build --release -p anytopdf-plugin-faces
+ANYTOPDF_PLUGIN_PATH="$PWD/target/release" anytopdf convert meeting.mp4 -o meeting.pdf
+```
+
+`ANYTOPDF_FACES=off`, `ANYTOPDF_FACES_THRESHOLD`, `ANYTOPDF_FACES_MIN_SIZE` and
+the annotation format are described in [docs/faces.md](docs/faces.md).
+
+### Search by meaning (CLIP)
+
+`anytopdf-plugin-clip` embeds every image, document page and video keyframe with
+OpenAI's CLIP ViT-B/32, so they can be searched by what they show rather than by
+the words on them. It runs on the CPU in pure Rust; no Python or ONNX Runtime
+install is needed. It also adds zero-shot scene tags (`photo`, `document`,
+`screenshot`, `slide`, `chart`, `indoors`/`outdoors`, `beach`, `city street`,
+`office`, `food`, `night` and similar) to the PDF's searchable layer, so searching
+the PDF for "screenshot" or "beach" finds those pages. The tags describe content
+and setting only, never a person's traits.
+
+```bash
+cargo build --release -p anytopdf-plugin-clip
+target/release/anytopdf-plugin-clip --fetch-model     # about 600 MB, checksum-verified
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+anytopdf convert holiday/ -o holiday.pdf
+```
+
+`--fetch-model [DIR]` stores the model in `anytopdf/models/clip` in the user data
+directory (`ANYTOPDF_CLIP_MODEL_DIR` overrides it; `ANYTOPDF_CLIP_MODEL_MIRROR` names
+a mirror holding the same three files). A Hugging Face ONNX export
+(`onnx/vision_model.onnx`, `onnx/text_model.onnx`, `tokenizer.json`) also works.
+`ANYTOPDF_CLIP_TAGS=off` turns tags off, `ANYTOPDF_CLIP_TAGS="logo=a company logo;cat"`
+replaces them with your own labels, and `ANYTOPDF_CLIP_TAG_THRESHOLD` (default 0.5)
+sets how sure a tag must be. Each embedding stays in the conversion's graph
+(`clip.embedding`) for the cross-file search index and is never written into the
+PDF. `anytopdf-plugin-clip --encode-text "people on a beach at night"` and
+`--encode-image photo.jpg` print a query embedding as JSON. Without a model the
+plugin warns once per conversion and the PDF is still written. Under
+`--plugin-sandbox strict`, allow the model folder with
+`--plugin-sandbox-allow-read "$ANYTOPDF_CLIP_MODEL_DIR"` (or the default folder).
+
+### Sentiment and tone
+
+`anytopdf-plugin-sentiment` labels what text *says* as `positive`, `negative` or
+`neutral`, and tags its tone as `question`, `complaint` or `urgent` (plus `formal`
+or `informal` with an LLM). It reads every text source: transcript segments
+(including Whisper's), caption cues, OCR blocks (words grouped into lines and
+paragraphs) and the paragraphs of plain-text, email and document units. Each label
+is a `custom` annotation with `entity` set to `sentiment` or `tone`, carrying the
+segment's time range or OCR region; a unit with several segments also gets one
+`sentiment-overall` line such as "overall negative", weighted by segment length.
+Searching the PDF for "negative" or "complaint" finds those moments. Labels never
+come from faces or voices and are never attached to a person.
+
+It needs no model: by default it scores English text with a built-in port of the
+VADER lexicon. For other languages and better accuracy, point it at a local
+OpenAI-compatible endpoint (Ollama, llama.cpp `llama-server`, LM Studio, vLLM); if
+the endpoint fails, the lexicon is used and a `plugin.warning` says so.
+
+```bash
+cargo build --release -p anytopdf-plugin-sentiment
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+anytopdf convert support-call.mp4 -o call.pdf
+
+# Optional: a local LLM instead of the lexicon
+export ANYTOPDF_SENTIMENT_LLM_URL=http://127.0.0.1:11434/v1
+export ANYTOPDF_SENTIMENT_LLM_MODEL=qwen2.5:3b
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_SENTIMENT_BACKEND` | `auto` | `vader`, `llm`, or `auto` (`llm` when an LLM URL is set) |
+| `ANYTOPDF_SENTIMENT_LLM_URL` | `ANYTOPDF_LLM_URL` | OpenAI-compatible base URL or full `/chat/completions` URL |
+| `ANYTOPDF_SENTIMENT_LLM_MODEL` | `ANYTOPDF_LLM_MODEL` | Model name, required with the LLM backend |
+| `ANYTOPDF_SENTIMENT_LLM_API_KEY` | `ANYTOPDF_LLM_API_KEY` | Sent as a bearer token |
+| `ANYTOPDF_SENTIMENT_LLM_TIMEOUT` | `45` | Seconds per request (24 segments each) |
+| `ANYTOPDF_SENTIMENT_FROM` | all | Comma list of `transcript`, `caption`, `ocr`, `text` |
+| `ANYTOPDF_SENTIMENT_NEUTRAL` | `false` | Also annotate neutral segments |
+| `ANYTOPDF_SENTIMENT_TONES` | `true` | Add tone tags |
+| `ANYTOPDF_SENTIMENT_THRESHOLD` | `0.05` | Lexicon score needed for positive or negative |
+
+A request `options` object (how anytopdf's layered configuration passes a
+`[sentiment]` table) takes precedence: `llm_model = "qwen2.5:3b"` there wins over
+`ANYTOPDF_SENTIMENT_LLM_MODEL`, and lists such as `from = ["ocr"]` are accepted.
+
+The plugin runs once per unit; with an LLM, raise `--plugin-timeout` for long
+transcripts. `--plugin-sandbox strict` blocks network access, so the LLM backend
+falls back to the lexicon there.
+
+### Audio events
+
+`anytopdf-plugin-audio-events` adds an "Audio events" page to every audio and
+video source: a compact timeline (`00:12 applause · 03:40 music · 05:02 laughter`)
+and every event with its time range. Each event is also a `custom` annotation
+with `entity = audio-event`, a `label`, a time range and, from a model, a
+confidence, so it lands in the chunks JSON. It decodes the audio with FFmpeg and
+looks at it one second at a time:
+
+- **Without a model** it reports `speech`, `music`, `noise` and `silence`
+  segments from the signal itself (level, low-energy and zero-crossing
+  patterns), and `raised-voice` where the BS.1770 loudness of speech is at
+  least `ANYTOPDF_AUDIO_EVENTS_RAISED_LU` (default 8) LU above the file's
+  median speech level. That is a measured level jump, not a guess at anyone's
+  mood.
+- **With an AudioSet model** (YAMNet, PANNs CNN14 or any ONNX export that takes
+  a 16 kHz waveform) it also reports `laughter`, `applause`, `cheering`,
+  `singing`, `crying-baby`, `dog`, `siren`, `alarm`, `gunshot`, `explosion`,
+  `vehicle`, `car-horn`, `door`, `knock`, `keyboard-typing`, `telephone` and
+  `glass-breaking`, and the model decides speech versus music. Set
+  `ANYTOPDF_AUDIO_EVENTS_MODEL` to the `.onnx` file and
+  `ANYTOPDF_AUDIO_EVENTS_LABELS` to its class map CSV (found automatically as
+  `<model>_class_map.csv` or `class_labels_indices.csv` beside it). ONNX
+  Runtime is loaded at run time from `ORT_DYLIB_PATH` or the system library
+  path; `ANYTOPDF_AUDIO_EVENTS_DEVICE` picks `cpu` (default), `cuda` or
+  `coreml`, and `ANYTOPDF_AUDIO_EVENTS_THRESHOLD` (default 0.3) the minimum
+  score.
+
+The plugin never labels how a person feels: AudioSet classes such as crying,
+sobbing or screaming by adults are not reported, and there is no voice emotion,
+age or gender analysis. It ships beside the Whisper plugin and is turned on the
+same way (`ANYTOPDF_PLUGIN_PATH`). The Linux release binaries are static and
+cannot load ONNX Runtime, so for a model on Linux build the plugin from source
+(`cargo build --release -p anytopdf-plugin-audio-events`); signal analysis works
+in every build. A missing or broken model becomes a `plugin.warning` and the
+signal results are still written.
+
+### Face recognition
+
+`--recognize-faces` names the people in photos and video keyframes from a local
+face index, so searching the PDF for "Alice" finds every frame she is in, and
+adds a "People in …" page per source listing each person with the times (or
+pages) where they appear. Faces that match nobody are grouped as `person-N`
+across runs; name a group once and later runs use the name. It is off by
+default and needs two runtime plugins: a face detector that adds `face`
+annotations with five-point landmarks, and `anytopdf-plugin-face-id`, which
+embeds each face with an ArcFace-style ONNX model (for example InsightFace
+`w600k_mbf.onnx` or `w600k_r50.onnx`; check the model's licence) using pure-Rust
+inference, so no Python or ONNX Runtime install is needed.
+
+```bash
+cargo build --release -p anytopdf-plugin-face-id
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"   # plus the face detector
+export ANYTOPDF_FACE_EMBED_MODEL="$HOME/models/w600k_mbf.onnx"
+
+anytopdf faces enroll Alice alice-1.jpg alice-2.jpg
+anytopdf faces import faces/              # faces/<Name>/*.jpg, one folder per person
+anytopdf convert party.mp4 --recognize-faces -o party.pdf
+anytopdf faces list                       # Alice, person-2, person-3 …
+anytopdf faces name person-2 Bob          # merges into Bob if Bob already exists
+anytopdf faces find someone.jpg           # every file and time that face appears
+anytopdf faces rename|merge|forget …
+```
+
+The index is `faces.sqlite` in the anytopdf data directory
+(`$XDG_DATA_HOME/anytopdf`, `~/Library/Application Support/anytopdf` or
+`%LOCALAPPDATA%\anytopdf`; override with `ANYTOPDF_DATA_DIR`, `ANYTOPDF_FACE_INDEX` or
+`--face-index`). It holds embeddings and sightings, which never go into a PDF.
+`--face-threshold` (default 0.40, cosine similarity) sets how close a face must
+be to count as a known person; two faces in one frame are never the same
+person. Embedding runs as one plugin call per conversion, so raise
+`--plugin-timeout` for long videos. `--profile share` leaves names and the
+"People in …" pages out of the PDF. Identities come only from people you enroll
+or name: nothing infers age, gender, emotion or other traits.
+
 ### Visual descriptions
 
 `anytopdf-plugin-vlm` asks a local vision-language model about every image and
@@ -274,20 +445,22 @@ Every fact becomes an `Annotation` with provenance:
 - date/time and GPS/location metadata
 - scene/keyframe changes
 - object labels from an object-analysis plugin
-- neutral face presence/count/bounds from a face-analysis plugin
+- face presence, count and bounds from a face-analysis plugin, and the names of
+  people you enrolled (`--recognize-faces`)
 - arbitrary future annotations
 
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, colours, time ranges, and place names
-read from that text); source paths and file metadata, including GPS-derived places,
-are never written into it. Text/transcript units become normal
+(OCR, captions, transcripts, objects, faces, barcodes, colours, time ranges, and place
+names read from that text); source paths and file metadata, including GPS-derived
+places, are never written into it. Text/transcript units become normal
 visible text pages.
 
-The built-in project intentionally limits face enrichment to neutral facts such
-as presence, count and bounds. It does **not** infer gender identity, emotion,
-age or other sensitive/demographic traits from a face. The plugin model supports
+Face enrichment is limited to presence, count and bounds, plus identity only
+for people the user enrolls or names in the local face index. It does **not**
+infer gender identity, emotion, age or other sensitive/demographic traits from
+a face. The plugin model supports
 adding other non-sensitive semantic analyzers without changing the core.
 
 ## Plugin model
@@ -385,10 +558,22 @@ Rendering:
 - plain searchable PDF via `printpdf` (`--renderer pdf`)
 
 Bundled runtime plugins (separate executables in this workspace):
+- `anytopdf-plugin-faces`: neutral face boxes, landmarks and counts for images
+  and video keyframes with an embedded YuNet detector
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-clip`: CLIP image embeddings for search by meaning, plus
+  zero-shot scene tags in the searchable layer
 - `anytopdf-plugin-objects`: YOLO object detection on images and video keyframes
   through a pure-Rust ONNX runtime
+- `anytopdf-plugin-sentiment`: sentiment and tone of transcript, caption, OCR
+  and document text, from a built-in English lexicon or a local LLM endpoint
+- `anytopdf-plugin-audio-events`: speech, music, silence and raised-voice
+  segments, plus laughter, applause and other sound events with an AudioSet
+  ONNX model
+
+- `anytopdf-plugin-face-id`: face embeddings for `--recognize-faces`, through an
+  ArcFace-style ONNX model
 - `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
   scene summaries and a category through a local vision-language model
 
@@ -487,6 +672,65 @@ Downloads are capped by `--url-max-mb` (default 1024) and `--url-timeout` second
 environment variable (`ANYTOPDF_URL_MODE`, `ANYTOPDF_URL_SNAPSHOT`,
 `ANYTOPDF_URL_SUB_LANGS`, `ANYTOPDF_URL_MAX_HEIGHT`, `ANYTOPDF_URL_MAX_MB`,
 `ANYTOPDF_URL_TIMEOUT`, `ANYTOPDF_URL_ALLOW_PRIVATE`).
+
+### Configuration file
+
+Every option has three equivalent spellings, rclone-style, all derived from one
+definition: `interval` under `[video]` in the config file is
+`ANYTOPDF_VIDEO_INTERVAL` in the environment and `--video-interval` on
+`anytopdf convert`. `anytopdf convert --help` lists every option grouped by type
+(Video importer, OCR enricher, …) with its environment variable and default.
+Later layers win:
+
+1. built-in defaults
+2. `~/.config/anytopdf/config.toml` (`$XDG_CONFIG_HOME` if set;
+   `%APPDATA%\anytopdf\config.toml` on Windows), or instead the files named by
+   `--config PATH` (repeatable) or `ANYTOPDF_CONFIG`; `--no-config` or
+   `ANYTOPDF_NO_CONFIG=1` skips files
+3. environment variables: `ANYTOPDF_PROFILE=share`, `ANYTOPDF_VIDEO_INTERVAL=2`;
+   lists are comma-separated
+4. flags: `--profile share`, `--video-interval 2`
+5. `--set TABLE.KEY=VALUE` (repeatable), e.g. `--set whisper.model=base`
+
+```toml
+# ~/.config/anytopdf/config.toml
+profile = "share"
+renderer = "pdfa"
+plugin_timeout = 120
+
+[video]                    # ANYTOPDF_VIDEO_*, --video-*
+interval = 2.0
+max_frames = 200
+
+[ocr]                      # ANYTOPDF_OCR_*, --ocr-*
+mode = "tesseract"
+lang = "eng+deu"
+
+[whisper]                  # a runtime plugin's table, passed to it as `options`
+model = "base"
+```
+
+Top-level keys are global settings. `[image]`, `[video]`, `[ocr]` and `[captions]`
+are the built-in tables and reject unknown keys; any other table is passed to the
+runtime plugin with that manifest name (`-` and `_` match) in the `options` field
+of each request. A runtime plugin's keys are set with `--set whisper.model=base`,
+or `ANYTOPDF_WHISPER_MODEL` once `[whisper]` is in a config file
+(`ANYTOPDF_WHISPER__MODEL` always works). The older flag names (`--ocr`, `--lang`,
+`--scene-threshold`, `--dedupe-distance`, `--max-video-frames`,
+`--max-image-frames`, `--no-embedded-subtitles`) still work.
+Options that are not in a table yet, such as `--colors`, `--location`,
+`--no-entities`, `--raw-decode` and `--scan-mode`, are set by flag (some also by
+their own `ANYTOPDF_*` variable) and do not appear in `anytopdf config`.
+
+`anytopdf config` prints the effective settings with the file, variable or flag
+each came from (`--json` emits `anytopdf.config/1`); `anytopdf config --defaults`
+prints a starter file; values under keys such as `api_key`, `token` or `password`
+are shown as `<redacted>`. The file format is `schemas/config-file.schema.json`. An
+invalid value exits 2 and names the key and where it was set. Secrets
+(`ANYTOPDF_WEBHOOK_SECRET`, `ANYTOPDF_QUEUE_TOKEN`, `ANYTOPDF_IMAP_*`) and
+`ANYTOPDF_PLUGIN_PATH` stay environment-only and are never read as settings, and
+no file is read from the current directory, so a folder you convert cannot change
+how plugins run.
 
 ### Screen capture
 
@@ -901,7 +1145,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 ### Media enrichment
 - [x] Whisper transcription as a runtime plugin
 - [x] Location: offline reverse geocoding of GPS fixes and place names in text
-- [ ] Face presence, count and bounds
+- [x] Face presence, count, bounds and landmarks as a runtime plugin
+- [x] Audio events: speech, music, silence, raised voices, and laughter, applause and other sounds with an AudioSet model
+- [x] Face recognition against a local, user-enrolled face index (`--recognize-faces`)
 - [ ] Object detection and scene classification providers
 - [x] Dominant colours per image and keyframe
 - [ ] Barcode and QR extraction
