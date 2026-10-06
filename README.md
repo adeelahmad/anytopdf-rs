@@ -522,6 +522,46 @@ does not match its schema exits 3 (input); the error names the document and the
 first failing JSON path. A PDF with no embedded or sidecar manifest exits
 3 (input).
 
+### Search across files
+
+`anytopdf convert … --index` also records the output in a local SQLite search
+index (FTS5, bundled; no server). `anytopdf search` then searches every indexed
+PDF at once and prints the PDF, page, time in the source, kind, the matching text
+and the source file:
+
+```bash
+anytopdf convert meeting.mp4 -o meeting.pdf --index --collection work
+anytopdf index add old-archive/*.pdf       # PDFs made earlier, from their embedded chunks
+anytopdf search budget review              # every word must match
+anytopdf search '"red car"' --kind object  # a phrase, only object detections
+anytopdf search --person Alice --json      # faces recognised as Alice
+anytopdf index list
+anytopdf index remove old-archive/a.pdf
+```
+
+The index lives at `ANYTOPDF_INDEX`, or `index.sqlite` in the per-user data
+directory (`~/.local/share/anytopdf` on Linux, `~/Library/Application
+Support/anytopdf` on macOS, `%LOCALAPPDATA%\anytopdf` on Windows); `--index-db`
+names another. It is never written into a PDF. `convert --index` records one
+`chunk` entry per unit (the unit's searchable text, as in `anytopdf-chunks.json`)
+and one entry per annotation with its kind (`ocr`, `caption`, `transcript`,
+`face`, `object`, `scene`, `location`, …), provider, confidence, region, time
+range and attributes, so `--kind` and `--person` (faces whose `person` attribute
+names someone) can narrow a search. It records what the PDF holds, after the
+output profile is applied. `index add` reads existing PDFs back from their
+embedded chunks, so they only have `chunk` entries; an unchanged PDF that
+`convert --index` already recorded keeps its richer record. A unit's `chunk`
+entry is left out of results when one of its annotations matched on its own,
+because the annotation carries the region and time. `--collection NAME` tags
+PDFs (on `convert` and `index add`) and filters searches. Re-indexing a PDF
+replaces its entries.
+
+Words are matched case- and accent-insensitively; `"quoted words"` match as a
+phrase and a trailing `*` matches a prefix. `search --json` prints one
+`anytopdf.search/1` document (`schemas/search.schema.json`) and `index add|list
+--json` one `anytopdf.index/1` document. Searching without an index exits 3. The
+index has room for per-unit embeddings for semantic search.
+
 ### Watching a mailbox (IMAP)
 
 `anytopdf watch imap` turns each new message in one mailbox into its own PDF
@@ -632,10 +672,13 @@ curl -H "Authorization: Bearer $ANYTOPDF_QUEUE_TOKEN" \
 | `POST /v1/jobs?filename=NAME` with the file as the body | `202` and the job (`job_id`, `state`, `origin`, `inputs`) |
 | `GET /v1/jobs/<job_id>` | `200` and the job, with `output`, `status`, `exit_code` and `pages` once finished |
 | `GET /v1/jobs/<job_id>/output` | `200` and the PDF, or `409` until the job has succeeded |
+| `GET /v1/search?q=WORDS&kind=K&person=P&collection=C&limit=N` | with `--search`: `200` and an `anytopdf.search/1` document (without the index path); `404` otherwise |
 
 Uploaded names are reduced to a plain file name inside the job's work directory.
 Clients cannot pass convert options; the server's options after `--` apply.
 Errors are JSON `{"error": "..."}` with `401`, `411`, `413`, `404` or `405`.
+`--search` (with `--index-db`, default as for `anytopdf search`) opens the search
+endpoint; have the worker record conversions with `queue work QUEUE -- --index`.
 
 ### Remote printing
 
@@ -678,6 +721,7 @@ as tools:
 | `convert` | `anytopdf convert --json` | `anytopdf.convert/1` report |
 | `extract` | `anytopdf extract --json` | `anytopdf.extract/1` document |
 | `probe` | `anytopdf probe --json` | `anytopdf.probe/1` document |
+| `search` | `anytopdf search --json` | `anytopdf.search/1` document |
 | `capabilities` | `anytopdf capabilities --json` | `anytopdf.capabilities/1` document |
 
 Each call re-runs the same executable, so tools keep the CLI's validation,
@@ -739,6 +783,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [ ] Deterministic chunk IDs and semantic page/chunk headings
 - [ ] Provenance graph export
 - [ ] Incremental index mode
+- [x] Cross-file search index: `convert --index`, `index add`, `search` (also over MCP and `queue serve --search`)
 - [x] PDF/A-3a output (`--renderer pdfa`)
 - [x] Tagged PDF and bookmarks (`--renderer pdfa`)
 

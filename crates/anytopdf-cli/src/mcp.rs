@@ -235,11 +235,12 @@ fn initialize(params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": {"tools": {"listChanged": false}},
         "serverInfo": {"name": "anytopdf", "version": env!("CARGO_PKG_VERSION")},
-        "instructions": "Convert local media and documents into searchable PDFs and read \
-            back their embedded manifest and chunks. Paths are local to the machine running \
-            the server; relative paths resolve against the server's working directory, so \
-            prefer absolute paths. Outputs are never overwritten unless overwrite is true, \
-            and source files are always protected."
+        "instructions": "Convert local media and documents into searchable PDFs, read back \
+            their embedded manifest and chunks, and search every PDF in the local search \
+            index. Paths are local to the machine running the server; relative paths \
+            resolve against the server's working directory, so prefer absolute paths. \
+            Outputs are never overwritten unless overwrite is true, and source files are \
+            always protected."
     })
 }
 
@@ -273,7 +274,9 @@ fn tool_definitions() -> Value {
                     "max_video_frames": {"type": "integer", "minimum": 0, "description": "Maximum video frames to keep (0 means unlimited)."},
                     "max_image_frames": {"type": "integer", "minimum": 0, "description": "Maximum frames from a multi-frame TIFF or GIF (0 means unlimited)."},
                     "raw_decode": {"type": "string", "enum": ["auto", "preview", "develop"], "description": "Camera RAW photos: embedded preview, developed RAW data, or auto."},
-                    "scan_mode": {"type": "string", "enum": ["auto", "on", "off"], "description": "Flatten and straighten photographed pages before OCR."}
+                    "scan_mode": {"type": "string", "enum": ["auto", "on", "off"], "description": "Flatten and straighten photographed pages before OCR."},
+                    "index": {"type": "boolean", "description": "Also record the output in the local search index, for the search tool."},
+                    "collection": {"type": "string", "description": "With index: tag the output with this collection name."}
                 },
                 "required": ["inputs"],
                 "additionalProperties": false
@@ -302,6 +305,26 @@ fn tool_definitions() -> Value {
                 "type": "object",
                 "properties": {"input": {"type": "string", "description": "File to inspect."}},
                 "required": ["input"],
+                "additionalProperties": false
+            },
+            "annotations": {"readOnlyHint": true, "openWorldHint": false}
+        },
+        {
+            "name": "search",
+            "title": "Search indexed PDFs",
+            "description": "Search every PDF recorded in the local search index (by convert \
+                --index or index add) for words, or list faces, objects and other annotations by \
+                kind, person or collection. Returns the anytopdf.search/1 document: each hit names \
+                the PDF, page, time, region, kind and source file.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Words to find (all must match); \"quoted words\" match as a phrase and a trailing * matches a prefix."},
+                    "kind": {"type": "array", "items": {"type": "string", "enum": crate::cli::ENTRY_KINDS}, "description": "Only these kinds; chunk is a page's whole text."},
+                    "person": {"type": "string", "description": "Only faces recognised as this person."},
+                    "collection": {"type": "string", "description": "Only PDFs indexed into this collection."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10000, "description": "Maximum results (default 20)."}
+                },
                 "additionalProperties": false
             },
             "annotations": {"readOnlyHint": true, "openWorldHint": false}
@@ -342,9 +365,12 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             "max_image_frames",
             "raw_decode",
             "scan_mode",
+            "index",
+            "collection",
         ],
         "extract" => &["pdf"],
         "probe" => &["input"],
+        "search" => &["query", "kind", "person", "collection", "limit"],
         "capabilities" => &[],
         other => return Err(format!("unknown tool: {other}")),
     };
@@ -362,6 +388,7 @@ fn tool_argv(name: &str, arguments: &Map<String, Value>) -> Result<Vec<String>, 
             argv.push(string(arguments, "input")?.ok_or("probe requires `input`")?);
         }
         "convert" => convert_argv(arguments, &mut argv)?,
+        "search" => search_argv(arguments, &mut argv)?,
         _ => {}
     }
     Ok(argv)
@@ -377,6 +404,7 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
         ("profile", "--profile"),
         ("raw_decode", "--raw-decode"),
         ("scan_mode", "--scan-mode"),
+        ("collection", "--collection"),
         ("draw_boxes", "--draw-boxes"),
     ] {
         if let Some(value) = string(arguments, key)? {
@@ -389,6 +417,7 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
         ("fail_fast", "--fail-fast"),
         ("include_hidden", "--include-hidden"),
         ("no_provenance_page", "--no-provenance-page"),
+        ("index", "--index"),
     ] {
         match arguments.get(key) {
             None | Some(Value::Null) | Some(Value::Bool(false)) => {}
@@ -426,6 +455,29 @@ fn convert_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Resul
     }
     argv.push("--".into());
     argv.extend(inputs);
+    Ok(())
+}
+
+fn search_argv(arguments: &Map<String, Value>, argv: &mut Vec<String>) -> Result<(), String> {
+    for kind in strings(arguments, "kind")? {
+        argv.push(format!("--kind={kind}"));
+    }
+    for (key, flag) in [("person", "--person"), ("collection", "--collection")] {
+        if let Some(value) = string(arguments, key)? {
+            argv.push(format!("{flag}={value}"));
+        }
+    }
+    if let Some(value) = arguments.get("limit").filter(|v| !v.is_null()) {
+        let n = value
+            .as_u64()
+            .filter(|n| *n >= 1)
+            .ok_or("`limit` must be a positive integer")?;
+        argv.push(format!("--limit={n}"));
+    }
+    if let Some(query) = string(arguments, "query")? {
+        argv.push("--".into());
+        argv.push(query);
+    }
     Ok(())
 }
 
@@ -507,6 +559,35 @@ mod tests {
     }
 
     #[test]
+    fn search_arguments_keep_the_query_out_of_flag_position() {
+        let argv = tool_argv(
+            "search",
+            &args(json!({
+                "query": "--kind=face", "kind": ["face", "object"], "person": "Alice",
+                "limit": 5
+            })),
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            [
+                "search",
+                "--json",
+                "--kind=face",
+                "--kind=object",
+                "--person=Alice",
+                "--limit=5",
+                "--",
+                "--kind=face"
+            ]
+        );
+        assert_eq!(
+            tool_argv("search", &args(json!({"collection": "work"}))).unwrap(),
+            ["search", "--json", "--collection=work"]
+        );
+    }
+
+    #[test]
     fn tool_arguments_reject_unknown_and_mistyped_values() {
         for (tool, value) in [
             ("convert", json!({})),
@@ -521,6 +602,9 @@ mod tests {
             ("extract", json!({})),
             ("probe", json!({"input": 3})),
             ("capabilities", json!({"x": 1})),
+            ("search", json!({"limit": 0})),
+            ("search", json!({"kind": "face"})),
+            ("search", json!({"index_db": "/tmp/other.sqlite"})),
             ("shell", json!({})),
         ] {
             assert!(

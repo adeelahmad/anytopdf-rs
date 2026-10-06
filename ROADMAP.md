@@ -74,6 +74,7 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] Rust toolchain 1.92.0
 - [x] URL, email, domain, app-name and date/time entities from OCR, captions, transcripts and text
 - [ ] people, organisation and keyword entities (NER runtime plugin)
+- [x] cross-file search index: `convert --index`, `anytopdf index add|list|remove`, `anytopdf search` (kind, person and collection filters), an MCP `search` tool and `queue serve --search`
 
 ## Backlog
 

@@ -64,6 +64,14 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `attributes.source = text` and are searchable in the PDF's hidden layer.
   GPS-derived locations never enter the hidden layer and `--profile share` drops
   them, as before.
+- `anytopdf search` searches every PDF in a local SQLite (FTS5) index, printing the PDF,
+  page, time, kind, matching text and source file (`--kind`, `--person`, `--collection`,
+  `--limit`, `--json` with the new `anytopdf.search/1` schema). `convert --index`
+  records an output with every annotation; `anytopdf index add|list|remove` manages
+  existing PDFs from their embedded chunks (`anytopdf.index/1`). The index lives at
+  `ANYTOPDF_INDEX` or in the user data directory (`--index-db` overrides) and is never
+  written into a PDF. The MCP server gains a `search` tool and `queue serve --search`
+  a `GET /v1/search` endpoint.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

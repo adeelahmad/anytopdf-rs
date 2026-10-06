@@ -59,7 +59,7 @@ fn reply(replies: &[Value], id: u64) -> &Value {
 }
 
 #[test]
-fn mcp_handshake_lists_the_four_tools_and_ignores_notifications() {
+fn mcp_handshake_lists_the_five_tools_and_ignores_notifications() {
     let dir = tempfile::tempdir().unwrap();
     let replies = session(
         &[
@@ -81,7 +81,10 @@ fn mcp_handshake_lists_the_four_tools_and_ignores_notifications() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["convert", "extract", "probe", "capabilities"]);
+    assert_eq!(
+        names,
+        ["convert", "extract", "probe", "search", "capabilities"]
+    );
     assert_eq!(reply(&replies, 2)["result"], json!({}));
 }
 
