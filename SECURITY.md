@@ -53,7 +53,7 @@ someone reading outputs shared under `--profile share`.
 
 The job queue, its signed webhooks and its HTTP upload listener (`anytopdf queue`,
 `anytopdf queue serve`), the IMAP watcher (`anytopdf watch imap`), the remote print front (`anytopdf print remote`), the MCP
-server (`anytopdf mcp`), URL inputs, the search index (`anytopdf search`, `queue serve --search`), the PAPPL printer helper and the HTML, email, Office,
+server (`anytopdf mcp`), URL inputs, the search index (`anytopdf search`, `queue serve --search`), question answering (`anytopdf ask`), the PAPPL printer helper and the HTML, email, Office,
 archive, PDF and HEIC importers shipped after this threat model was written. Reports
 against them are welcome and are triaged by the maintainer directly until the
 model is revised (threat model §1.16).
@@ -121,6 +121,10 @@ From the threat model's downstream responsibilities (§1.13):
   is deleted (remove it with `anytopdf index remove`). Keep it in your own user
   data directory, and only enable `queue serve --search` for clients that may
   read everything in it.
+- `anytopdf ask` sends the question and the retrieved passages to
+  `ANYTOPDF_LLM_URL` when it is set; point it at a local or trusted server.
+  Passage text comes from your files, so a crafted document can try to steer
+  the model's answer: check the cited passages before acting on an answer.
 - Install FFmpeg, ExifTool, Tesseract, Python and docTR from trusted sources.
   docTR may download model weights on first use; pre-install them or use
   `--ocr tesseract`/`--ocr off` on offline hosts.

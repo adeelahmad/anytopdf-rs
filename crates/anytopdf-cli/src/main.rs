@@ -1,4 +1,5 @@
 mod argv;
+mod ask;
 mod capabilities;
 mod capture;
 mod cli;
@@ -79,6 +80,19 @@ fn run(cli: Cli) -> Result<(), CliError> {
             let doc = extract::extract(&pdf)?;
             println!("{}", serde_json::to_string_pretty(&doc)?);
             Ok(())
+        }
+        Commands::Ask {
+            source,
+            question,
+            top,
+            no_llm,
+            json,
+        } => {
+            let options = ask::AskOptions {
+                top: top as usize,
+                no_llm,
+            };
+            ask::run(&source, &question, &options, json)
         }
         Commands::Capabilities { json: true } => {
             println!(

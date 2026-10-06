@@ -72,6 +72,12 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   `ANYTOPDF_INDEX` or in the user data directory (`--index-db` overrides) and is never
   written into a PDF. The MCP server gains a `search` tool and `queue serve --search`
   a `GET /v1/search` endpoint.
+- `anytopdf ask <pdf-or-directory> "<question>"` and the MCP `ask` tool answer a
+  question from converted PDFs. Chunks are ranked with BM25 and returned as numbered
+  passages citing PDF, pages, time range and original file. With `ANYTOPDF_LLM_URL`
+  set to an OpenAI-compatible server the answer cites them as `[n]`; an unreachable
+  endpoint adds an `ask.llm-failed` warning and falls back to the passages. New
+  `anytopdf.ask/1` schema.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's

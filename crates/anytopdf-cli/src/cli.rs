@@ -81,6 +81,23 @@ pub(crate) enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Answer a question from converted PDFs, citing file, page and time for each passage.
+    #[command(after_long_help = crate::ask::HELP_FOOTER)]
+    Ask {
+        /// PDF produced by anytopdf, or a directory of them.
+        source: PathBuf,
+        /// The question to answer.
+        question: String,
+        /// Number of ranked passages to retrieve.
+        #[arg(long, default_value = "8", value_parser = clap::value_parser!(u64).range(1..=100))]
+        top: u64,
+        /// Return the ranked passages only, even when an LLM endpoint is configured.
+        #[arg(long)]
+        no_llm: bool,
+        /// Emit one anytopdf.ask/1 JSON document on stdout.
+        #[arg(long)]
+        json: bool,
+    },
     /// Show what this binary and environment support, and how to enable or add more.
     #[command(after_long_help = crate::environment::HELP_FOOTER)]
     Capabilities {
@@ -115,7 +132,7 @@ pub(crate) enum Commands {
         #[command(subcommand)]
         command: IndexCommand,
     },
-    /// Serve convert, extract, probe, search and capabilities as MCP tools over stdio.
+    /// Serve convert, extract, ask, probe, search and capabilities as MCP tools over stdio.
     Mcp,
     /// Reach the print helper from other devices: TLS front, users and discovery.
     #[command(subcommand)]
