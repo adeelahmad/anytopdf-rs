@@ -824,6 +824,7 @@ printf '%s' '{{"protocol":1,"ok":true,"units":[{{"kind":"text","visible_text":"x
             extensions: vec!["example".into()],
             mime_types: vec![],
             priority: 1,
+            phase: None,
         };
         let options = PluginOptions::from_document(&serde_json::json!({
             "my-format": {"layers": ["a"], "dpi": 300},
