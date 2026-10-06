@@ -264,6 +264,17 @@ impl Resolved {
         Ok(resolved)
     }
 
+    /// Layers the flags of a nested `convert` command line, such as the one
+    /// `capture screen` builds for its recording, over this configuration and
+    /// writes the result into `cli`.
+    pub(crate) fn with_convert(&self, cli: &mut Cli, matches: &ArgMatches) -> Result<Self> {
+        let mut resolved = self.clone();
+        resolved.apply_flags(matches);
+        resolved.validate()?;
+        apply(cli, matches, &resolved)?;
+        Ok(resolved)
+    }
+
     fn merge(&mut self, layer: Map<String, Value>, origin: &Origin) {
         merge_into(&mut self.document, layer, "", origin, &mut self.origins);
     }
