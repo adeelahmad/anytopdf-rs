@@ -351,6 +351,7 @@ fn convert_inner(
         embedded_subtitles: !args.no_embedded_subtitles,
         entities: !args.no_entities,
         date_order: args.date_order.parse().map_err(anyhow::Error::msg)?,
+        colors: args.colors,
     };
 
     let (registry, mut warnings) = registry(opts, policy);

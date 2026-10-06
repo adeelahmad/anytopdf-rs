@@ -158,6 +158,11 @@ responses must retain existing sources and keep valid, unique IDs and references
 Annotations must have a provider, finite coordinates, confidence between 0 and 1
 when supplied, and finite, ordered nonnegative time ranges.
 
+The renderer writes `ocr`, `caption`, `transcript`, `object` and `barcode`
+annotations into the hidden search layer. A `custom` annotation joins them only
+when its `attributes` include `entity` (for example the built-in dominant-colour
+enricher's `entity: "color"`); other custom annotations stay in the chunks JSON.
+
 A `custom` annotation with an `entity` attribute (for example
 `{"kind":"custom","text":"https://example.com","attributes":{"entity":"url"}}`)
 is a structured entity: it is written to the hidden text layer and listed in the

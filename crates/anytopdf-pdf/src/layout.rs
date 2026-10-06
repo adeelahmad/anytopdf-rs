@@ -157,6 +157,16 @@ mod tests {
     use crate::tests::{helvetica, invisible_items};
 
     #[test]
+    fn custom_annotations_are_searchable_only_with_an_entity() {
+        let mut color = Annotation::text(AnnotationKind::Custom, "colors", "color red");
+        assert!(!is_searchable_content(&color));
+        color.attributes.insert("entity".into(), "color".into());
+        assert!(is_searchable_content(&color));
+        let metadata = Annotation::text(AnnotationKind::Metadata, "exiftool", "/home/a.jpg");
+        assert!(!is_searchable_content(&metadata));
+    }
+
+    #[test]
     fn wraps_long_tokens_without_losing_characters() {
         let text = "W".repeat(300);
         let lines = wrap_text(&text, 50.0, &|_| 1.0);

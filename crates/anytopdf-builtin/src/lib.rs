@@ -1,5 +1,6 @@
 mod captions;
 pub mod capture;
+mod colors;
 mod containers;
 mod dates;
 mod discovery;
@@ -20,6 +21,7 @@ use std::sync::Arc;
 pub(crate) const FFMPEG_PROTOCOLS: &str = "file";
 
 pub use dates::DateOrder;
+pub use colors::{DominantColor, dominant_colors};
 pub use discovery::{DiscoveryOptions, discover_inputs};
 pub use html::{HtmlText, html_to_text};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
@@ -40,6 +42,8 @@ pub struct BuiltinOptions {
     pub entities: bool,
     /// Day and month order for all-numeric dates such as `03/04/2024`.
     pub date_order: DateOrder,
+    /// Annotate visual units with their dominant colours.
+    pub colors: bool,
 }
 
 impl Default for BuiltinOptions {
@@ -56,6 +60,7 @@ impl Default for BuiltinOptions {
             embedded_subtitles: true,
             entities: true,
             date_order: DateOrder::DayFirst,
+            colors: true,
         }
     }
 }
@@ -90,6 +95,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
         opts.explicit_transcripts,
         opts.embedded_subtitles,
     )));
+    registry.register_unit_enricher(Arc::new(colors::ColorEnricher::new(opts.colors)));
     registry.register_unit_enricher(Arc::new(scene::SceneAnnotationEnricher));
     if opts.entities {
         // Late, so entities also come from runtime plugins' captions and transcripts.
