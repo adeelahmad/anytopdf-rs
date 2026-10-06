@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Behaviour changes
+
+- Images and video keyframes carry up to five dominant colours in the hidden search
+  layer and the chunks JSON (`color navy blue #141e64 31%`), so searching "red" or
+  "blue" finds the frames those colours dominate. `--colors off` disables it.
+  Runtime plugins' `custom` annotations with an `entity` attribute are now searchable too.
+
 ## 0.2.0
 
 Searchable-PDF fidelity, identity, and CLI contract release.
