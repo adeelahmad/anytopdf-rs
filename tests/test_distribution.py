@@ -70,8 +70,8 @@ class DistributionTests(unittest.TestCase):
             else:
                 self.assertRegex(formula, rf'url "{re.escape(url)}"\n\s+sha256 "{digest}"')
         self.assertIn('version "1.2.3"', formula)
-        for plugin in distribution.PLUGINS:
-            self.assertIn(f"#{{libexec}}/plugins/{plugin} --anytopdf-manifest", formula)
+        self.assertIn('Dir["#{libexec}/plugins/anytopdf-plugin-*"]', formula)
+        self.assertIn('shell_output("#{plugin} --anytopdf-manifest")', formula)
         self.assertIn('libexec.install "plugins"', formula)
         self.assertIn('bin.install "anytopdf"\n', formula, "plugins stay off PATH until opted in")
         self.assertTrue(any("ANYTOPDF_PLUGIN_PATH" in line for line in manifest["notes"]))

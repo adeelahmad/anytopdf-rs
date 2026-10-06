@@ -24,7 +24,7 @@ pub(crate) fn hidden_text_ops(pos: Point, font: PdfFontHandle, size: Pt, text: S
 pub(crate) fn is_searchable_content(a: &Annotation) -> bool {
     use AnnotationKind::*;
     match a.kind {
-        Ocr | Caption | Transcript | Object | Barcode => true,
+        Ocr | Caption | Transcript | Object | Face | Barcode => true,
         Custom | Timestamp => a.attributes.contains_key("entity"),
         Location => a.attributes.get("source").map(String::as_str) == Some("text"),
         _ => false,
@@ -371,6 +371,14 @@ mod tests {
         let layout = flow_pages(&refs, &|_| 0.5);
         assert_eq!(layout.unit_pages, [(0, 0), (0, 2)]);
         assert_eq!(layout.pages[0].rows[2].text, "k0: v");
+    }
+
+    #[test]
+    fn face_annotations_are_searchable_but_metadata_is_not() {
+        let of = |kind| Annotation::text(kind, "test", "x");
+        assert!(is_searchable_content(&of(AnnotationKind::Face)));
+        assert!(is_searchable_content(&of(AnnotationKind::Object)));
+        assert!(!is_searchable_content(&of(AnnotationKind::Metadata)));
     }
 
     #[test]

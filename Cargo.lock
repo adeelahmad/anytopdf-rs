@@ -263,6 +263,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "anytopdf-plugin-faces"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "serde_json",
+ "tempfile",
+ "tract-onnx",
+]
+
+[[package]]
 name = "anytopdf-plugin-objects"
 version = "0.2.0"
 dependencies = [

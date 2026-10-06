@@ -22,7 +22,7 @@ RELEASE_DIR = $(CARGO_TARGET_DIR)/$(if $(strip $(TARGET)),$(TARGET)/,)release
 EXE_SUFFIX = $(if $(findstring windows,$(PACKAGE_TARGET)),.exe,)
 BINARY ?= $(RELEASE_DIR)/anytopdf$(EXE_SUFFIX)
 # Runtime plugins built from this workspace and shipped beside the CLI.
-PLUGINS ?= anytopdf-plugin-whisper
+PLUGINS ?= anytopdf-plugin-faces anytopdf-plugin-whisper
 PLUGIN_BINARIES = $(foreach plugin,$(PLUGINS),$(RELEASE_DIR)/$(plugin)$(EXE_SUFFIX))
 
 .PHONY: all deps providers release-deps release-plan release-resume commit-check help build build-release release fmt fmt-check check lint test test-no-default test-python verify smoke ci package doctor clean printer printer-smoke printer-remote-smoke
