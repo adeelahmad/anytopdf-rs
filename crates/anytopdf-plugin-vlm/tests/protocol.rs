@@ -171,14 +171,18 @@ fn unit_request(unit: Value) -> Value {
 }
 
 #[test]
-fn manifest_is_inert_until_an_endpoint_is_configured() {
-    let inert = manifest(&[]);
-    assert_eq!((inert.protocol, inert.name.as_str()), (1, "vlm"));
-    assert!(inert.capabilities.is_empty());
+fn manifest_is_idle_until_an_endpoint_is_configured() {
+    // Bundled copies that report ready: false are not registered by the host.
+    let idle = manifest(&[]);
+    assert_eq!((idle.protocol, idle.name.as_str()), (1, "vlm"));
+    assert!(!idle.ready);
+    assert!(idle.detail.as_deref().unwrap().contains("ANYTOPDF_VLM_URL"));
+    assert_eq!(idle.capabilities.len(), 1);
 
     let full = manifest(&[("ANYTOPDF_VLM_URL", "http://127.0.0.1:9/v1")]);
     let kinds: Vec<_> = full.capabilities.iter().map(|c| c.kind.as_str()).collect();
     assert_eq!(kinds, ["unit-enricher", "graph-enricher"]);
+    assert!(full.ready);
     assert_eq!(full.capabilities[0].mime_types, ["image/*", "video/*"]);
     assert_eq!(full.capabilities[1].phase.as_deref(), Some("after-units"));
 
@@ -194,6 +198,7 @@ fn manifest_is_inert_until_an_endpoint_is_configured() {
         ("ANYTOPDF_VLM_ENGINE", "gpt"),
     ]);
     assert_eq!(broken.capabilities.len(), 1);
+    assert!(broken.ready);
     let dir = tempfile::tempdir().unwrap();
     let frame = keyframe(dir.path(), "f.png");
     let response = exchange(

@@ -168,8 +168,12 @@ Visual and audio analysis, cross-file search, and many new inputs.
   the link; `extract` exits 3 on cyclic PDFs.
 - Release archives, Homebrew, Scoop and the container now bundle every workspace
   runtime plugin (`audio-events`, `clip`, `face-id`, `faces`, `objects`, `sentiment`,
-  `vlm`, `whisper`); each stays idle until it reports `ready` or is put on
-  `ANYTOPDF_PLUGIN_PATH`.
+  `vlm`, `whisper`). The clip, face-id, objects and vlm plugins report `ready: false`
+  with the missing model or endpoint until one is configured, so a bundled copy stays
+  idle instead of warning on every conversion and failing `--strict`, and
+  `capabilities` lists the step that turns each one on. The vlm plugin now always
+  declares its unit enricher; before, an unconfigured copy declared no capabilities
+  and was reported as an invalid plugin.
 
 ### Commit history
 

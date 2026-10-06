@@ -22,7 +22,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.as_slice() {
         [flag] if flag == "--anytopdf-manifest" => {
-            println!("{}", manifest());
+            println!("{}", manifest(readiness(|name| env::var(name).ok())));
             ExitCode::SUCCESS
         }
         [flag] if flag == "--version" => {
@@ -53,11 +53,22 @@ fn main() -> ExitCode {
     }
 }
 
-fn manifest() -> Value {
+/// A copy bundled with anytopdf stays idle until a model is configured, so
+/// conversions without one neither warn nor fail `--strict`. `None` is ready.
+fn readiness(get: impl Fn(&str) -> Option<String>) -> Option<String> {
+    match get("ANYTOPDF_OBJECTS_MODEL") {
+        Some(model) if !model.trim().is_empty() => None,
+        _ => Some("set ANYTOPDF_OBJECTS_MODEL to a YOLO .onnx model".into()),
+    }
+}
+
+fn manifest(not_ready: Option<String>) -> Value {
     json!({
         "protocol": PROTOCOL,
         "name": "objects",
         "version": env!("CARGO_PKG_VERSION"),
+        "ready": not_ready.is_none(),
+        "detail": not_ready,
         "capabilities": [{
             "kind": "graph-enricher",
             "extensions": [],
@@ -142,4 +153,28 @@ fn write_atomic(path: &Path, body: &Value) -> Result<()> {
     fs::write(&temporary, serde_json::to_vec(body)?).context("write response")?;
     fs::rename(&temporary, path).context("publish response")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    #[test]
+    fn bundled_copy_is_idle_until_a_model_is_set() {
+        let idle = manifest(readiness(|_| None));
+        assert_eq!(idle["ready"], false);
+        assert!(
+            idle["detail"]
+                .as_str()
+                .unwrap()
+                .contains("ANYTOPDF_OBJECTS_MODEL")
+        );
+        assert_eq!(idle["capabilities"].as_array().unwrap().len(), 1);
+
+        let ready = manifest(readiness(|name| {
+            (name == "ANYTOPDF_OBJECTS_MODEL").then(|| "/m/yolo11n.onnx".into())
+        }));
+        assert_eq!(ready["ready"], true);
+        assert!(ready["detail"].is_null());
+    }
 }

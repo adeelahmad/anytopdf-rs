@@ -579,7 +579,6 @@ Bundled runtime plugins (separate executables in this workspace):
 
 External plugins are the intended route for model-heavy enrichers such as:
 - DETR / open-vocabulary object detection
-- scene classification
 - speech-to-text engines
 - format-specific decoders
 - proprietary document systems
@@ -1106,6 +1105,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Help text on every flag
 - [x] NDJSON progress events
 - [x] `anytopdf ask` answers questions with cited passages (MCP `ask` tool)
+- [x] One definition per option: TOML config file, `ANYTOPDF_*` variable and flag (`anytopdf config` shows where each value came from)
+- [x] `anytopdf setup whisper` turns on speech to text in one step
 
 ### Evidence file and provenance
 - [x] Content-derived source and unit IDs with SHA-256 and size
@@ -1140,6 +1141,8 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Camera RAW importer: largest embedded JPEG preview (lossless sensor streams skipped, container orientation applied), developed by `sips`, `dcraw_emu`, `dcraw` or ImageMagick when the preview is missing or small
 - [x] Phone-photo scans: page detection, perspective correction and deskew before OCR
 - [x] Office documents through LibreOffice and Poppler
+- [x] JSON and JSON Lines: one searchable chunk per record
+- [x] Link lists and browser bookmark exports (`--links`), with bookmark folders as PDF bookmarks
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 
 ### Media enrichment
@@ -1148,7 +1151,9 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Face presence, count, bounds and landmarks as a runtime plugin
 - [x] Audio events: speech, music, silence, raised voices, and laughter, applause and other sounds with an AudioSet model
 - [x] Face recognition against a local, user-enrolled face index (`--recognize-faces`)
-- [ ] Object detection and scene classification providers
+- [x] Object detection (`anytopdf-plugin-objects`, YOLO) and zero-shot scene tags with CLIP embeddings (`anytopdf-plugin-clip`)
+- [x] Keyframe captions, activities and video and scene summaries from a local vision model (`anytopdf-plugin-vlm`)
+- [x] Sentiment and tone of transcript, caption, OCR and document text (`anytopdf-plugin-sentiment`)
 - [x] Dominant colours per image and keyframe
 - [ ] Barcode and QR extraction
 - [ ] Audio chapters and speaker turns
@@ -1168,7 +1173,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Network printer via IPP Everywhere, built on PAPPL as an optional helper process ([`helpers/anytopdf-printer`](helpers/anytopdf-printer/README.md)); PWG Raster and Apple Raster print jobs keep their paper size
 - [ ] AirPrint and Mopria certification
 - [x] IPP over TLS with a password, localhost by default
-- [ ] Print receipts on the provenance page
+- [x] Print receipts on the provenance page
 - [x] Remote printing over Tailscale or WireGuard with DNS-based discovery
 - [ ] Microsoft Universal Print investigation
 

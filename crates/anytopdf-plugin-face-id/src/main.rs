@@ -29,7 +29,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.as_slice() {
         [flag] if flag == "--anytopdf-manifest" => {
-            println!("{}", manifest());
+            println!("{}", manifest(readiness()));
             ExitCode::SUCCESS
         }
         [flag] if flag == "--version" => {
@@ -60,11 +60,27 @@ fn main() -> ExitCode {
     }
 }
 
-fn manifest() -> Value {
+/// A copy bundled with anytopdf stays idle until an embedding model is set or
+/// installed, so face detection without one neither warns nor fails `--strict`.
+/// `None` is ready.
+fn readiness() -> Option<String> {
+    let explicit = env::var_os(MODEL_ENV).is_some_and(|v| !v.is_empty());
+    if explicit || model_path().is_some_and(|path| path.is_file()) {
+        None
+    } else {
+        Some(format!(
+            "set {MODEL_ENV} to an ArcFace-style ONNX face embedding model"
+        ))
+    }
+}
+
+fn manifest(not_ready: Option<String>) -> Value {
     json!({
         "protocol": PROTOCOL,
         "name": "face-id",
         "version": env!("CARGO_PKG_VERSION"),
+        "ready": not_ready.is_none(),
+        "detail": not_ready,
         "capabilities": [{
             "kind": "graph-enricher",
             "extensions": [],
@@ -273,4 +289,20 @@ fn write_atomic(path: &Path, body: &Value) -> Result<()> {
     fs::write(&temporary, serde_json::to_vec(body)?).context("write response")?;
     fs::rename(&temporary, path).context("publish response")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::*;
+
+    #[test]
+    fn manifest_reports_idle_with_what_is_missing() {
+        let idle = manifest(Some("needs a model".into()));
+        assert_eq!(idle["ready"], false);
+        assert_eq!(idle["detail"], "needs a model");
+        assert_eq!(idle["capabilities"].as_array().unwrap().len(), 1);
+        let ready = manifest(None);
+        assert_eq!(ready["ready"], true);
+        assert!(ready["detail"].is_null());
+    }
 }
