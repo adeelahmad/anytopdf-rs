@@ -1,7 +1,7 @@
 use crate::convert::registry;
 use crate::exit::{CliError, ExitClass, fail, tag};
 use anyhow::{Context, Result};
-use anytopdf_builtin::{BuiltinOptions, OcrEnricher, detect_providers};
+use anytopdf_builtin::{BuiltinOptions, OcrEnricher, capture::capture_status, detect_providers};
 use anytopdf_core::{RuntimePlugin, RuntimePluginPolicy, discover_runtime_plugins_detailed};
 use anytopdf_plugin_whisper::{backend, setup};
 use std::path::{Path, PathBuf};
@@ -108,12 +108,16 @@ pub(crate) fn doctor(json: bool, policy: &RuntimePluginPolicy) -> Result<()> {
                 })
             })
             .collect();
+        let capture: Vec<_> = capture_status()
+            .into_iter()
+            .map(|s| serde_json::json!({"name": s.name, "available": s.available, "detail": s.detail}))
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": "anytopdf.doctor/1", "providers": providers, "ocr": ocr,
-                "printing": printing,
-                "transcription": {
+                "printing": printing, "capture": capture,
+                                "transcription": {
                     "available": transcription.available,
                     "plugin": path(&transcription.plugin),
                     "model": path(&transcription.model),
@@ -160,6 +164,17 @@ pub(crate) fn doctor(json: bool, policy: &RuntimePluginPolicy) -> Result<()> {
                 .path
                 .map(|p| format!("{} ", p.display()))
                 .unwrap_or_default(),
+            status.detail
+        );
+    }
+
+    println!();
+    println!("Screen capture:");
+    for status in capture_status() {
+        println!(
+            "{} {:<10} {}",
+            if status.available { "[ok]  " } else { "[miss]" },
+            status.name,
             status.detail
         );
     }

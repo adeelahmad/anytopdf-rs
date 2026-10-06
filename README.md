@@ -243,7 +243,7 @@ Every fact becomes an `Annotation` with provenance:
 The PDF renderer paints the visual page normally and emits searchable annotations
 as invisible text (fill opacity 0 in the default `pdfa` renderer, text rendering
 mode 3 in `pdf`). The hidden layer carries content only
-(OCR, captions, transcripts, objects, barcodes, time ranges); source paths and file
+(OCR, captions, transcripts, objects, barcodes, colours, time ranges); source paths and file
 metadata are never written into it. Text/transcript units become normal
 visible text pages.
 
@@ -305,6 +305,9 @@ Enrichment:
   - Tesseract CLI
 - sidecar captions / transcripts
 - video timestamps and scene-selection provenance
+- dominant colours of images and keyframes (up to five per page, named
+  "red", "navy blue", ... with hex and share), so searching a colour finds
+  the frames it dominates; `--colors off` disables it
 
 Rendering:
 - tagged PDF/A-3a with bookmarks via `krilla` (default, `--renderer pdfa`)
@@ -352,6 +355,7 @@ anytopdf setup whisper
 anytopdf plugins
 anytopdf probe some.igl
 anytopdf extract archive.pdf --json
+anytopdf capture screen --duration 60 -o screen.pdf
 anytopdf mcp
 ```
 
@@ -364,6 +368,26 @@ anytopdf convert meeting.mp4 \
   --scene-threshold 0.30 \
   -o meeting.pdf
 ```
+
+### Screen capture
+
+`anytopdf capture screen` records the screen with FFmpeg and converts the
+recording like any video: a frame every `--interval` seconds plus every scene
+change, with near-duplicates dropped, then OCR and the usual pipeline.
+
+```bash
+anytopdf capture screen -o session.pdf                  # until Ctrl-C
+anytopdf capture screen --duration 600 --interval 10 -o standup.pdf
+anytopdf capture screen --display 1 --keep-recording s.mkv -- --ocr tesseract
+```
+
+It uses FFmpeg's platform grabber: `avfoundation` on macOS, `gdigrab` (whole
+desktop) or `ddagrab` (`--display N`) on Windows, `x11grab` on Linux. Pass
+`--input-format` and `--input` for any other FFmpeg input, such as `kmsgrab` on a
+Wayland session. macOS needs the Screen Recording permission for the terminal app;
+`anytopdf doctor` reports it and the grabber under "Screen capture". Options after
+`--` go to `convert`; the recording is deleted unless `--keep-recording` is given,
+and the PDF defaults to `screen-<UTC time>.pdf`.
 
 ### Progress events
 
@@ -664,6 +688,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Whisper transcription as a runtime plugin
 - [ ] Face presence, count and bounds
 - [ ] Object detection and scene classification providers
+- [x] Dominant colours per image and keyframe
 - [ ] Barcode and QR extraction
 - [ ] Audio chapters and speaker turns
 - [ ] OCR-text-aware video frame retention
@@ -675,6 +700,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] IMAP watcher: IDLE and polling, sender allowlist with DMARC check, OAuth2 (XOAUTH2) tokens, job-queue hand-off
 - [ ] IMAP rules beyond sender and search criteria (Paperless-ngx style), quarantine folder
 - [ ] Email-to-print
+- [x] Screen capture (`anytopdf capture screen`)
 
 ### Printing
 - [x] Spike: PAPPL printer feasibility
@@ -711,7 +737,7 @@ Building from source:
 - `Cargo.lock` pins dependencies compatible with this toolchain.
 
 Optional runtime providers:
-- `ffmpeg` / `ffprobe`: video/audio demuxing and keyframes
+- `ffmpeg` / `ffprobe`: video/audio demuxing, keyframes and screen capture
 - `exiftool`: rich metadata
 - `tesseract`: OCR fallback
 - Python + `doctr`: docTR OCR fallback
