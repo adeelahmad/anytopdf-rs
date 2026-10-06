@@ -1,8 +1,12 @@
-use crate::fetch::{SnapshotMode, UrlMode, UrlOptions};
+mod search;
+mod url;
+
 use anytopdf_builtin::{ChatDateOrder, LocationMode, OcrMode, RawDecode, ScanMode};
 use anytopdf_core::{Profile, SandboxMode};
 use clap::{Parser, Subcommand, builder::TypedValueParser};
+pub(crate) use search::{ENTRY_KINDS, IndexCommand, SearchArgs};
 use std::path::PathBuf;
+pub(crate) use url::UrlArgs;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -163,87 +167,6 @@ pub(crate) struct ScreenArgs {
     /// Convert options after `--`, for example `-- --ocr off --scene-threshold 0.2`.
     #[arg(last = true)]
     pub(crate) convert: Vec<String>,
-}
-
-/// Annotation kinds the index records, plus `chunk` (a unit's whole searchable text).
-pub(crate) const ENTRY_KINDS: [&str; 12] = [
-    "chunk",
-    "ocr",
-    "caption",
-    "transcript",
-    "metadata",
-    "object",
-    "face",
-    "scene",
-    "timestamp",
-    "location",
-    "barcode",
-    "custom",
-];
-
-#[derive(Debug, clap::Args)]
-pub(crate) struct SearchArgs {
-    /// Words to find (all must match); "quoted words" match as a phrase and a
-    /// trailing * matches a prefix. Optional when a filter is given.
-    pub(crate) query: Vec<String>,
-    /// Only results of this kind (repeatable).
-    #[arg(long, value_parser = ENTRY_KINDS)]
-    pub(crate) kind: Vec<String>,
-    /// Only faces recognised as this person.
-    #[arg(long)]
-    pub(crate) person: Option<String>,
-    /// Only PDFs indexed into this collection.
-    #[arg(long)]
-    pub(crate) collection: Option<String>,
-    /// Maximum results.
-    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=10_000).map(|n| n as usize))]
-    pub(crate) limit: usize,
-    /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
-    #[arg(long, value_name = "PATH")]
-    pub(crate) index_db: Option<PathBuf>,
-    /// Emit one JSON document (anytopdf.search/1) on stdout.
-    #[arg(long)]
-    pub(crate) json: bool,
-}
-
-#[derive(Debug, Subcommand)]
-pub(crate) enum IndexCommand {
-    /// Index PDFs made by anytopdf from their embedded manifest and chunks.
-    Add {
-        /// PDFs to index; one already indexed is replaced.
-        #[arg(required = true)]
-        pdfs: Vec<PathBuf>,
-        /// Tag the PDFs with this collection name.
-        #[arg(long)]
-        collection: Option<String>,
-        /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
-        #[arg(long, value_name = "PATH")]
-        index_db: Option<PathBuf>,
-        /// Emit one JSON document (anytopdf.index/1) on stdout.
-        #[arg(long)]
-        json: bool,
-    },
-    /// List the indexed PDFs.
-    List {
-        /// Only PDFs in this collection.
-        #[arg(long)]
-        collection: Option<String>,
-        /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
-        #[arg(long, value_name = "PATH")]
-        index_db: Option<PathBuf>,
-        /// Emit one JSON document (anytopdf.index/1) on stdout.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Remove PDFs from the index (the files are not touched).
-    Remove {
-        /// PDFs to forget.
-        #[arg(required = true)]
-        pdfs: Vec<PathBuf>,
-        /// Index database [default: ANYTOPDF_INDEX, else index.sqlite in the user data directory].
-        #[arg(long, value_name = "PATH")]
-        index_db: Option<PathBuf>,
-    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -610,66 +533,6 @@ pub(crate) struct ConvertArgs {
 
     #[command(flatten)]
     pub(crate) url: UrlArgs,
-}
-
-/// How http(s) inputs are fetched. Each option can also be set with its ANYTOPDF_URL_* variable.
-#[derive(Debug, clap::Args)]
-#[command(next_help_heading = "URL inputs")]
-pub(crate) struct UrlArgs {
-    /// Convert every link in FILE (repeatable): one URL per line, a browser bookmark
-    /// export (HTML) or Chrome's Bookmarks JSON. Bookmark folders become nested PDF
-    /// bookmarks; an unreachable link is skipped with a warning.
-    #[arg(long, value_name = "FILE")]
-    pub(crate) links: Vec<PathBuf>,
-
-    /// How to fetch URLs: auto uses yt-dlp for known video and podcast hosts and
-    /// downloads anything else; page always downloads; media always uses yt-dlp.
-    #[arg(long, env = "ANYTOPDF_URL_MODE", value_enum, default_value = "auto")]
-    pub(crate) url_mode: UrlMode,
-
-    /// Add a rendered snapshot of web pages printed by headless Chrome, Chromium or
-    /// Edge (auto: only when one is installed together with Poppler pdftoppm).
-    #[arg(
-        long,
-        env = "ANYTOPDF_URL_SNAPSHOT",
-        value_enum,
-        default_value = "auto"
-    )]
-    pub(crate) url_snapshot: SnapshotMode,
-
-    /// Caption languages yt-dlp downloads, in its --sub-langs syntax.
-    #[arg(long, env = "ANYTOPDF_URL_SUB_LANGS", default_value = "en.*,en")]
-    pub(crate) url_sub_langs: String,
-
-    /// Highest video resolution yt-dlp downloads.
-    #[arg(long, env = "ANYTOPDF_URL_MAX_HEIGHT", default_value_t = 720)]
-    pub(crate) url_max_height: u32,
-
-    /// Largest download per URL, in MiB.
-    #[arg(long, env = "ANYTOPDF_URL_MAX_MB", default_value_t = 1024)]
-    pub(crate) url_max_mb: u64,
-
-    /// Seconds allowed for each URL download, snapshot or yt-dlp run.
-    #[arg(long, env = "ANYTOPDF_URL_TIMEOUT", default_value_t = 600)]
-    pub(crate) url_timeout: u64,
-
-    /// Allow URLs on loopback, private and link-local addresses (refused by default).
-    #[arg(long, env = "ANYTOPDF_URL_ALLOW_PRIVATE", value_parser = clap::builder::BoolishValueParser::new())]
-    pub(crate) url_allow_private: bool,
-}
-
-impl UrlArgs {
-    pub(crate) fn options(&self) -> UrlOptions {
-        UrlOptions {
-            mode: self.url_mode,
-            snapshot: self.url_snapshot,
-            sub_langs: self.url_sub_langs.clone(),
-            max_height: self.url_max_height,
-            max_mb: self.url_max_mb,
-            timeout: std::time::Duration::from_secs(self.url_timeout.max(1)),
-            allow_private: self.url_allow_private,
-        }
-    }
 }
 
 #[derive(Debug, Subcommand)]
