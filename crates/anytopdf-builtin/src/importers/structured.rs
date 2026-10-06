@@ -12,10 +12,10 @@ use std::fs;
 use std::io::Read;
 use std::ops::Range;
 
-/// Options for the structured importer. Field names (kebab-case) are the
-/// keys of an `[importer.structured]` configuration table.
+/// Options for the structured importer. Field names are the keys of an
+/// `[importer.structured]` configuration table.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+#[serde(default, deny_unknown_fields)]
 pub struct StructuredOptions {
     /// Split a JSON document's record array into one unit per record. JSON
     /// Lines are always one unit per line.
@@ -490,9 +490,9 @@ mod tests {
     }
 
     #[test]
-    fn options_parse_from_kebab_case_tables_and_reject_unknown_keys() {
+    fn options_parse_from_snake_case_tables_and_reject_unknown_keys() {
         let parsed: StructuredOptions =
-            serde_json::from_str(r#"{"split-lines": 0, "flow": false}"#).unwrap();
+            serde_json::from_str(r#"{"split_lines": 0, "flow": false}"#).unwrap();
         assert_eq!(
             parsed,
             StructuredOptions {
@@ -501,7 +501,7 @@ mod tests {
                 split_lines: 0,
             }
         );
-        assert!(serde_json::from_str::<StructuredOptions>(r#"{"split_lines": 1}"#).is_err());
+        assert!(serde_json::from_str::<StructuredOptions>(r#"{"split-lines": 1}"#).is_err());
         assert_eq!(
             serde_json::from_str::<StructuredOptions>("{}").unwrap(),
             StructuredOptions::default()
