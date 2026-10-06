@@ -1,17 +1,14 @@
 # Changelog
 
-## Unreleased
-
-- WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) chat exports become
-  conversation pages with a `time sender: text` line per message; attachments in the export
-  follow the message that sent them. New `--chat-date-order` and `--no-chat-attachments`.
-
 ## 0.2.0
 
 Searchable-PDF fidelity, identity, and CLI contract release.
 
 ### Behaviour changes
 
+- WhatsApp, Telegram, Slack and iMessage (`imessage-exporter` text) chat exports become
+  conversation pages with a `time sender: text` line per message; attachments in the export
+  follow the message that sent them. New `--chat-date-order` and `--no-chat-attachments`.
 - `convert --draw-boxes[=KINDS]` draws labelled vector boxes for annotation regions
   (`objects`, `faces`, `ocr`, or `all`; bare `--draw-boxes` means `objects,faces`) over
   image and video-frame pages in both renderers. Face boxes show the matched person's
