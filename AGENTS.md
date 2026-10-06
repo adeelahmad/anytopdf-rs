@@ -10,6 +10,8 @@ This Rust workspace converts media and documents into searchable PDFs:
 - `crates/anytopdf-cli/`: the `anytopdf` executable and CLI arguments.
 - `crates/anytopdf-index/`: cross-file SQLite search index behind `convert --index`, `index` and `search`.
 - `crates/anytopdf-plugin-whisper/`: Whisper speech-to-text runtime plugin.
+- `crates/anytopdf-onnx/`: shared pure-Rust (tract) ONNX helpers for vision plugins.
+- `crates/anytopdf-plugin-objects/`: YOLO object detection runtime plugin.
 - `examples/anytopdf-plugin-example.py`: runtime plugin example.
 - `scripts/verify.sh`: local checks; `.github/workflows/release.yml`: release builds.
 

@@ -1,0 +1,23 @@
+[package]
+name = "anytopdf-plugin-objects"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "anytopdf runtime plugin that detects objects in images and video keyframes with a YOLO ONNX model"
+
+[[bin]]
+name = "anytopdf-plugin-objects"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+anytopdf-onnx = { path = "../anytopdf-onnx" }
+image.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+anytopdf-core = { path = "../anytopdf-core" }
+anytopdf-onnx = { path = "../anytopdf-onnx", features = ["testing"] }
+tempfile.workspace = true

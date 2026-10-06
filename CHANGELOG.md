@@ -47,6 +47,10 @@ Searchable-PDF fidelity, identity, and CLI contract release.
   unreachable link is skipped with `input.unreadable`.
 - The HTML importer keeps only the page's single `<main>` (or `<article>`) element
   when one exists and records it as `html.content`.
+- The new `anytopdf-plugin-objects` runtime plugin detects objects in images and video
+  keyframes with a YOLOv8/YOLO11/YOLOv5 ONNX model (`ANYTOPDF_OBJECTS_MODEL`) on a
+  pure-Rust ONNX runtime. Detections become searchable `object` annotations with label,
+  confidence, box and frame time, plus a per-frame count such as `objects: 2 person, 1 tie`.
 - `anytopdf capture screen` records the screen through FFmpeg (avfoundation on macOS,
   gdigrab or ddagrab on Windows, x11grab on Linux, or any `--input-format`/`--input`)
   until `--duration` or Ctrl-C, then converts the recording with the video importer's

@@ -200,6 +200,43 @@ loopback URL bypasses any HTTP proxy. `--plugin-sandbox strict` blocks network
 access and therefore this plugin. An unreachable endpoint, a slow frame or a bad
 answer becomes a `plugin.warning`, and the PDF is still written.
 
+### Object detection
+
+`anytopdf-plugin-objects` runs a YOLO object detector on every image and video
+keyframe. Each detection becomes a searchable `object` annotation with its label,
+confidence, normalized box and (for video) the frame's time, and each frame also
+gets a count such as `objects: 4 person, 1 bus`, so searching the PDF for "dog"
+finds the frames with a dog. Pages of PDF, Office and HTML documents are skipped.
+
+Inference runs on [tract](https://github.com/sonos/tract), a pure-Rust ONNX
+runtime, so the plugin needs no Python, CUDA or native library. It takes a YOLOv8
+or YOLO11 ONNX export (YOLOv5 exports work too); `yolo11n.onnx` from the
+[Ultralytics assets release](https://github.com/ultralytics/assets/releases/tag/v8.3.0)
+is a good default and labels the 80 COCO classes. From source:
+
+```bash
+cargo build --release -p anytopdf-plugin-objects
+export ANYTOPDF_PLUGIN_PATH="$PWD/target/release"
+export ANYTOPDF_OBJECTS_MODEL="$HOME/models/yolo11n.onnx"
+anytopdf convert meeting.mp4 --plugin-timeout 600 -o meeting.pdf
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_OBJECTS_MODEL` | none (required) | YOLO `.onnx` file |
+| `ANYTOPDF_OBJECTS_LABELS` | model's `names`, else COCO | text file, one class name per line |
+| `ANYTOPDF_OBJECTS_CONFIDENCE` | `0.25` | minimum score kept |
+| `ANYTOPDF_OBJECTS_IOU` | `0.45` | overlap above which same-class boxes merge |
+| `ANYTOPDF_OBJECTS_CLASSES` | all | comma-separated labels to keep, e.g. `person,car` |
+| `ANYTOPDF_OBJECTS_INPUT_SIZE` | model's, else `640` | input size for models with dynamic shapes |
+| `ANYTOPDF_OBJECTS_MAX` | `100` | most detections per frame |
+| `ANYTOPDF_OBJECTS_DEVICE` | `cpu` | only `cpu`; other values warn and use the CPU |
+
+The model loads once per job and `yolo11n` takes well under a second per frame on
+a CPU, so raise `--plugin-timeout` (default 60 seconds) for
+long videos. A missing model, an unreadable frame or a bad setting becomes a
+`plugin.warning`; the PDF is still written.
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -350,11 +387,13 @@ Rendering:
 Bundled runtime plugins (separate executables in this workspace):
 - `anytopdf-plugin-whisper`: speech-to-text for audio and video through
   whisper.cpp or an OpenAI-compatible Whisper CLI
+- `anytopdf-plugin-objects`: YOLO object detection on images and video keyframes
+  through a pure-Rust ONNX runtime
 - `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
   scene summaries and a category through a local vision-language model
 
 External plugins are the intended route for model-heavy enrichers such as:
-- YOLO / DETR object detection
+- DETR / open-vocabulary object detection
 - scene classification
 - speech-to-text engines
 - format-specific decoders

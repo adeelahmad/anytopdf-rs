@@ -7,6 +7,8 @@ members = [
   "crates/anytopdf-cli",
   "crates/anytopdf-imap",
   "crates/anytopdf-index",
+  "crates/anytopdf-onnx",
+  "crates/anytopdf-plugin-objects",
   "crates/anytopdf-plugin-vlm",
   "crates/anytopdf-plugin-whisper",
   "crates/anytopdf-print",
@@ -37,6 +39,7 @@ tiff = { version = "0.11", default-features = false, features = ["deflate", "fax
 printpdf = { version = "0.12.8", default-features = false, features = [
   "png", "jpeg", "gif", "bmp", "tiff", "webp"
 ] }
+prost = { version = "0.14", default-features = false, features = ["std", "derive"] }
 regex = "1.11"
 # Bundled SQLite with FTS5 for the cross-file search index.
 rusqlite = { version = "0.40", default-features = false, features = ["bundled"] }
@@ -56,6 +59,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ttf-parser = "0.25"
+tract-onnx = { version = "0.23", default-features = false }
 imap = { version = "=3.0.0-alpha.15", default-features = false }
 rustls-native-certs = "0.8"
 base64 = "0.22"
