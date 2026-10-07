@@ -68,6 +68,35 @@ pub fn engine_hint() -> &'static str {
 
 const SETUP_HINT: &str = "run `anytopdf setup whisper` to download a model";
 
+/// The shortest way to turn transcription on here when no engine is installed:
+/// one command, then the alternative. faster-whisper fetches its own model, so it
+/// needs no `setup whisper`.
+pub fn setup_steps(has_model: bool) -> String {
+    let setup = if has_model {
+        ""
+    } else {
+        " && anytopdf setup whisper"
+    };
+    let pipx = "`pipx install whisper-ctranslate2` (faster-whisper; it downloads its \
+                own model on first use)";
+    if cfg!(target_os = "macos") {
+        format!("run `brew install whisper-cpp{setup}`, or {pipx}")
+    } else {
+        let cpp = if cfg!(windows) {
+            "unpack whisper-bin-x64.zip from https://github.com/ggml-org/whisper.cpp/releases \
+             and put whisper-cli.exe on PATH"
+        } else {
+            "build whisper-cli from https://github.com/ggml-org/whisper.cpp and put it on PATH"
+        };
+        let then = if has_model {
+            String::new()
+        } else {
+            format!(", then {SETUP_HINT}")
+        };
+        format!("run {pipx}, or {cpp}{then}")
+    }
+}
+
 const CPP_NAMES: [&str; 2] = ["whisper-cli", "whisper-cpp"];
 const OPENAI_NAMES: [&str; 2] = ["whisper-ctranslate2", "whisper"];
 const OPENAI_DEFAULT_MODEL: &str = "base";
@@ -154,12 +183,9 @@ pub fn detect(config: &Config, lookup: impl Fn(&str) -> Option<PathBuf>) -> Resu
                      or set ANYTOPDF_WHISPER_MODEL to a ggml model file"
                 );
             }
-            if cpp_model.is_some() {
-                bail!("no Whisper engine found; {}", engine_hint());
-            }
             bail!(
-                "no Whisper engine found; {}, then {SETUP_HINT}",
-                engine_hint()
+                "no Whisper engine found; {}",
+                setup_steps(cpp_model.is_some())
             )
         }
     }
@@ -382,6 +408,24 @@ mod tests {
         let error = detect(&config, on_path(&[])).unwrap_err().to_string();
         assert!(error.contains("no Whisper engine"), "{error}");
         assert!(!error.contains("anytopdf setup whisper"), "{error}");
+    }
+
+    #[test]
+    fn setup_steps_name_one_command_and_skip_the_model_once_installed() {
+        let fresh = setup_steps(false);
+        let modelled = setup_steps(true);
+        assert!(fresh.starts_with("run `"), "{fresh}");
+        assert!(fresh.contains("anytopdf setup whisper"), "{fresh}");
+        assert!(!modelled.contains("anytopdf setup whisper"), "{modelled}");
+        for steps in [&fresh, &modelled] {
+            assert!(
+                steps.contains("pipx install whisper-ctranslate2"),
+                "{steps}"
+            );
+        }
+        if cfg!(target_os = "macos") {
+            assert!(fresh.contains("`brew install whisper-cpp && anytopdf setup whisper`"));
+        }
     }
 
     #[test]
