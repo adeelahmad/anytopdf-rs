@@ -205,6 +205,14 @@ fn builtin_entry(probe: &Probe, d: &PluginDescriptor, hints: &mut Vec<String>) -
             );
             (State::Available, format!("{exts}  (via {via})"))
         }
+        "html" => {
+            let render = match (anytopdf_builtin::chrome_path(), which::which("pdftoppm")) {
+                (Some(_), Ok(_)) => "page images with --html-render",
+                (None, _) => "readable text; page images need Chrome or Chromium",
+                (_, Err(_)) => "readable text; page images need Poppler pdftoppm",
+            };
+            (State::Available, format!("{exts}  ({render})"))
+        }
         "scan" => (
             State::Available,
             "unit    page detection, perspective and deskew".into(),
