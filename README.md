@@ -304,7 +304,9 @@ default and needs two runtime plugins: a face detector that adds `face`
 annotations with five-point landmarks, and `anytopdf-plugin-face-id`, which
 embeds each face with an ArcFace-style ONNX model (for example InsightFace
 `w600k_mbf.onnx` or `w600k_r50.onnx`; check the model's licence) using pure-Rust
-inference, so no Python or ONNX Runtime install is needed.
+inference, so no Python or ONNX Runtime install is needed. OpenCV SFace and the
+ONNX-zoo ArcFace R100 work too: models that scale their own input get raw 0-255
+pixels, others -1 to 1 (`ANYTOPDF_FACE_EMBED_INPUT=raw|normalized` overrides).
 
 ```bash
 cargo build --release -p anytopdf-plugin-face-id
@@ -326,7 +328,8 @@ The index is `faces.sqlite` in the anytopdf data directory
 `--face-index`). It holds embeddings and sightings, which never go into a PDF.
 `--face-threshold` (default 0.40, cosine similarity) sets how close a face must
 be to count as a known person; two faces in one frame are never the same
-person. Embedding runs as one plugin call per conversion, so raise
+person. Only matches at 0.60 or above are remembered as more examples of that
+person, so a borderline match never pulls later faces toward the wrong person. Embedding runs as one plugin call per conversion, so raise
 `--plugin-timeout` for long videos. `--profile share` leaves names and the
 "People in …" pages out of the PDF. Identities come only from people you enroll
 or name: nothing infers age, gender, emotion or other traits.

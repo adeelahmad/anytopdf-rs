@@ -124,8 +124,11 @@ fn handle(request_path: &Path) -> Result<Value> {
         return Ok(response);
     }
     let embedder = match model_path() {
-        Some(path) if path.is_file() => embed::Embedder::load(&path)
-            .with_context(|| format!("load face embedding model {}", path.display()))?,
+        Some(path) if path.is_file() => embed::Embedder::load(
+            &path,
+            embed::input_scale_override(env::var(embed::INPUT_ENV).ok().as_deref())?,
+        )
+        .with_context(|| format!("load face embedding model {}", path.display()))?,
         _ => {
             response["warnings"] = json!([format!(
                 "face-id: no face embedding model; set {MODEL_ENV} to an ArcFace-style ONNX file. \

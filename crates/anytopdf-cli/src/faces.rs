@@ -85,7 +85,7 @@ pub(crate) fn recognize_run(
             graph,
             &embeddings,
             &mut index,
-            &recognize::Options { threshold },
+            &recognize::Options::with_threshold(threshold),
         )
     });
     recognize::strip_refs(graph);
