@@ -1,4 +1,4 @@
-use super::office::{TextLine, line_annotation, page_text, rasterize};
+use super::office::{TextWord, page_text, rasterize, word_annotation};
 use super::{TEXT_LAYER_KEY, TEXT_LAYER_NATIVE};
 use anyhow::{Context, Result};
 use anytopdf_core::*;
@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Existing PDFs. With Poppler's `pdftoppm` every page is rendered to an
-/// image page, and the PDF's own text (line boxes from `pdftotext
+/// image page, and the PDF's own text (word boxes from `pdftotext
 /// -bbox-layout`, else the built-in extractor's page text) is attached the
 /// same way the Office importer does it, so OCR only runs on pages without
 /// text. Without `pdftoppm` the page text is imported as text pages.
@@ -106,11 +106,11 @@ impl Importer for PdfInputImporter {
         let root = ctx.workspace.join(format!("pdf-{}", source.id));
         let images = rasterize(&pdftoppm, &source.path, &root.join("pages"))?;
 
-        // Positioned lines from pdftotext; otherwise unpositioned page text.
-        let lines: Option<Vec<Vec<TextLine>>> = which::which("pdftotext")
+        // Positioned words from pdftotext; otherwise unpositioned page text.
+        let words: Option<Vec<Vec<TextWord>>> = which::which("pdftotext")
             .ok()
             .and_then(|exe| page_text(&exe, &source.path, &root).ok());
-        let plain = if lines.is_none() {
+        let plain = if words.is_none() {
             builtin_page_text(&source.path).ok()
         } else {
             None
@@ -128,8 +128,8 @@ impl Importer for PdfInputImporter {
                 frame: Some(index as u32),
             });
             unit.metadata.insert("pdf.page".into(), number.to_string());
-            if let Some(page) = lines.as_ref().and_then(|l| l.get(index)) {
-                unit.annotations.extend(page.iter().map(line_annotation));
+            if let Some(page) = words.as_ref().and_then(|w| w.get(index)) {
+                unit.annotations.extend(page.iter().map(word_annotation));
             } else if let Some(text) = plain
                 .as_ref()
                 .and_then(|p| p.get(&number))

@@ -69,6 +69,21 @@ pub struct Chunk {
     /// found in the unit.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entities: Vec<ChunkEntity>,
+    /// Positioned words of a visual unit (OCR or the source's own text layer), in
+    /// reading order, with boxes normalized to the unit's page.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<ChunkWord>,
+}
+
+/// One word on a page: `x` and `y` are the top-left corner and every value is a
+/// fraction of the page width or height.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChunkWord {
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,11 +120,16 @@ fn annotation_text<'a>(annotations: impl Iterator<Item = &'a Annotation>) -> Str
 
 /// Whether `b` continues `a`'s OCR line: both are OCR boxes, `b` starts to the right
 /// of where `a` starts, and their vertical centres are within half a line height.
+/// Words from a source's own text layer arrive in reading order, so right-to-left
+/// lines join too.
 fn same_ocr_line(a: &Annotation, b: &Annotation) -> bool {
     let (Some(ra), Some(rb)) = (a.region, b.region) else {
         return false;
     };
-    if a.kind != AnnotationKind::Ocr || b.kind != AnnotationKind::Ocr || rb.x <= ra.x {
+    let native =
+        |x: &Annotation| x.attributes.get("text_source").map(String::as_str) == Some("native");
+    let ordered = rb.x > ra.x || (native(a) && native(b));
+    if a.kind != AnnotationKind::Ocr || b.kind != AnnotationKind::Ocr || !ordered {
         return false;
     }
     let centre = |r: crate::Region| r.y + r.height / 2.0;
@@ -241,6 +261,24 @@ impl ChunkSet {
                             .filter(|a| annotation_entity(a).is_none()),
                     )
                 });
+                let words = if u.kind == UnitKind::Visual {
+                    u.annotations
+                        .iter()
+                        .filter(|a| a.kind == AnnotationKind::Ocr && annotation_entity(a).is_none())
+                        .filter_map(|a| {
+                            let r = a.region?.clamped();
+                            Some(ChunkWord {
+                                text: a.text.clone(),
+                                x: r.x,
+                                y: r.y,
+                                width: r.width,
+                                height: r.height,
+                            })
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 Some(Chunk {
                     id: u.id,
                     source_id: u.source_id,
@@ -250,6 +288,7 @@ impl ChunkSet {
                     pages: *report.unit_pages.get(&u.id)?,
                     providers,
                     entities,
+                    words,
                 })
             })
             .collect();
@@ -352,6 +391,62 @@ mod tests {
             annotation_text(annotations.iter()),
             "TOTAL GBP 128.40\nPaid: VISA\na caption\nx\ny"
         );
+    }
+
+    #[test]
+    fn native_text_words_join_in_reading_order_even_right_to_left() {
+        let word = |text: &str, x: f32| {
+            let mut a = Annotation::text(AnnotationKind::Ocr, "pdftotext", text);
+            a.region = Some(crate::Region {
+                x,
+                y: 0.2,
+                width: 0.1,
+                height: 0.04,
+            });
+            a.attributes.insert("text_source".into(), "native".into());
+            a
+        };
+        let annotations = [word("שלום", 0.6), word("עולם", 0.4)];
+        assert_eq!(annotation_text(annotations.iter()), "שלום עולם");
+    }
+
+    #[test]
+    fn visual_chunks_list_positioned_words_and_validate() {
+        let a = source("scan.png", "aa11", 10);
+        let mut visual = Unit::visual(a.id, "scan.png".into());
+        let mut word = Annotation::text(AnnotationKind::Ocr, "tesseract", "Invoice");
+        word.region = Some(crate::Region {
+            x: 0.1,
+            y: 0.2,
+            width: 0.3,
+            height: 0.05,
+        });
+        let mut entity = word.clone();
+        entity.attributes.insert("entity".into(), "url".into());
+        let unplaced = Annotation::text(AnnotationKind::Ocr, "vision", "no box");
+        let mut label = Annotation::text(AnnotationKind::Object, "yolo", "bus");
+        label.region = word.region;
+        visual.annotations = vec![word, entity, unplaced, label];
+        let report = report(&[(visual.id, range(1, 1))]);
+        let graph = DocumentGraph {
+            sources: vec![a],
+            units: vec![visual],
+            ..Default::default()
+        };
+        let chunks = ChunkSet::build(&graph, &report);
+        assert_eq!(
+            chunks.chunks[0].words,
+            vec![ChunkWord {
+                text: "Invoice".into(),
+                x: 0.1,
+                y: 0.2,
+                width: 0.3,
+                height: 0.05,
+            }]
+        );
+        let value = serde_json::to_value(&chunks).unwrap();
+        let errors = crate::schema::validate(&read_schema("chunks.schema.json"), &value);
+        assert!(errors.is_empty(), "chunks invalid: {errors:?}");
     }
 
     #[test]
@@ -495,6 +590,7 @@ mod tests {
         let (_, chunks) = valid_pair();
         let value = serde_json::to_value(&chunks).unwrap();
         assert!(value["chunks"][0].get("entities").is_none());
+        assert!(value["chunks"][0].get("words").is_none());
     }
 
     #[test]

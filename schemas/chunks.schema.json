@@ -34,6 +34,21 @@
               "required": ["kind", "value"],
               "properties": {"kind": {"type": "string"}, "value": {"type": "string"}}
             }
+          },
+          "words": {
+            "description": "Positioned words of a visual unit in reading order; x and y are the top-left corner, and every value is a fraction of the page width or height.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text", "x", "y", "width", "height"],
+              "properties": {
+                "text": {"type": "string"},
+                "x": {"type": "number", "minimum": 0},
+                "y": {"type": "number", "minimum": 0},
+                "width": {"type": "number", "minimum": 0},
+                "height": {"type": "number", "minimum": 0}
+              }
+            }
           }
         }
       }
