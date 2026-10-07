@@ -1,8 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+Word boxes in chunks, rendered HTML pages, and fixes from testing 0.3.0.
+
+### Behaviour changes
+
+- Chunks of image pages in `anytopdf-chunks.json` carry a `words` list of
+  `{text, x, y, width, height}` boxes in reading order, from OCR or the source PDF's
+  own text, as fractions of the page. PDF and Office text layers now come from
+  per-word boxes instead of line boxes, so the hidden layer is placed per word.
+- `--html-render` (`[html] render = true`) prints local HTML pages offline through
+  headless Chrome, Chromium or Edge (no remote images, fonts or scripts) and turns
+  each printed page into an image page with the page's own text as its searchable
+  layer. Without a browser or Poppler `pdftoppm` the file falls back to readable
+  text with a warning. Vendor Chrome is preferred over snap Chromium launchers.
+- When no Whisper engine is installed, the Whisper plugin's setup message (shown by
+  `anytopdf doctor` and `capabilities`) and the README name one command for your
+  system: macOS, Linux and Raspberry Pi, or Windows. Release archives still ship the plugin without an engine.
+- CI smoke-tests the static Linux arm64 build on every change.
 
 ### Fixes
+
+- OCR chunk text in `anytopdf-chunks.json`, `anytopdf ask` passages and the search
+  index joins the words of one OCR line with spaces instead of putting every word on
+  its own line.
 
 - `anytopdf-plugin-objects` accepts YOLOX ONNX models (Apache-2.0), with raw or
   decoded heads, alongside Ultralytics YOLOv5/v8/11. A model whose output it does
@@ -22,15 +44,27 @@
   person's stored faces, so one borderline match cannot pull later faces toward the
   wrong person.
 
+### Commit history
+
+#### Features
+
+- core: list word boxes in chunks (#58) (f0219c53)
+- builtin: render local HTML into page images with --html-render (#61) (e82a4fac)
+- whisper: name one setup command per system when no engine is installed (#62) (4b00d78a)
+- dist: serve the v0.3.0 Homebrew formula and Scoop manifest (#57) (31d37f94)
+
+#### Fixes
+
+- core: join OCR words into lines in chunks and refresh the README for 0.3.0 (#56) (912d5dc6)
+- faces: feed raw pixels to embedding models that scale their own input (#59) (f5c7bd0b)
+- objects: YOLOX models and image enrichment for email and archive members (#60) (d920947b)
+
 ## 0.3.0
 
 Visual and audio analysis, cross-file search, and many new inputs.
 
 ### Behaviour changes
 
-- OCR chunk text in `anytopdf-chunks.json`, `anytopdf ask` passages and the search
-  index joins the words of one OCR line with spaces instead of putting every word on
-  its own line.
 - URLs, email addresses, domains and app names found in OCR, captions, transcripts
   and text become `custom` entity annotations, and dates and times become
   `timestamp` annotations with an ISO 8601 value (relative ones such as "last

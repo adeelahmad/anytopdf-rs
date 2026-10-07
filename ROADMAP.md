@@ -4,7 +4,7 @@ Checked items describe implemented code on `main`, not release certification. Se
 `RELEASING.md` for validation evidence and release procedures, `CHANGELOG.md` for
 per-release behaviour changes, and the README roadmap for the feature-level view.
 
-Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" merged the same day and shipped in 0.2.0. The work under "Media analysis and more inputs" merged on 2026-10-06 and ships in 0.3.0.
+Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" merged the same day and shipped in 0.2.0. The work under "Media analysis and more inputs" merged on 2026-10-06 and shipped in 0.3.0. Word boxes in chunks, `--html-render` and the 0.3.0 test fixes ship in 0.4.0.
 
 ## 0.1 — architecture + searchable media core
 - [x] staged registry
@@ -91,6 +91,13 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] `install.sh` installer and Homebrew tap and Scoop bucket served from this repository
 - [x] sentiment and tone of text (`anytopdf-plugin-sentiment`) and audio events (`anytopdf-plugin-audio-events`)
 - [x] every workspace runtime plugin bundled in release archives, packages and the container
+
+## Testing 0.3.0 (merged 2026-10-07, 0.4.0)
+- [x] per-word boxes in chunks and in PDF/Office text layers
+- [x] `--html-render`: local HTML printed offline by headless Chrome into image pages
+- [x] YOLOX object models; image enrichment for email attachments and archive members
+- [x] face-id feeds raw pixels to SFace and ArcFace R100; borderline matches no longer enroll
+- [x] one Whisper setup command per system; Linux arm64 smoke test in CI
 
 ## Backlog
 
