@@ -820,7 +820,10 @@ Every converted PDF embeds two JSON attachments: `anytopdf-manifest.json`
 and `anytopdf-chunks.json` (`anytopdf.chunks/1`: one chunk per unit with page
 traceability, plus an optional `entities` list of `{kind, value}` such as
 `{"kind":"url","value":"https://example.com"}` with kinds `url`, `email`, `domain`,
-`app`, `date`, `time` and `datetime`; dates and times carry their ISO 8601 value). Schemas live in `schemas/`. The `share` profile omits absolute
+`app`, `date`, `time` and `datetime`; dates and times carry their ISO 8601 value).
+Chunks of image pages also carry a `words` list of `{text, x, y, width, height}`
+boxes in reading order, from OCR or the source PDF's own text, with the top-left
+corner and size given as fractions of the page. Schemas live in `schemas/`. The `share` profile omits absolute
 paths. If embedding fails, the same JSON is written beside the PDF as
 `<output>.manifest.json` and `<output>.chunks.json` and an informational
 `manifest.sidecar` notice is printed.

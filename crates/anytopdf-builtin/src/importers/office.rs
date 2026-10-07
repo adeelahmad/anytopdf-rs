@@ -125,10 +125,10 @@ impl Importer for OfficeImporter {
                     .insert("office.page".into(), (index + 1).to_string());
                 unit.metadata
                     .insert("office.converter".into(), PROVIDER.into());
-                if let Some(lines) = text.get(index).filter(|lines| !lines.is_empty()) {
+                if let Some(words) = text.get(index).filter(|words| !words.is_empty()) {
                     unit.metadata
                         .insert(TEXT_LAYER_KEY.into(), TEXT_LAYER_NATIVE.into());
-                    unit.annotations.extend(lines.iter().map(line_annotation));
+                    unit.annotations.extend(words.iter().map(word_annotation));
                 }
                 unit
             })
@@ -245,12 +245,12 @@ pub(crate) fn rasterize(pdftoppm: &Path, pdf: &Path, dir: &Path) -> Result<Vec<P
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TextLine {
+pub(crate) struct TextWord {
     pub text: String,
     pub region: Region,
 }
 
-pub(crate) fn page_text(pdftotext: &Path, pdf: &Path, root: &Path) -> Result<Vec<Vec<TextLine>>> {
+pub(crate) fn page_text(pdftotext: &Path, pdf: &Path, root: &Path) -> Result<Vec<Vec<TextWord>>> {
     let html = root.join("text.html");
     let output = Command::new(pdftotext)
         .args(["-bbox-layout", "-enc", "UTF-8"])
@@ -267,14 +267,13 @@ pub(crate) fn page_text(pdftotext: &Path, pdf: &Path, root: &Path) -> Result<Vec
     parse_bbox_layout(&fs::read_to_string(&html)?)
 }
 
-/// Parses `pdftotext -bbox-layout` XHTML into per-page lines with regions
-/// normalized to the page size.
-pub(crate) fn parse_bbox_layout(html: &str) -> Result<Vec<Vec<TextLine>>> {
+/// Parses `pdftotext -bbox-layout` XHTML into per-page words in reading order,
+/// with regions normalized to the page size.
+pub(crate) fn parse_bbox_layout(html: &str) -> Result<Vec<Vec<TextWord>>> {
     let page_re = Regex::new(r#"<page\s+width="([0-9.]+)"\s+height="([0-9.]+)""#)?;
-    let line_re = Regex::new(
-        r#"(?s)<line\s+xMin="([0-9.]+)"\s+yMin="([0-9.]+)"\s+xMax="([0-9.]+)"\s+yMax="([0-9.]+)"\s*>(.*?)</line>"#,
+    let word_re = Regex::new(
+        r#"(?s)<word\s+xMin="([0-9.]+)"\s+yMin="([0-9.]+)"\s+xMax="([0-9.]+)"\s+yMax="([0-9.]+)"\s*>(.*?)</word>"#,
     )?;
-    let word_re = Regex::new(r"(?s)<word[^>]*>(.*?)</word>")?;
     let starts: Vec<_> = page_re.captures_iter(html).collect();
     let mut pages = Vec::with_capacity(starts.len());
     for (index, page) in starts.iter().enumerate() {
@@ -288,19 +287,14 @@ pub(crate) fn parse_bbox_layout(html: &str) -> Result<Vec<Vec<TextLine>>> {
             .get(index + 1)
             .and_then(|next| next.get(0))
             .map_or(html.len(), |m| m.start());
-        let mut lines = Vec::new();
-        for line in line_re.captures_iter(&html[begin..end]) {
-            let text = word_re
-                .captures_iter(&line[5])
-                .map(|w| unescape(w[1].trim()))
-                .filter(|w| !w.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ");
+        let mut words = Vec::new();
+        for word in word_re.captures_iter(&html[begin..end]) {
+            let text = unescape(word[5].trim());
             if text.is_empty() {
                 continue;
             }
             let coords: Vec<f32> = (1..=4)
-                .map(|i| line[i].parse::<f32>())
+                .map(|i| word[i].parse::<f32>())
                 .collect::<Result<_, _>>()?;
             let region = Region {
                 x: coords[0] / width,
@@ -309,16 +303,16 @@ pub(crate) fn parse_bbox_layout(html: &str) -> Result<Vec<Vec<TextLine>>> {
                 height: (coords[3] - coords[1]) / height,
             }
             .clamped();
-            lines.push(TextLine { text, region });
+            words.push(TextWord { text, region });
         }
-        pages.push(lines);
+        pages.push(words);
     }
     Ok(pages)
 }
 
-pub(crate) fn line_annotation(line: &TextLine) -> Annotation {
-    let mut annotation = Annotation::text(AnnotationKind::Ocr, TEXT_PROVIDER, line.text.clone());
-    annotation.region = Some(line.region);
+pub(crate) fn word_annotation(word: &TextWord) -> Annotation {
+    let mut annotation = Annotation::text(AnnotationKind::Ocr, TEXT_PROVIDER, word.text.clone());
+    annotation.region = Some(word.region);
     annotation.confidence = Some(1.0);
     annotation
         .attributes
@@ -380,16 +374,17 @@ mod tests {
 </doc></body></html>"#;
 
     #[test]
-    fn bbox_layout_lines_become_normalized_regions_per_page() {
+    fn bbox_layout_words_become_normalized_regions_per_page() {
         let pages = parse_bbox_layout(LAYOUT).unwrap();
         assert_eq!(pages.len(), 2);
         assert!(pages[1].is_empty());
-        let line = &pages[0][0];
-        assert_eq!(line.text, "Invoice &<42>");
-        assert!((line.region.x - 0.05).abs() < 1e-6);
-        assert!((line.region.y - 0.10).abs() < 1e-6);
-        assert!((line.region.width - 0.50).abs() < 1e-6);
-        assert!((line.region.height - 0.10).abs() < 1e-6);
+        let texts: Vec<&str> = pages[0].iter().map(|w| w.text.as_str()).collect();
+        assert_eq!(texts, ["Invoice", "&<42>"]);
+        let word = &pages[0][1];
+        assert!((word.region.x - 0.275).abs() < 1e-6);
+        assert!((word.region.y - 0.10).abs() < 1e-6);
+        assert!((word.region.width - 0.275).abs() < 1e-6);
+        assert!((word.region.height - 0.10).abs() < 1e-6);
     }
 
     #[test]
@@ -486,9 +481,9 @@ mod tests {
             first.metadata.get(TEXT_LAYER_KEY).map(String::as_str),
             Some(TEXT_LAYER_NATIVE)
         );
-        let line = &first.annotations[0];
-        assert_eq!(line.text, "Invoice 42 paid");
-        assert!(line.region.is_some());
+        let words: Vec<&str> = first.annotations.iter().map(|a| a.text.as_str()).collect();
+        assert_eq!(words, ["Invoice", "42", "paid"]);
+        assert!(first.annotations.iter().all(|a| a.region.is_some()));
         assert_eq!(outcome.units[1].metadata["office.page"], "2");
     }
 }
