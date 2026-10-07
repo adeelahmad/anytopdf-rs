@@ -1,7 +1,7 @@
 use crate::{
     Diagnostic, DiagnosticCode, DocumentGraph, GraphPhase, ImportOutcome, JobContext,
-    MemberImporter, PipelineEvent, PipelineObserver, ProvidersExhausted, Registry, SourceRecord,
-    Stage,
+    MEMBER_TYPE_KEY, MemberImporter, PipelineEvent, PipelineObserver, ProvidersExhausted, Registry,
+    SourceRecord, Stage,
 };
 use anyhow::{Context, Result};
 use std::cell::Cell;
@@ -79,9 +79,19 @@ impl MemberImporter for RegistryMembers<'_> {
             depth: self.depth + 1,
             budget: self.budget,
         };
-        importer
+        let member_type = source.detected_type.clone();
+        let mut outcome = importer
             .import_with_members(ctx, source, &nested)
-            .with_context(|| format!("{} import failed", importer.descriptor().name))
+            .with_context(|| format!("{} import failed", importer.descriptor().name))?;
+        // Units keep their innermost member's type when containers nest.
+        if let Some(member_type) = member_type {
+            for unit in &mut outcome.units {
+                unit.metadata
+                    .entry(MEMBER_TYPE_KEY.into())
+                    .or_insert_with(|| member_type.clone());
+            }
+        }
+        Ok(outcome)
     }
 }
 

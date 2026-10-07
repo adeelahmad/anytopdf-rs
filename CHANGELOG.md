@@ -4,6 +4,13 @@
 
 ### Fixes
 
+- `anytopdf-plugin-objects` accepts YOLOX ONNX models (Apache-2.0), with raw or
+  decoded heads, alongside Ultralytics YOLOv5/v8/11. A model whose output it does
+  not recognise, or whose class count does not match its labels, now produces a
+  `plugin.warning` naming the problem instead of loading as ready and finding nothing.
+- Photos attached to emails and packed in archives get the same image enrichment
+  as standalone images: faces, objects, captions and scan flattening. Member units
+  carry their detected media type in the unit metadata entry `container.member-type`.
 - Face recognition told nobody apart with OpenCV SFace or the ONNX-zoo ArcFace R100:
   `anytopdf-plugin-face-id` scaled every crop to -1..1, but these models scale their
   own input, so each face looked almost black and different people scored 0.94 to

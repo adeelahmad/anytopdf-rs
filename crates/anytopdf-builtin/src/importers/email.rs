@@ -269,6 +269,44 @@ Subject: Receipts\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n\
     }
 
     #[test]
+    fn attached_photos_are_typed_as_images_for_image_enrichers() {
+        use base64::Engine;
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(4, 4, image::Rgb([200, 30, 30]))
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png.into_inner());
+        let mail = format!(
+            "From: a@example.com\r\nSubject: Photo\r\n\
+Content-Type: multipart/mixed; boundary=x\r\n\r\n\
+--x\r\nContent-Type: text/plain\r\n\r\nSee attached.\r\n\
+--x\r\nContent-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n\
+Content-Disposition: attachment; filename=\"bus.png\"\r\n\r\n{encoded}\r\n--x--\r\n"
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mail.eml");
+        fs::write(&path, mail).unwrap();
+        let run = Pipeline::new(builtins()).ingest(&[path], true).unwrap();
+        let photo = run
+            .graph
+            .units
+            .iter()
+            .find(|u| u.kind == UnitKind::Visual)
+            .expect("the attached photo becomes a visual unit");
+        assert_eq!(photo.metadata[MEMBER_TYPE_KEY], "image/png");
+        let seen = run.graph.unit_source(photo).unwrap();
+        assert_eq!(seen.detected_type.as_deref(), Some("image/png"));
+        assert_eq!(seen.id, run.graph.sources[0].id);
+        assert!(seen.path.ends_with("bus.png"), "{}", seen.path.display());
+        let body = &run.graph.units[0];
+        assert!(!body.metadata.contains_key(MEMBER_TYPE_KEY));
+        assert_eq!(
+            run.graph.unit_source(body).unwrap().detected_type,
+            run.graph.sources[0].detected_type
+        );
+    }
+
+    #[test]
     fn standalone_import_reports_attachments_without_a_member_importer() {
         let dir = tempfile::tempdir().unwrap();
         let source = write(dir.path(), "mail.eml", WITH_ATTACHMENTS);

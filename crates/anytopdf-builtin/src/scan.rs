@@ -869,7 +869,7 @@ impl UnitEnricher for ScanEnricher {
                 .get(crate::importers::TEXT_LAYER_KEY)
                 .map(String::as_str)
                 != Some(crate::importers::TEXT_LAYER_NATIVE)
-            && graph.source(unit.source_id).is_some_and(is_photo)
+            && graph.unit_source(unit).is_some_and(|s| is_photo(&s))
     }
 
     fn enrich_unit(

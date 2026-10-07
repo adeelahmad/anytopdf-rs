@@ -662,8 +662,8 @@ impl UnitEnricher for RuntimeUnitEnricher {
     fn supports(&self, graph: &DocumentGraph, unit: &Unit) -> bool {
         (self.capability.extensions.is_empty() && self.capability.mime_types.is_empty())
             || graph
-                .source(unit.source_id)
-                .is_some_and(|s| match_source(&self.capability, s) > ProbeScore::NONE)
+                .unit_source(unit)
+                .is_some_and(|s| match_source(&self.capability, &s) > ProbeScore::NONE)
     }
     fn enrich_unit(
         &self,

@@ -119,6 +119,12 @@ impl Model {
         (self.width, self.height)
     }
 
+    /// The shape of output `index` when the fixed input determines it.
+    pub fn output_shape(&self, index: usize) -> Option<Vec<usize>> {
+        let fact = self.plan.model().output_fact(index).ok()?;
+        fact.shape.as_concrete().map(<[usize]>::to_vec)
+    }
+
     /// A string from the model's `metadata_props`, such as Ultralytics' `names`.
     pub fn metadata(&self, key: &str) -> Option<&str> {
         self.metadata.get(key).map(String::as_str)

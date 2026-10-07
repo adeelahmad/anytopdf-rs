@@ -166,6 +166,16 @@ continue on the page where the previous text unit of the same source ended
 instead of starting a new page; use it for many small records (rows, messages,
 log entries). Protocol version unchanged.
 
+Units imported from a container member (an email attachment, an archive member)
+belong to the container's source and carry the unit metadata entries
+`"container.member"` (the member's name) and `"container.member-type"` (its
+detected media type, such as `"image/jpeg"`; nested containers keep the innermost
+member's type). The host matches unit enrichers' `extensions` and `mime_types`
+against the member's name and type, so an `image/*` unit enricher also sees a
+photo attached to an email. Graph enrichers that pick units by media type should
+read `container.member-type` before falling back to the source's `detected_type`.
+Protocol version unchanged.
+
 Annotations of kind `scene` are searchable content (written to the PDF's hidden
 text layer) only when they carry the attribute `"entity": "scene-tag"`, as the
 CLIP plugin's zero-shot tags do; other `scene` annotations record how a keyframe

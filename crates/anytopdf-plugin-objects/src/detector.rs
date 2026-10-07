@@ -94,6 +94,7 @@ pub struct Object {
 pub struct Detector {
     model: Model,
     labels: Vec<String>,
+    layout: yolo::Layout,
     config: Config,
     /// File name of the model, recorded as provenance.
     pub model_name: String,
@@ -132,9 +133,31 @@ impl Detector {
                 "ANYTOPDF_OBJECTS_CLASSES names {unknown:?}, which the model's labels do not include"
             );
         }
+        let input = model.input_size();
+        let shape = match model.output_shape(0) {
+            Some(shape) => shape,
+            // Dynamic output shapes are only known after one inference.
+            None => {
+                let blank = anytopdf_onnx::ndarray::Array4::<f32>::zeros((
+                    1,
+                    3,
+                    input.1 as usize,
+                    input.0 as usize,
+                ));
+                let outputs = model.run(blank)?;
+                outputs
+                    .first()
+                    .context("model produced no output")?
+                    .shape()
+                    .to_vec()
+            }
+        };
+        let layout = yolo::layout(&shape, labels.len(), input)
+            .with_context(|| format!("{model_name} is not a recognised YOLO detector"))?;
         Ok(Self {
             model,
             labels,
+            layout,
             config,
             model_name,
         })
@@ -150,7 +173,11 @@ impl Detector {
 
     pub fn detect(&self, image: &DynamicImage) -> Result<Vec<Object>> {
         let (width, height) = self.model.input_size();
-        let (input, fit) = letterbox(image, width, height);
+        let (mut input, fit) = letterbox(image, width, height);
+        let scale = self.layout.head.pixel_scale();
+        if scale != 1.0 {
+            input.mapv_inplace(|v| v * scale);
+        }
         let outputs = self.model.run(input)?;
         let output = outputs.first().context("model produced no output")?;
         let allowed = |class: usize| {
@@ -160,8 +187,7 @@ impl Detector {
                     .get(class)
                     .is_some_and(|l| self.config.classes.contains(&l.to_lowercase()))
         };
-        let (candidates, _) =
-            yolo::decode(output, self.labels.len(), self.config.confidence, &allowed)?;
+        let candidates = yolo::decode(output, &self.layout, self.config.confidence, &allowed)?;
         Ok(nms(candidates, self.config.iou, self.config.max_detections)
             .into_iter()
             .filter_map(|d| {
