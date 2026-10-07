@@ -193,6 +193,15 @@ pub enum Anchor {
 pub const LAYOUT_FLOW_KEY: &str = "layout.flow";
 pub const LAYOUT_FLOW_CONTINUOUS: &str = "continuous";
 
+/// Unit metadata key naming the container member (email attachment, archive
+/// member) a unit was imported from, as readers see it.
+pub const MEMBER_KEY: &str = "container.member";
+/// Unit metadata key holding the detected media type of that member, such as
+/// `image/jpeg` for a photo attached to an email. Enrichers that pick inputs
+/// by media type match it instead of the container's type; see
+/// [`DocumentGraph::unit_source`].
+pub const MEMBER_TYPE_KEY: &str = "container.member-type";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Unit {
     #[serde(default = "Uuid::new_v4")]
@@ -412,6 +421,29 @@ impl DocumentGraph {
 
     pub fn source(&self, id: Uuid) -> Option<&SourceRecord> {
         self.sources.iter().find(|s| s.id == id)
+    }
+
+    /// The source of `unit` as an enricher that picks inputs by media type
+    /// should see it. Units imported from a container member carry the
+    /// member's type in [`MEMBER_TYPE_KEY`]; for those this is the container's
+    /// record with the member's type and file name, so a photo attached to an
+    /// email is treated as an image rather than as an email.
+    pub fn unit_source(&self, unit: &Unit) -> Option<std::borrow::Cow<'_, SourceRecord>> {
+        let source = self.source(unit.source_id)?;
+        let Some(member_type) = unit.metadata.get(MEMBER_TYPE_KEY) else {
+            return Some(std::borrow::Cow::Borrowed(source));
+        };
+        let mut member = source.clone();
+        member.detected_type = Some(member_type.clone());
+        if let Some(name) = unit
+            .metadata
+            .get(MEMBER_KEY)
+            .and_then(|n| n.rsplit(['/', '\\']).next())
+            .filter(|n| !n.is_empty())
+        {
+            member.path = source.path.with_file_name(name);
+        }
+        Some(std::borrow::Cow::Owned(member))
     }
 
     pub fn source_mut(&mut self, id: Uuid) -> Option<&mut SourceRecord> {

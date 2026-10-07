@@ -17,17 +17,23 @@ pub struct Target {
     pub path: PathBuf,
 }
 
-/// Visual units of image and video sources that this plugin has not already
-/// annotated. Pages of documents (PDF, Office, HTML) are left alone.
+/// Unit metadata the host sets on units imported from a container member
+/// (an email attachment, an archive member): the member's media type.
+const MEMBER_TYPE_KEY: &str = "container.member-type";
+
+fn is_media(mime: &str) -> bool {
+    mime.starts_with("image/") || mime.starts_with("video/")
+}
+
+/// Visual units of image and video sources, and of image and video members
+/// of containers such as emails and archives, that this plugin has not
+/// already annotated. Pages of documents (PDF, Office, HTML) are left alone.
 pub fn targets(graph: &Value) -> Vec<Target> {
     let media: Vec<&str> = graph["sources"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|s| {
-            let mime = s["detected_type"].as_str().unwrap_or("");
-            mime.starts_with("image/") || mime.starts_with("video/")
-        })
+        .filter(|s| is_media(s["detected_type"].as_str().unwrap_or("")))
         .filter_map(|s| s["id"].as_str())
         .collect();
     graph["units"]
@@ -41,9 +47,12 @@ pub fn targets(graph: &Value) -> Vec<Target> {
             }
             let path = unit["visual_path"].as_str()?;
             let timed = !unit["time_range"].is_null();
-            let from_media = unit["source_id"]
-                .as_str()
-                .is_some_and(|id| media.contains(&id));
+            let from_media = match unit["metadata"][MEMBER_TYPE_KEY].as_str() {
+                Some(member_type) => is_media(member_type),
+                None => unit["source_id"]
+                    .as_str()
+                    .is_some_and(|id| media.contains(&id)),
+            };
             let done = unit["annotations"]
                 .as_array()
                 .is_some_and(|a| a.iter().any(|a| a["provider"] == PROVIDER));
@@ -148,6 +157,7 @@ mod tests {
             "sources": [
                 {"id": "s-video", "path": "/in/a.mp4", "detected_type": "video/mp4"},
                 {"id": "s-pdf", "path": "/in/b.pdf", "detected_type": "application/pdf"},
+                {"id": "s-mail", "path": "/in/c.eml", "detected_type": "message/rfc822"},
             ],
             "units": [
                 {"id": "u0", "source_id": "s-video", "kind": "visual", "visual_path": "/w/f1.jpg",
@@ -158,19 +168,31 @@ mod tests {
                 {"id": "u2", "source_id": "s-video", "kind": "audio", "visual_path": null},
                 {"id": "u3", "source_id": "s-video", "kind": "visual", "visual_path": "/w/f2.jpg",
                  "annotations": [{"kind": "object", "provider": "yolo", "text": "cat"}]},
+                {"id": "u4", "source_id": "s-mail", "kind": "visual", "visual_path": "/w/m/0001-photo.jpg",
+                 "annotations": [], "metadata": {"container.member": "photo.jpg",
+                 "container.member-type": "image/jpeg"}},
+                {"id": "u5", "source_id": "s-mail", "kind": "visual", "visual_path": "/w/m/p1.png",
+                 "annotations": [], "metadata": {"container.member": "scan.pdf",
+                 "container.member-type": "application/pdf"}},
             ]
         })
     }
 
     #[test]
-    fn targets_are_unannotated_media_frames_only() {
+    fn targets_are_unannotated_media_frames_and_member_images_only() {
         let targets = targets(&graph());
         assert_eq!(
             targets,
-            [Target {
-                index: 0,
-                path: PathBuf::from("/w/f1.jpg")
-            }]
+            [
+                Target {
+                    index: 0,
+                    path: PathBuf::from("/w/f1.jpg")
+                },
+                Target {
+                    index: 4,
+                    path: PathBuf::from("/w/m/0001-photo.jpg")
+                }
+            ]
         );
     }
 

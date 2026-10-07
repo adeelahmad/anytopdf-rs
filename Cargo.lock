@@ -173,6 +173,7 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "anytopdf-core",
+ "base64 0.22.1",
  "chrono",
  "flate2",
  "image",

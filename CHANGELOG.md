@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- `anytopdf-plugin-objects` accepts YOLOX ONNX models (Apache-2.0), with raw or
+  decoded heads, alongside Ultralytics YOLOv5/v8/11. A model whose output it does
+  not recognise, or whose class count does not match its labels, now produces a
+  `plugin.warning` naming the problem instead of loading as ready and finding nothing.
+- Photos attached to emails and packed in archives get the same image enrichment
+  as standalone images: faces, objects, captions and scan flattening. Member units
+  carry their detected media type in the unit metadata entry `container.member-type`.
+
 ## 0.3.0
 
 Visual and audio analysis, cross-file search, and many new inputs.
