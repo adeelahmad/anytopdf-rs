@@ -127,80 +127,136 @@ pub fn parse_ultralytics_names(text: &str) -> Option<Vec<String>> {
     Some(names)
 }
 
+/// The detection head a model's output was recognised as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Head {
-    /// Box then class scores.
+pub enum Head {
+    /// YOLOv8 / YOLO11: box then class scores.
     Anchorless,
-    /// Box, objectness, then class scores.
+    /// YOLOv5: box, objectness, then class scores.
     Objectness,
+    /// YOLOX: box, objectness, then class scores, one row per grid cell of
+    /// strides 8, 16 and 32. Boxes may still be grid offsets and log sizes.
+    Yolox,
+}
+
+impl Head {
+    /// YOLOX expects raw 0..=255 pixels; Ultralytics models expect 0..1.
+    pub fn pixel_scale(self) -> f32 {
+        match self {
+            Head::Yolox => 255.0,
+            Head::Anchorless | Head::Objectness => 1.0,
+        }
+    }
+}
+
+/// YOLOX output strides, finest first, in the order its rows are laid out.
+const YOLOX_STRIDES: [u32; 3] = [8, 16, 32];
+
+/// Rows a YOLOX head produces for a `width` x `height` input.
+fn yolox_rows(width: u32, height: u32) -> usize {
+    YOLOX_STRIDES
+        .iter()
+        .map(|s| (width / s) as usize * (height / s) as usize)
+        .sum()
 }
 
 /// The decoded layout of one output tensor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Layout {
-    head: Head,
-    classes: usize,
+pub struct Layout {
+    pub head: Head,
+    pub classes: usize,
     boxes: usize,
     /// Features run along axis 1 (`[1, features, boxes]`).
     features_first: bool,
+    /// Model input width and height, for YOLOX grid decoding.
+    input: (u32, u32),
 }
 
-fn layout(shape: &[usize], labels: usize) -> Result<Layout> {
+/// Recognises a detection output of `shape` for a model with `labels` class
+/// names and a `width` x `height` input. Anything that is not a YOLOv8/11,
+/// YOLOv5 or YOLOX head for exactly that many classes is an error, because
+/// guessing turns an unknown model into one that silently finds nothing.
+pub fn layout(shape: &[usize], labels: usize, input: (u32, u32)) -> Result<Layout> {
     let (a, b) = match shape {
         [1, a, b] | [a, b] => (*a, *b),
-        _ => bail!("unsupported detection output shape {shape:?}; expected [1, features, boxes]"),
+        _ => bail!(
+            "unsupported detection output shape {shape:?}; expected a YOLOv8/YOLO11, \
+             YOLOv5 or YOLOX head of shape [1, features, boxes] or [1, boxes, features]"
+        ),
     };
     let pick = |features: usize, boxes: usize, features_first: bool| {
-        let (head, classes) = if labels > 0 && features == labels + 4 {
-            (Head::Anchorless, labels)
+        let head = if labels > 0 && features == labels + 4 {
+            Head::Anchorless
         } else if labels > 0 && features == labels + 5 {
-            (Head::Objectness, labels)
+            if boxes == yolox_rows(input.0, input.1) {
+                Head::Yolox
+            } else {
+                Head::Objectness
+            }
         } else {
             return None;
         };
         Some(Layout {
             head,
-            classes,
+            classes: labels,
             boxes,
             features_first,
+            input,
         })
     };
-    // Prefer the orientation whose feature count matches the labels; else
-    // assume the shorter axis holds the features, as in every YOLO export.
-    if let Some(l) = pick(a, b, true).or_else(|| pick(b, a, false)) {
+    // Prefer the orientation whose feature count matches the labels.
+    if let Some(l) = pick(b, a, false).or_else(|| pick(a, b, true)) {
         return Ok(l);
     }
-    let (features, boxes, features_first) = if a <= b { (a, b, true) } else { (b, a, false) };
-    if features <= 4 {
-        bail!("detection output shape {shape:?} has no class scores");
-    }
-    Ok(Layout {
-        head: Head::Anchorless,
-        classes: features - 4,
-        boxes,
-        features_first,
+    let features = a.min(b);
+    bail!(
+        "detection output shape {shape:?} does not match the {labels} class labels: \
+         expected {} features per box (YOLOv8/YOLO11) or {} (YOLOv5/YOLOX), found {features}; \
+         set ANYTOPDF_OBJECTS_LABELS to the model's class names, one per line",
+        labels + 4,
+        labels + 5
+    )
+}
+
+/// Whether a YOLOX output still holds grid offsets and log sizes (exported
+/// without `decode_in_inference`). Decoded centres span the input in pixels;
+/// raw ones are offsets of about one cell.
+fn yolox_is_raw(at: &dyn Fn(usize, usize) -> f32, boxes: usize) -> bool {
+    (0..boxes).all(|item| {
+        let (x, y) = (at(0, item), at(1, item));
+        !(x.is_finite() && y.is_finite()) || (x.abs() < 4.0 && y.abs() < 4.0)
     })
 }
 
 /// Decodes candidate boxes scoring at least `threshold` from a YOLO output.
-/// Returns the candidates and the number of classes the head scores.
 pub fn decode(
     output: &ArrayD<f32>,
-    labels: usize,
+    layout: &Layout,
     threshold: f32,
     allowed: &dyn Fn(usize) -> bool,
-) -> Result<(Vec<Detection>, usize)> {
+) -> Result<Vec<Detection>> {
     let shape = output.shape().to_vec();
-    let layout = layout(&shape, labels)?;
+    let actual = match shape.as_slice() {
+        [1, a, b] | [a, b] => (*a, *b),
+        _ => (0, 0),
+    };
+    let features = layout.classes
+        + match layout.head {
+            Head::Anchorless => 4,
+            Head::Objectness | Head::Yolox => 5,
+        };
+    let expected = if layout.features_first {
+        (features, layout.boxes)
+    } else {
+        (layout.boxes, features)
+    };
+    if actual != expected {
+        bail!("model output shape {shape:?} changed from the one it was loaded with");
+    }
     let flat = output
         .as_slice()
         .map(<[f32]>::to_vec)
         .unwrap_or_else(|| output.iter().copied().collect());
-    let features = layout.classes
-        + match layout.head {
-            Head::Anchorless => 4,
-            Head::Objectness => 5,
-        };
     let at = |feature: usize, item: usize| {
         if layout.features_first {
             flat[feature * layout.boxes + item]
@@ -208,12 +264,28 @@ pub fn decode(
             flat[item * features + feature]
         }
     };
+    // Each YOLOX row's grid cell and stride, when boxes still need decoding.
+    let grid: Vec<(f32, f32, f32)> = if layout.head == Head::Yolox
+        && yolox_is_raw(&at, layout.boxes)
+    {
+        let (width, height) = layout.input;
+        YOLOX_STRIDES
+            .iter()
+            .flat_map(|&s| {
+                let (columns, rows) = (width / s, height / s);
+                (0..rows)
+                    .flat_map(move |y| (0..columns).map(move |x| (x as f32, y as f32, s as f32)))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let first_class = features - layout.classes;
     let mut detections = Vec::new();
     for item in 0..layout.boxes {
         let objectness = match layout.head {
             Head::Anchorless => 1.0,
-            Head::Objectness => at(4, item),
+            Head::Objectness | Head::Yolox => at(4, item),
         };
         let mut best: Option<(usize, f32)> = None;
         for class in 0..layout.classes {
@@ -229,7 +301,13 @@ pub fn decode(
         if score < threshold {
             continue;
         }
-        let (cx, cy, w, h) = (at(0, item), at(1, item), at(2, item), at(3, item));
+        let (mut cx, mut cy, mut w, mut h) = (at(0, item), at(1, item), at(2, item), at(3, item));
+        if let Some(&(gx, gy, stride)) = grid.get(item) {
+            cx = (cx + gx) * stride;
+            cy = (cy + gy) * stride;
+            w = w.exp() * stride;
+            h = h.exp() * stride;
+        }
         if ![cx, cy, w, h].iter().all(|v| v.is_finite()) || w <= 0.0 || h <= 0.0 {
             continue;
         }
@@ -242,7 +320,7 @@ pub fn decode(
             y2: cy + h / 2.0,
         });
     }
-    Ok((detections, layout.classes))
+    Ok(detections)
 }
 
 #[cfg(test)]
@@ -268,8 +346,9 @@ mod tests {
                 0.2, 0.6, // class 1
             ],
         );
-        let (dets, classes) = decode(&output, 2, 0.5, &|_| true).unwrap();
-        assert_eq!(classes, 2);
+        let layout = layout(output.shape(), 2, (640, 640)).unwrap();
+        assert_eq!((layout.head, layout.classes), (Head::Anchorless, 2));
+        let dets = decode(&output, &layout, 0.5, &|_| true).unwrap();
         assert_eq!(dets.len(), 2);
         assert_eq!((dets[0].class, dets[0].score), (0, 0.9));
         assert_eq!(
@@ -289,7 +368,9 @@ mod tests {
                 5.0, 5.0, 2.0, 2.0, 0.1, 0.9, 0.1,
             ],
         );
-        let (dets, _) = decode(&output, 2, 0.3, &|_| true).unwrap();
+        let layout = layout(output.shape(), 2, (640, 640)).unwrap();
+        assert_eq!(layout.head, Head::Objectness);
+        let dets = decode(&output, &layout, 0.3, &|_| true).unwrap();
         assert_eq!(dets.len(), 1);
         assert!((dets[0].score - 0.45).abs() < 1e-6);
     }
@@ -297,18 +378,73 @@ mod tests {
     #[test]
     fn class_allow_list_and_threshold_filter_candidates() {
         let output = tensor(&[1, 6, 1], vec![10.0, 10.0, 4.0, 4.0, 0.9, 0.4]);
-        let (dets, _) = decode(&output, 2, 0.3, &|class| class == 1).unwrap();
+        let layout = layout(output.shape(), 2, (640, 640)).unwrap();
+        let dets = decode(&output, &layout, 0.3, &|class| class == 1).unwrap();
         assert_eq!((dets[0].class, dets[0].score), (1, 0.4));
-        let (dets, _) = decode(&output, 2, 0.5, &|class| class == 1).unwrap();
+        let dets = decode(&output, &layout, 0.5, &|class| class == 1).unwrap();
         assert!(dets.is_empty());
     }
 
     #[test]
-    fn unknown_class_counts_fall_back_to_the_short_axis() {
-        let output = tensor(&[1, 7, 10], vec![0.0; 70]);
-        let (_, classes) = decode(&output, 80, 0.5, &|_| true).unwrap();
-        assert_eq!(classes, 3);
-        assert!(decode(&tensor(&[1, 2, 2, 2], vec![0.0; 8]), 80, 0.5, &|_| true).is_err());
+    fn heads_that_do_not_match_the_labels_are_rejected_not_guessed() {
+        let error = layout(&[1, 7, 10], 80, (640, 640)).unwrap_err().to_string();
+        assert!(error.contains("expected 84 features"), "{error}");
+        assert!(error.contains("ANYTOPDF_OBJECTS_LABELS"), "{error}");
+        assert!(layout(&[1, 2, 2, 2], 80, (640, 640)).is_err());
+        assert!(layout(&[1, 84, 8400], 0, (640, 640)).is_err());
+        let wrong = layout(&[1, 6, 1], 2, (640, 640)).unwrap();
+        assert!(decode(&tensor(&[1, 7, 1], vec![0.0; 7]), &wrong, 0.5, &|_| true).is_err());
+    }
+
+    /// A 32x32 YOLOX head: 4x4 + 2x2 + 1x1 grid rows of 2 classes.
+    fn yolox(rows: &[(usize, [f32; 7])]) -> ArrayD<f32> {
+        let mut values = vec![0.0; 21 * 7];
+        for (row, features) in rows {
+            values[row * 7..row * 7 + 7].copy_from_slice(features);
+        }
+        tensor(&[1, 21, 7], values)
+    }
+
+    #[test]
+    fn yolox_heads_are_recognised_by_their_grid_rows() {
+        let output = yolox(&[]);
+        let layout = layout(output.shape(), 2, (32, 32)).unwrap();
+        assert_eq!(layout.head, Head::Yolox);
+        assert_eq!(layout.head.pixel_scale(), 255.0);
+        // The same shape at another input size is YOLOv5-style.
+        assert_eq!(
+            super::layout(output.shape(), 2, (64, 64)).unwrap().head,
+            Head::Objectness
+        );
+    }
+
+    #[test]
+    fn raw_yolox_offsets_are_decoded_on_their_grid() {
+        // Row 5 is stride 8, cell (1, 1); row 20 is the stride-32 cell.
+        let output = yolox(&[
+            (5, [0.5, 0.5, 0.0, 1f32.ln(), 0.9, 0.1, 0.8]),
+            (20, [0.5, 0.5, 2f32.ln(), 0.0, 0.5, 0.9, 0.2]),
+        ]);
+        let layout = layout(output.shape(), 2, (32, 32)).unwrap();
+        let dets = decode(&output, &layout, 0.3, &|_| true).unwrap();
+        assert_eq!(dets.len(), 2);
+        assert_eq!(dets[0].class, 1);
+        assert!((dets[0].score - 0.72).abs() < 1e-6);
+        let corners = |d: &Detection| [d.x1, d.y1, d.x2, d.y2].map(|v| (v * 100.0).round() / 100.0);
+        assert_eq!(corners(&dets[0]), [8.0, 8.0, 16.0, 16.0]);
+        assert_eq!(dets[1].class, 0);
+        assert_eq!(corners(&dets[1]), [-16.0, 0.0, 48.0, 32.0]);
+    }
+
+    #[test]
+    fn decoded_yolox_boxes_are_used_as_they_are() {
+        let output = yolox(&[(0, [20.0, 12.0, 8.0, 4.0, 1.0, 0.9, 0.0])]);
+        let layout = layout(output.shape(), 2, (32, 32)).unwrap();
+        let dets = decode(&output, &layout, 0.5, &|_| true).unwrap();
+        assert_eq!(
+            (dets[0].x1, dets[0].y1, dets[0].x2, dets[0].y2),
+            (16.0, 10.0, 24.0, 14.0)
+        );
     }
 
     #[test]

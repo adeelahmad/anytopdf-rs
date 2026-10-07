@@ -382,7 +382,7 @@ answer becomes a `plugin.warning`, and the PDF is still written.
 ### Object detection
 
 `anytopdf-plugin-objects` runs a YOLO object detector on every image and video
-keyframe. Each detection becomes a searchable `object` annotation with its label,
+keyframe, including photos attached to emails or packed in archives. Each detection becomes a searchable `object` annotation with its label,
 confidence, normalized box and (for video) the frame's time, and each frame also
 gets a count such as `objects: 4 person, 1 bus`, so searching the PDF for "dog"
 finds the frames with a dog. Pages of PDF, Office and HTML documents are skipped.
@@ -391,7 +391,14 @@ Inference runs on [tract](https://github.com/sonos/tract), a pure-Rust ONNX
 runtime, so the plugin needs no Python, CUDA or native library. It takes a YOLOv8
 or YOLO11 ONNX export (YOLOv5 exports work too); `yolo11n.onnx` from the
 [Ultralytics assets release](https://github.com/ultralytics/assets/releases/tag/v8.3.0)
-is a good default and labels the 80 COCO classes. From source:
+is a good default and labels the 80 COCO classes. Ultralytics models are AGPL; for
+an Apache-2.0 model use a YOLOX export, such as `yolox_s.onnx` from the
+[YOLOX releases](https://github.com/Megvii-BaseDetection/YOLOX/releases) or
+`object_detection_yolox_2022nov.onnx` from the
+[OpenCV model zoo](https://github.com/opencv/opencv_zoo/tree/main/models/object_detection_yolox).
+The head type is recognised from the model's output shape; a model that is none of
+these, or whose class count does not match its labels, is reported as a warning
+instead of silently finding nothing. From source:
 
 ```bash
 cargo build --release -p anytopdf-plugin-objects

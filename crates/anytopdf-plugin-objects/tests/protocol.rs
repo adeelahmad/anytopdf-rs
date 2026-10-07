@@ -218,3 +218,62 @@ fn unreadable_frames_and_bad_settings_are_warnings() {
             .contains("\"giraffe\"")
     );
 }
+
+/// A 32x32 fixture model with `names` cat and dog whose output is `values`
+/// in `shape`.
+fn model_with_head(dir: &Path, shape: &[i64], values: Vec<f32>) -> std::path::PathBuf {
+    let model = dir.join("head.onnx");
+    let proto = testing::constant_model(
+        Some(32),
+        shape,
+        values,
+        &[("names", "{0: 'cat', 1: 'dog'}")],
+    );
+    fs::write(&model, testing::encode(&proto)).unwrap();
+    model
+}
+
+#[test]
+fn yolox_models_find_objects() {
+    let dir = tempfile::tempdir().unwrap();
+    let frame = dir.path().join("frame.png");
+    image::RgbImage::from_pixel(32, 32, image::Rgb([40, 80, 120]))
+        .save(&frame)
+        .unwrap();
+    // A raw YOLOX head for a 32x32 input: 4x4 + 2x2 + 1x1 grid rows, each
+    // `x, y, log w, log h, objectness, cat, dog`. Row 5 is the stride-8 cell
+    // (1, 1): an 8x8 cat box at (8, 8).
+    let mut head = vec![0.0; 21 * 7];
+    head[5 * 7..6 * 7].copy_from_slice(&[0.5, 0.5, 0.0, 0.0, 0.9, 0.95, 0.1]);
+    let model = model_with_head(dir.path(), &[1, 21, 7], head);
+    let mut command = plugin();
+    command.env("ANYTOPDF_OBJECTS_MODEL", &model);
+    let response = exchange(&mut command, dir.path(), frame_graph(&frame));
+    assert_eq!(response["warnings"], json!([]));
+    let cat = &response["graph"]["units"][0]["annotations"][0];
+    assert_eq!(cat["text"], "cat");
+    let region = &cat["region"];
+    for (key, expected) in [("x", 0.25), ("y", 0.25), ("width", 0.25), ("height", 0.25)] {
+        let value = region[key].as_f64().unwrap();
+        assert!((value - expected).abs() < 1e-5, "{key} = {value}");
+    }
+}
+
+#[test]
+fn unrecognised_models_are_reported_instead_of_finding_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (frame, _) = fixture(dir.path());
+    // Nine features per box fits neither 2 + 4 nor 2 + 5.
+    let model = model_with_head(dir.path(), &[1, 9, 3], vec![0.5; 27]);
+    let mut command = plugin();
+    command.env("ANYTOPDF_OBJECTS_MODEL", &model);
+    let response = exchange(&mut command, dir.path(), frame_graph(&frame));
+    assert_eq!(response["ok"], true);
+    assert!(response.get("graph").is_none());
+    let warning = response["warnings"][0].as_str().unwrap();
+    assert!(
+        warning.contains("head.onnx is not a recognised YOLO detector"),
+        "{warning}"
+    );
+    assert!(warning.contains("1 image(s) not analysed"), "{warning}");
+}
