@@ -516,7 +516,11 @@ Importers:
 - audio container placeholder units
 - text / Markdown
 - JSON and JSON Lines (`.json`, `.jsonl`, `.ndjson`, or sniffed): one searchable chunk per record with its key paths, API envelopes such as `{"data": [...]}` split into records, other documents as an indented outline
-- HTML pages (readable text, title and image alt text; no network fetches)
+- HTML pages (readable text, title and image alt text; no network fetches). With
+  `--html-render` (`[html] render = true`) headless Chrome, Chromium or Edge prints the
+  page offline (no remote images, fonts or scripts) and each printed page becomes an
+  image page with the page's own text as its searchable layer; without a browser or
+  Poppler `pdftoppm` the file falls back to readable text with a warning
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - chat exports: WhatsApp (`_chat.txt` or the exported `.zip`), Telegram Desktop JSON
   (`result.json`, one chat or a whole account), Slack workspace exports (the `.zip`, or

@@ -1,4 +1,4 @@
-//! Rendered page snapshots: headless Chrome, Chromium or Edge printing the page to PDF.
+//! Rendered page snapshots: headless Chrome, Chromium or Edge printing a page to PDF.
 
 use anyhow::{Context, Result, bail};
 use anytopdf_core::{CommandExt, contain_process_tree};
@@ -8,12 +8,15 @@ use std::process::Command;
 use std::time::Duration;
 
 /// Print `url` to `out` as a PDF with a throwaway browser profile under `scratch`.
-pub(super) fn print_to_pdf(
+/// `offline` sends every network request to a closed local port, so a local page
+/// renders without fetching remote images, fonts or scripts.
+pub fn print_to_pdf(
     chrome: &Path,
     url: &str,
     out: &Path,
     scratch: &Path,
     timeout: Duration,
+    offline: bool,
 ) -> Result<()> {
     let profile = scratch.join("chrome-profile");
     fs::create_dir_all(&profile)?;
@@ -33,6 +36,13 @@ pub(super) fn print_to_pdf(
     ]);
     cmd.arg(format!("--user-data-dir={}", profile.display()));
     cmd.arg(format!("--print-to-pdf={}", out.display()));
+    if offline {
+        cmd.args([
+            "--proxy-server=127.0.0.1:9",
+            "--proxy-bypass-list=<-loopback>",
+            "--disable-background-networking",
+        ]);
+    }
     if running_as_root() {
         // Chrome refuses to start its sandbox as root (containers, CI).
         cmd.arg("--no-sandbox");

@@ -100,6 +100,9 @@
     "captions": {
       "$ref": "#/$defs/captions"
     },
+    "html": {
+      "$ref": "#/$defs/html"
+    },
     "entities": {
       "$ref": "#/$defs/entities"
     },
@@ -207,6 +210,18 @@
           "description": "Read subtitle tracks embedded in video files.",
           "type": "boolean",
           "default": true
+        }
+      }
+    },
+    "html": {
+      "title": "HTML files",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "render": {
+          "description": "Render each local HTML file with headless Chrome, Chromium or Edge into page images that keep the page's text as a searchable layer. The page renders offline, so remote images, fonts and scripts are not fetched. Without a browser or Poppler pdftoppm the file is imported as readable text with a warning.",
+          "type": "boolean",
+          "default": false
         }
       }
     },

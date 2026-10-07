@@ -1,3 +1,4 @@
+mod browser;
 mod captions;
 pub mod capture;
 mod chat;
@@ -25,6 +26,7 @@ use std::sync::Arc;
 /// playlist cannot make them fetch network URLs.
 pub(crate) const FFMPEG_PROTOCOLS: &str = "file";
 
+pub use browser::print_to_pdf;
 pub use chat::{ChatDateOrder, ChatOptions};
 pub use colors::{DominantColor, dominant_colors};
 pub use dates::DateOrder;
@@ -35,8 +37,8 @@ pub use importers::StructuredOptions;
 pub use location::{LocationEnricher, LocationMode};
 pub use ocr::{OcrEnricher, OcrMode, OcrProviderStatus};
 pub use options::{
-    BuiltinOptions, CaptionOptions, ColorOptions, EntityOptions, ImageOptions, LocationOptions,
-    OcrOptions, OptionTable, RawOptions, ScanOptions, VideoOptions, option_tables,
+    BuiltinOptions, CaptionOptions, ColorOptions, EntityOptions, HtmlOptions, ImageOptions,
+    LocationOptions, OcrOptions, OptionTable, RawOptions, ScanOptions, VideoOptions, option_tables,
 };
 pub use providers::{
     PROVIDER_NAMES, ProviderVersion, URL_PROVIDERS, chrome_path, detect_providers,
@@ -60,7 +62,7 @@ pub fn register_builtins(registry: &mut Registry, opts: BuiltinOptions) {
     registry.register_importer(Arc::new(importers::StructuredImporter::new(
         opts.structured.clone(),
     )));
-    registry.register_importer(Arc::new(importers::HtmlImporter));
+    registry.register_importer(Arc::new(importers::HtmlImporter::new(opts.html.render)));
     registry.register_importer(Arc::new(importers::EmailImporter));
     registry.register_importer(Arc::new(importers::ArchiveImporter));
     registry.register_importer(Arc::new(importers::SubtitleImporter));

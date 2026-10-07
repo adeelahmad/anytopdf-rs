@@ -1,10 +1,29 @@
+use super::office::{file_url, page_text, rasterize, word_annotation};
+use super::{TEXT_LAYER_KEY, TEXT_LAYER_NATIVE};
 use crate::html::readable_text;
+use crate::{chrome_path, print_to_pdf};
 use anyhow::{Context, Result};
 use anytopdf_core::*;
 use std::fs;
 use std::io::Read;
+use std::path::PathBuf;
+use std::time::Duration;
 
-pub struct HtmlImporter;
+/// Local HTML files. By default the readable text becomes one text unit; with
+/// `render` a headless browser prints the page and each printed page becomes an
+/// image page carrying the page's own positioned text.
+pub struct HtmlImporter {
+    render: bool,
+}
+
+impl HtmlImporter {
+    pub fn new(render: bool) -> Self {
+        Self { render }
+    }
+}
+
+/// How long the browser may take to print one page.
+const RENDER_TIMEOUT: Duration = Duration::from_secs(120);
 
 const SNIFF_BYTES: usize = 1024;
 
@@ -52,7 +71,7 @@ impl Importer for HtmlImporter {
         }
     }
 
-    fn import(&self, _ctx: &JobContext, mut source: SourceRecord) -> Result<ImportOutcome> {
+    fn import(&self, ctx: &JobContext, mut source: SourceRecord) -> Result<ImportOutcome> {
         let bytes =
             fs::read(&source.path).with_context(|| format!("read {}", source.path.display()))?;
         let mut warnings = Vec::new();
@@ -81,12 +100,91 @@ impl Importer for HtmlImporter {
             }
             source.metadata.insert("html.title".into(), title);
         }
+        if self.render {
+            match render_pages(ctx, &source, chrome_path()) {
+                Ok(units) => {
+                    return Ok(ImportOutcome {
+                        units,
+                        source,
+                        warnings,
+                    });
+                }
+                Err((code, why)) => {
+                    let name = anytopdf_core::basename(&source.path);
+                    warnings.push(
+                        Diagnostic::new(
+                            code,
+                            format!("{name} was imported as text without page images: {why}"),
+                        )
+                        .to_string(),
+                    );
+                }
+            }
+        }
         Ok(ImportOutcome {
             units: vec![Unit::text(source.id, text)],
             source,
             warnings,
         })
     }
+}
+
+/// Prints the page with a headless browser and turns each printed page into an
+/// image unit with the page's positioned text.
+fn render_pages(
+    ctx: &JobContext,
+    source: &SourceRecord,
+    chrome: Option<PathBuf>,
+) -> std::result::Result<Vec<Unit>, (DiagnosticCode, String)> {
+    let missing = |what: &str| (DiagnosticCode::ProviderMissing, format!("{what} not found"));
+    let chrome = chrome.ok_or_else(|| missing("Chrome, Chromium or Edge"))?;
+    let pdftoppm = which::which("pdftoppm").map_err(|_| missing("Poppler pdftoppm"))?;
+    let failed = |e: anyhow::Error| (DiagnosticCode::ProviderFailed, format!("{e:#}"));
+    let root = ctx.workspace.join(format!("html-{}", source.id));
+    fs::create_dir_all(&root)
+        .context("create the render folder")
+        .map_err(failed)?;
+    let page = fs::canonicalize(&source.path)
+        .with_context(|| format!("resolve {}", source.path.display()))
+        .map_err(failed)?;
+    let pdf = root.join("page.pdf");
+    print_to_pdf(&chrome, &file_url(&page), &pdf, &root, RENDER_TIMEOUT, true).map_err(failed)?;
+    let images = rasterize(&pdftoppm, &pdf, &root.join("pages")).map_err(failed)?;
+    let text = which::which("pdftotext")
+        .ok()
+        .and_then(|exe| page_text(&exe, &pdf, &root).ok())
+        .unwrap_or_default();
+    Ok(page_units(source, images, &text))
+}
+
+fn page_units(
+    source: &SourceRecord,
+    images: Vec<PathBuf>,
+    text: &[Vec<super::office::TextWord>],
+) -> Vec<Unit> {
+    images
+        .into_iter()
+        .enumerate()
+        .map(|(index, image)| {
+            let mut unit = Unit::visual(source.id, image);
+            unit.anchor = Some(Anchor::Region {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+                frame: Some(index as u32),
+            });
+            unit.metadata
+                .insert("html.page".into(), (index + 1).to_string());
+            // Pages that already carry text skip OCR.
+            if let Some(words) = text.get(index).filter(|w| !w.is_empty()) {
+                unit.metadata
+                    .insert(TEXT_LAYER_KEY.into(), TEXT_LAYER_NATIVE.into());
+                unit.annotations.extend(words.iter().map(word_annotation));
+            }
+            unit
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -106,7 +204,7 @@ mod tests {
             workspace: dir.into(),
             quiet: true,
         };
-        HtmlImporter.import(&ctx, source).unwrap()
+        HtmlImporter::new(false).import(&ctx, source).unwrap()
     }
 
     #[test]
@@ -153,6 +251,56 @@ mod tests {
         );
         let d = Diagnostic::from_wire(&outcome.warnings[0]);
         assert_eq!(d.code, DiagnosticCode::LossyDecode);
+    }
+
+    #[test]
+    fn render_without_a_browser_falls_back_to_text_with_a_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = write(dir.path(), "page.html", b"<p>Paid 12</p>");
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        let err = render_pages(&ctx, &source, None).unwrap_err();
+        assert_eq!(err.0, DiagnosticCode::ProviderMissing);
+        assert!(err.1.contains("Chrome"), "{}", err.1);
+        let outcome = HtmlImporter::new(false).import(&ctx, source).unwrap();
+        assert_eq!(outcome.units[0].kind, UnitKind::Text);
+    }
+
+    #[test]
+    fn render_prints_pages_with_their_text_when_a_browser_is_installed() {
+        let (Some(chrome), Ok(_)) = (chrome_path(), which::which("pdftoppm")) else {
+            eprintln!("skipped: needs Chrome/Chromium and pdftoppm");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let source = write(
+            dir.path(),
+            "invoice page.html",
+            b"<html><head><title>Invoice</title></head><body><nav>Home</nav>\
+              <main><h1>Invoice 42</h1><p>Total paid 128.40</p>\
+              <img src=\"https://example.invalid/pixel.png\"></main></body></html>",
+        );
+        let ctx = JobContext {
+            workspace: dir.path().into(),
+            quiet: true,
+        };
+        let units = render_pages(&ctx, &source, Some(chrome)).unwrap();
+        assert!(!units.is_empty());
+        let first = &units[0];
+        assert_eq!(first.kind, UnitKind::Visual);
+        assert!(first.visual_path.as_ref().unwrap().starts_with(dir.path()));
+        assert_eq!(first.metadata["html.page"], "1");
+        if which::which("pdftotext").is_ok() {
+            let text: Vec<&str> = first.annotations.iter().map(|a| a.text.as_str()).collect();
+            let text = text.join(" ");
+            assert!(
+                text.contains("Invoice 42") && text.contains("128.40"),
+                "{text}"
+            );
+            assert_eq!(first.metadata[TEXT_LAYER_KEY], TEXT_LAYER_NATIVE);
+        }
     }
 
     #[test]

@@ -6,10 +6,9 @@ mod guard;
 mod http;
 mod links;
 mod media;
-mod snapshot;
 
 use crate::exit::{CliError, ExitClass, fail, tag};
-use anytopdf_builtin::{chrome_path, ytdlp_path};
+use anytopdf_builtin::{chrome_path, print_to_pdf, ytdlp_path};
 use anytopdf_core::{Annotation, AnnotationKind, Diagnostic, DiagnosticCode, DocumentGraph, Unit};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -263,7 +262,7 @@ fn fetch_one(
         && let Some(chrome) = snapshot_browser(opts.snapshot, url, warnings)
     {
         let out = dir.join(format!("{name}.snapshot.pdf"));
-        match snapshot::print_to_pdf(&chrome, &got.final_url, &out, dir, opts.timeout) {
+        match print_to_pdf(&chrome, &got.final_url, &out, dir, opts.timeout, false) {
             Ok(()) => origins.push(Origin {
                 path: canonical(out),
                 metadata: source("snapshot"),

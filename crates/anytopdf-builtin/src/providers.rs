@@ -32,17 +32,23 @@ pub fn chrome_path() -> Option<PathBuf> {
         let path = PathBuf::from(path);
         return path.is_file().then_some(path);
     }
+    // Vendor builds first: they ship the AppArmor profile Ubuntu 24.04 needs for the
+    // browser sandbox, which distribution and downloaded Chromium builds may lack.
     let names = [
-        "chromium",
-        "chromium-browser",
         "google-chrome",
         "google-chrome-stable",
         "chrome",
         "msedge",
         "microsoft-edge",
+        "chromium",
+        "chromium-browser",
     ];
-    if let Some(found) = names.iter().find_map(|n| which::which(n).ok()) {
-        return Some(found);
+    // Snap-packaged Chromium (Ubuntu's `chromium`) cannot read or write files
+    // outside the user's home, so the job workspace in the temp folder is out of its
+    // reach; any other install on PATH goes first.
+    let found: Vec<PathBuf> = names.iter().filter_map(|n| which::which(n).ok()).collect();
+    if let Some(found) = found.iter().find(|p| !is_snap(p)).or_else(|| found.first()) {
+        return Some(found.clone());
     }
     let mut known: Vec<PathBuf> = Vec::new();
     if cfg!(target_os = "macos") {
@@ -60,6 +66,17 @@ pub fn chrome_path() -> Option<PathBuf> {
         }
     }
     known.into_iter().find(|p| p.is_file())
+}
+
+/// Whether `path` is a snap package or a launcher script that runs one.
+fn is_snap(path: &std::path::Path) -> bool {
+    if std::fs::canonicalize(path).is_ok_and(|p| p.starts_with("/snap")) {
+        return true;
+    }
+    // Launcher scripts are small; a real browser binary is not read.
+    std::fs::metadata(path).is_ok_and(|m| m.len() < 16 * 1024)
+        && std::fs::read(path)
+            .is_ok_and(|b| b.starts_with(b"#!") && b.windows(6).any(|w| w == b"/snap/"))
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +169,18 @@ fn parse_version(name: &str, output: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snap_browsers_and_their_launchers_are_recognised() {
+        let dir = tempfile::tempdir().unwrap();
+        let launcher = dir.path().join("chromium-browser");
+        std::fs::write(&launcher, "#!/bin/sh\nexec /snap/bin/chromium \"$@\"\n").unwrap();
+        let real = dir.path().join("chrome");
+        std::fs::write(&real, b"\x7fELF not a script").unwrap();
+        assert!(is_snap(&launcher));
+        assert!(!is_snap(&real));
+        assert!(!is_snap(&dir.path().join("missing")));
+    }
 
     #[test]
     fn parses_first_line_versions_of_known_providers() {
