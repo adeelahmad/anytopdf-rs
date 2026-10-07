@@ -106,12 +106,21 @@ a private LibreOffice profile, so the original file is never opened in place.
 
 ### Whisper transcription
 
-Turn on speech-to-text in one step:
+The release archives ship the Whisper plugin but not a Whisper engine, so
+transcription stays off until you install one. One command turns it on:
+
+| System | Command |
+| --- | --- |
+| macOS | `brew install whisper-cpp && anytopdf setup whisper` |
+| Linux, Raspberry Pi | `pipx install whisper-ctranslate2` (faster-whisper; fetches its own model on first use) |
+| Windows | `pipx install whisper-ctranslate2`, or unpack `whisper-bin-x64.zip` from the [whisper.cpp releases](https://github.com/ggml-org/whisper.cpp/releases), put `whisper-cli.exe` on `PATH` and run `anytopdf setup whisper` |
 
 ```bash
 anytopdf setup whisper              # downloads ggml-base.bin (142 MiB), checks its SHA-1
 anytopdf convert meeting.mp4 -o meeting.pdf
 ```
+
+`anytopdf doctor` prints the same command for your system while anything is missing.
 
 `anytopdf-plugin-whisper` transcribes audio and video sources that have no
 sidecar or `--transcript` transcript. It extracts the audio with FFmpeg and runs
