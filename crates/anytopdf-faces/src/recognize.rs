@@ -4,7 +4,9 @@
 //! earlier unnamed clusters). The best match at or above the threshold names
 //! the face; otherwise the face starts a new `person-N` cluster that later
 //! faces in this run, and later runs, can join. Two faces in one unit never
-//! resolve to the same person.
+//! resolve to the same person. Only confident matches (at or above
+//! [`LEARN_THRESHOLD`]) add the face to the person's stored embeddings, so a
+//! borderline match cannot pull later faces toward the wrong person.
 
 use crate::index::{FaceIndex, Person, Sighting};
 use crate::vector;
@@ -16,6 +18,10 @@ use std::collections::{BTreeMap, HashMap, HashSet, hash_map::Entry};
 /// Cosine similarity at which a face counts as a known person. Suits
 /// ArcFace-style 512-d embeddings; other models may need their own value.
 pub const DEFAULT_THRESHOLD: f32 = 0.40;
+
+/// Cosine similarity a match needs before the face is remembered as another
+/// example of that person. Faces that start a new person are always kept.
+pub const LEARN_THRESHOLD: f32 = 0.60;
 
 /// Display name (or `person-N` label) of the recognized person.
 pub const PERSON_ATTR: &str = "person";
@@ -30,12 +36,25 @@ pub const SUMMARY_PEOPLE: &str = "people";
 #[derive(Debug, Clone)]
 pub struct Options {
     pub threshold: f32,
+    /// Similarity at or above which a matched face joins the person's stored
+    /// embeddings; never below `threshold`.
+    pub learn_threshold: f32,
+}
+
+impl Options {
+    pub fn with_threshold(threshold: f32) -> Self {
+        Self {
+            threshold,
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
             threshold: DEFAULT_THRESHOLD,
+            learn_threshold: LEARN_THRESHOLD,
         }
     }
 }
@@ -104,8 +123,11 @@ pub fn recognize(
                     }
                 };
                 taken.insert(person_id);
-                gallery.push((person_id, v.clone()));
-                index.add_observed(person_id, &embedded.model, &v)?;
+                let learn = opts.learn_threshold.max(opts.threshold);
+                if similarity.is_none_or(|score| score >= learn) {
+                    gallery.push((person_id, v.clone()));
+                    index.add_observed(person_id, &embedded.model, &v)?;
+                }
                 let time = annotation.time_range.or(unit.time_range);
                 let region = annotation.region.map(|r| [r.x, r.y, r.width, r.height]);
                 index.add_sighting(
@@ -428,6 +450,42 @@ mod tests {
             summary.visible_text.as_deref(),
             Some("People in party.mp4\n\nAlice: 0:05, 1:05\n")
         );
+    }
+
+    #[test]
+    fn borderline_matches_are_named_but_not_learned() {
+        let mut index = FaceIndex::open_in_memory().unwrap();
+        index.enroll("Alice", "m", &[vec![1.0, 0.0, 0.0]]).unwrap();
+        // "b" matches Alice at 0.50: named, but not stored. "c" sits close to
+        // "b" and far from Alice, so it must not reach Alice through "b".
+        let mut g = graph(vec![
+            vec![face("a", 1.0)],
+            vec![face("b", 2.0)],
+            vec![face("c", 3.0)],
+        ]);
+        let outcome = recognize(
+            &mut g,
+            &embedded(&[
+                ("a", [0.98, 0.0, 0.2]),
+                ("b", [0.5, 0.866, 0.0]),
+                ("c", [0.1, 0.995, 0.0]),
+            ]),
+            &mut index,
+            &Options::default(),
+        )
+        .unwrap();
+        assert_eq!((outcome.recognized, outcome.new_people), (2, 1));
+        assert_eq!(
+            people(&g),
+            [
+                Some("Alice".into()),
+                Some("Alice".into()),
+                Some("person-2".into())
+            ]
+        );
+        // Enrolled photo + the confident match "a" + new person "c".
+        assert_eq!(index.gallery("m").unwrap().len(), 3);
+        assert_eq!(index.sightings("m").unwrap().len(), 3);
     }
 
     #[test]

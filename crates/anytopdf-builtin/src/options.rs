@@ -67,6 +67,15 @@ impl Default for OcrOptions {
     }
 }
 
+/// `[html]`: local HTML files.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HtmlOptions {
+    /// Render each page with a headless Chrome-family browser into page images
+    /// that keep the page's text, instead of importing readable text only.
+    pub render: bool,
+}
+
 /// `[captions]`: sidecar and embedded captions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -168,6 +177,7 @@ pub struct BuiltinOptions {
     pub video: VideoOptions,
     pub ocr: OcrOptions,
     pub captions: CaptionOptions,
+    pub html: HtmlOptions,
     /// Transcripts named on the command line for this run.
     pub explicit_transcripts: Vec<PathBuf>,
     // Flattened from the `[entities]`, `[colors]`, `[raw]`, `[scan]` and
@@ -193,6 +203,7 @@ impl Default for BuiltinOptions {
             video: VideoOptions::default(),
             ocr: OcrOptions::default(),
             captions: CaptionOptions::default(),
+            html: HtmlOptions::default(),
             explicit_transcripts: Vec::new(),
             entities: true,
             date_order: DateOrder::DayFirst,
@@ -214,6 +225,7 @@ impl BuiltinOptions {
             video: tables.get("video")?,
             ocr: tables.get("ocr")?,
             captions: tables.get("captions")?,
+            html: tables.get("html")?,
             ..Self::default()
         }
         .with_flat_tables(tables)
@@ -260,6 +272,7 @@ pub fn option_tables() -> Vec<OptionTable> {
         table("video", VideoOptions::default()),
         table("ocr", OcrOptions::default()),
         table("captions", CaptionOptions::default()),
+        table("html", HtmlOptions::default()),
         table("entities", EntityOptions::default()),
         table("colors", ColorOptions::default()),
         table("location", LocationOptions::default()),
@@ -284,6 +297,7 @@ mod tests {
         assert_eq!(options.ocr.mode, OcrMode::Off);
         assert_eq!(options.ocr.lang, "eng");
         assert_eq!(options.image, ImageOptions::default());
+        assert!(!options.html.render);
         assert!(options.entities && options.colors);
         assert_eq!(options.location, LocationMode::On);
     }

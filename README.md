@@ -304,7 +304,9 @@ default and needs two runtime plugins: a face detector that adds `face`
 annotations with five-point landmarks, and `anytopdf-plugin-face-id`, which
 embeds each face with an ArcFace-style ONNX model (for example InsightFace
 `w600k_mbf.onnx` or `w600k_r50.onnx`; check the model's licence) using pure-Rust
-inference, so no Python or ONNX Runtime install is needed.
+inference, so no Python or ONNX Runtime install is needed. OpenCV SFace and the
+ONNX-zoo ArcFace R100 work too: models that scale their own input get raw 0-255
+pixels, others -1 to 1 (`ANYTOPDF_FACE_EMBED_INPUT=raw|normalized` overrides).
 
 ```bash
 cargo build --release -p anytopdf-plugin-face-id
@@ -326,7 +328,8 @@ The index is `faces.sqlite` in the anytopdf data directory
 `--face-index`). It holds embeddings and sightings, which never go into a PDF.
 `--face-threshold` (default 0.40, cosine similarity) sets how close a face must
 be to count as a known person; two faces in one frame are never the same
-person. Embedding runs as one plugin call per conversion, so raise
+person. Only matches at 0.60 or above are remembered as more examples of that
+person, so a borderline match never pulls later faces toward the wrong person. Embedding runs as one plugin call per conversion, so raise
 `--plugin-timeout` for long videos. `--profile share` leaves names and the
 "People in …" pages out of the PDF. Identities come only from people you enroll
 or name: nothing infers age, gender, emotion or other traits.
@@ -520,7 +523,11 @@ Importers:
 - audio container placeholder units
 - text / Markdown
 - JSON and JSON Lines (`.json`, `.jsonl`, `.ndjson`, or sniffed): one searchable chunk per record with its key paths, API envelopes such as `{"data": [...]}` split into records, other documents as an indented outline
-- HTML pages (readable text, title and image alt text; no network fetches)
+- HTML pages (readable text, title and image alt text; no network fetches). With
+  `--html-render` (`[html] render = true`) headless Chrome, Chromium or Edge prints the
+  page offline (no remote images, fonts or scripts) and each printed page becomes an
+  image page with the page's own text as its searchable layer; without a browser or
+  Poppler `pdftoppm` the file falls back to readable text with a warning
 - email (`.eml`, `.mbox`): headers and body as text; attachments imported by their own importers
 - chat exports: WhatsApp (`_chat.txt` or the exported `.zip`), Telegram Desktop JSON
   (`result.json`, one chat or a whole account), Slack workspace exports (the `.zip`, or

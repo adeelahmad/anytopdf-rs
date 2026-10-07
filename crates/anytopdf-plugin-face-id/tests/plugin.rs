@@ -158,3 +158,51 @@ fn graphs_without_faces_need_no_model() {
     assert_eq!(response["warnings"], json!([]));
     assert!(response["graph"].is_null());
 }
+
+/// Regression for 0.3.0, where every crop was scaled to -1..1 even for models
+/// that scale their own input (SFace, ONNX-zoo ArcFace): the model then saw a
+/// near-black image for every face, so different people scored 0.94 to 0.98.
+#[test]
+fn different_faces_score_low_with_a_model_that_scales_its_own_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let workspace = dir.path().join("job");
+    fs::create_dir_all(workspace.join("faces")).unwrap();
+    let light_left = |x: u32, _: u32, boost: u8| if x < 56 { 220 + boost } else { 40 + boost };
+    let light_top = |_: u32, y: u32, _: u8| if y < 56 { 220 } else { 40 };
+    for (name, shade) in [
+        ("a.png", &light_left as &dyn Fn(u32, u32, u8) -> u8),
+        ("b.png", &light_top),
+    ] {
+        image::RgbImage::from_fn(112, 112, |x, y| image::Rgb([shade(x, y, 0); 3]))
+            .save(workspace.join("faces").join(name))
+            .unwrap();
+    }
+    // The same "person" again, a little brighter.
+    image::RgbImage::from_fn(112, 112, |x, y| image::Rgb([light_left(x, y, 15); 3]))
+        .save(workspace.join("faces/a2.png"))
+        .unwrap();
+    let g = graph(
+        dir.path(),
+        ["a", "b", "a2"]
+            .iter()
+            .map(|n| face(json!({"crop": format!("faces/{n}.png")})))
+            .collect(),
+    );
+    let model = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/tiny-embed-raw.onnx")
+        .display()
+        .to_string();
+    let response = run(&workspace, g, &model);
+    assert_eq!(response["warnings"], json!([]), "{response}");
+    let embedded = anytopdf_faces::workspace::read_all(&workspace).unwrap();
+    let vector = |i: usize| {
+        let face_ref = response["graph"]["units"][0]["annotations"][i]["attributes"]["face.ref"]
+            .as_str()
+            .unwrap();
+        embedded[face_ref].vector.clone()
+    };
+    let cosine = anytopdf_faces::vector::cosine;
+    let (a, b, a2) = (vector(0), vector(1), vector(2));
+    assert!(cosine(&a, &b) < 0.2, "different faces: {}", cosine(&a, &b));
+    assert!(cosine(&a, &a2) > 0.9, "same face: {}", cosine(&a, &a2));
+}

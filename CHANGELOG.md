@@ -11,6 +11,16 @@
 - Photos attached to emails and packed in archives get the same image enrichment
   as standalone images: faces, objects, captions and scan flattening. Member units
   carry their detected media type in the unit metadata entry `container.member-type`.
+- Face recognition told nobody apart with OpenCV SFace or the ONNX-zoo ArcFace R100:
+  `anytopdf-plugin-face-id` scaled every crop to -1..1, but these models scale their
+  own input, so each face looked almost black and different people scored 0.94 to
+  0.98. Models whose graph starts by rescaling its input now get raw 0-255 pixels
+  (`ANYTOPDF_FACE_EMBED_INPUT=raw|normalized` overrides). Their faces get a new model
+  id, so vectors from 0.3.0 are ignored: re-run `anytopdf faces enroll` for people
+  enrolled with those models. InsightFace models such as `w600k_mbf` are unchanged.
+- A face recognized below 0.60 similarity is still named but no longer added to that
+  person's stored faces, so one borderline match cannot pull later faces toward the
+  wrong person.
 
 ## 0.3.0
 
