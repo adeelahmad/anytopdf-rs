@@ -282,6 +282,8 @@ request's `options`. Child conversions (queue, MCP, mail watcher) receive the sa
 - `anytopdf-plugin-objects` (shipped in `crates/anytopdf-plugin-objects`; YOLO ONNX
   models on the shared pure-Rust runtime in `crates/anytopdf-onnx`)
 - `anytopdf-plugin-sentiment` (shipped in `crates/anytopdf-plugin-sentiment`)
+- `anytopdf-plugin-tika` (shipped in `crates/anytopdf-plugin-tika`; a catch-all
+  importer through an Apache Tika server or tika-app jar)
 - `anytopdf-plugin-audio-events` (shipped in `crates/anytopdf-plugin-audio-events`)
 - `anytopdf-plugin-vlm` (shipped in `crates/anytopdf-plugin-vlm`)
 - `anytopdf-plugin-paddleocr`

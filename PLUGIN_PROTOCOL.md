@@ -54,6 +54,13 @@ runs (see Discovery below). A plugin found on `PATH` or `ANYTOPDF_PLUGIN_PATH`
 is registered whatever it reports, so its own warnings explain a missing
 dependency during conversion.
 
+An importer capability whose `mime_types` include `"*/*"` is a catch-all: it
+matches every source, with or without a detected type, but only when no other
+importer claims it (not even by text sniffing). Its `extensions` and other
+`mime_types` still match at their usual strength. `anytopdf-plugin-tika` uses
+this to take only the files no built-in importer reads. Hosts up to 0.4.0 scored
+`*/*` like any other media type match; the protocol stays at `"protocol": 1`.
+
 ## Discovery
 
 The host looks for executables named `anytopdf-plugin-*` in:

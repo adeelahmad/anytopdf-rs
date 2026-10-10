@@ -25,6 +25,9 @@ pub struct ProbeScore(pub u16);
 
 impl ProbeScore {
     pub const NONE: Self = Self(0);
+    /// A catch-all match (a runtime importer declaring `*/*`): it wins only
+    /// when nothing else, not even text sniffing, claims the source.
+    pub const FALLBACK: Self = Self(1);
     pub const EXTENSION: Self = Self(300);
     pub const MIME: Self = Self(600);
     pub const MAGIC: Self = Self(800);

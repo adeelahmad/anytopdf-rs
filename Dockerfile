@@ -25,12 +25,12 @@ ARG WHISPER=none
 FROM rust:1.92-bookworm AS source
 WORKDIR /src
 COPY . .
-RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-audio-events -p anytopdf-plugin-clip -p anytopdf-plugin-face-id -p anytopdf-plugin-faces -p anytopdf-plugin-objects -p anytopdf-plugin-sentiment -p anytopdf-plugin-vlm -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
-    && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-audio-events target/release/anytopdf-plugin-clip target/release/anytopdf-plugin-face-id target/release/anytopdf-plugin-faces target/release/anytopdf-plugin-objects target/release/anytopdf-plugin-sentiment target/release/anytopdf-plugin-vlm target/release/anytopdf-plugin-whisper /
+RUN cargo build --release --locked -p anytopdf -p anytopdf-plugin-audio-events -p anytopdf-plugin-clip -p anytopdf-plugin-face-id -p anytopdf-plugin-faces -p anytopdf-plugin-objects -p anytopdf-plugin-sentiment -p anytopdf-plugin-tika -p anytopdf-plugin-vlm -p anytopdf-plugin-whisper --no-default-features --features anytopdf/imap \
+    && install -m 0755 target/release/anytopdf target/release/anytopdf-plugin-audio-events target/release/anytopdf-plugin-clip target/release/anytopdf-plugin-face-id target/release/anytopdf-plugin-faces target/release/anytopdf-plugin-objects target/release/anytopdf-plugin-sentiment target/release/anytopdf-plugin-tika target/release/anytopdf-plugin-vlm target/release/anytopdf-plugin-whisper /
 
 FROM scratch AS prebuilt
 ARG TARGETARCH
-COPY dist/docker/${TARGETARCH}/anytopdf dist/docker/${TARGETARCH}/anytopdf-plugin-audio-events dist/docker/${TARGETARCH}/anytopdf-plugin-clip dist/docker/${TARGETARCH}/anytopdf-plugin-face-id dist/docker/${TARGETARCH}/anytopdf-plugin-faces dist/docker/${TARGETARCH}/anytopdf-plugin-objects dist/docker/${TARGETARCH}/anytopdf-plugin-sentiment dist/docker/${TARGETARCH}/anytopdf-plugin-vlm dist/docker/${TARGETARCH}/anytopdf-plugin-whisper /
+COPY dist/docker/${TARGETARCH}/anytopdf dist/docker/${TARGETARCH}/anytopdf-plugin-audio-events dist/docker/${TARGETARCH}/anytopdf-plugin-clip dist/docker/${TARGETARCH}/anytopdf-plugin-face-id dist/docker/${TARGETARCH}/anytopdf-plugin-faces dist/docker/${TARGETARCH}/anytopdf-plugin-objects dist/docker/${TARGETARCH}/anytopdf-plugin-sentiment dist/docker/${TARGETARCH}/anytopdf-plugin-tika dist/docker/${TARGETARCH}/anytopdf-plugin-vlm dist/docker/${TARGETARCH}/anytopdf-plugin-whisper /
 
 FROM ${BINARY} AS binary
 
@@ -66,6 +66,7 @@ COPY --from=binary --chmod=0755 /anytopdf-plugin-face-id /opt/anytopdf/plugins/a
 COPY --from=binary --chmod=0755 /anytopdf-plugin-faces /opt/anytopdf/plugins/anytopdf-plugin-faces
 COPY --from=binary --chmod=0755 /anytopdf-plugin-objects /opt/anytopdf/plugins/anytopdf-plugin-objects
 COPY --from=binary --chmod=0755 /anytopdf-plugin-sentiment /opt/anytopdf/plugins/anytopdf-plugin-sentiment
+COPY --from=binary --chmod=0755 /anytopdf-plugin-tika /opt/anytopdf/plugins/anytopdf-plugin-tika
 COPY --from=binary --chmod=0755 /anytopdf-plugin-vlm /opt/anytopdf/plugins/anytopdf-plugin-vlm
 COPY --from=binary --chmod=0755 /anytopdf-plugin-whisper /opt/anytopdf/plugins/anytopdf-plugin-whisper
 COPY --from=whisper --chmod=0755 /out/bin/ /usr/local/bin/

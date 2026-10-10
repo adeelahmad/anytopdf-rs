@@ -30,6 +30,7 @@ PLUGINS = [
     "anytopdf-plugin-faces",
     "anytopdf-plugin-objects",
     "anytopdf-plugin-sentiment",
+    "anytopdf-plugin-tika",
     "anytopdf-plugin-vlm",
     "anytopdf-plugin-whisper",
 ]

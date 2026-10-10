@@ -435,6 +435,45 @@ a CPU, so raise `--plugin-timeout` (default 60 seconds) for
 long videos. A missing model, an unreadable frame or a bad setting becomes a
 `plugin.warning`; the PDF is still written.
 
+### Apache Tika (any other format)
+
+`anytopdf-plugin-tika` hands files that no built-in importer claims to
+[Apache Tika](https://tika.apache.org/), which reads well over a thousand
+formats: EPUB, Outlook `.msg`, XPS, iWork, Visio, Publisher, CHM and many more.
+The file's text becomes a text page, each embedded document with text (an
+attachment, a chapter file) gets its own page, and Tika's metadata (title,
+author, dates) is kept as `tika.*` source metadata in the manifest, never in the
+PDF's text layer. It is a catch-all: built-in importers, including plain-text
+sniffing, always win, except for a few extensions that text sniffing would
+mangle (`epub`, `msg`, `xps`, `pages`, `vsd` and similar).
+
+The plugin does nothing until one of these is set. It talks to a Tika server
+(`ANYTOPDF_TIKA_URL`) or runs a `tika-app` jar with Java (`ANYTOPDF_TIKA_JAR`);
+with both, the server is tried first and the jar is the fallback.
+
+```bash
+docker run -d -p 9998:9998 apache/tika:latest
+export ANYTOPDF_TIKA_URL=http://127.0.0.1:9998
+anytopdf convert book.epub mail.msg -o out.pdf
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `ANYTOPDF_TIKA_URL` | none | Tika server base URL (the plugin calls `PUT /rmeta/text`) |
+| `ANYTOPDF_TIKA_JAR` | none | `tika-app` jar, run as `java -jar … --jsonRecursive --text` |
+| `ANYTOPDF_TIKA_JAVA` | `$JAVA_HOME/bin/java`, else `java` | Java executable for the jar |
+| `ANYTOPDF_TIKA_TIMEOUT` | `50` | seconds per file, below the default `--plugin-timeout` |
+
+The same keys work as a `[tika]` table in the config file or as
+`--set tika.url=…`; the plugin turns itself on only from the environment
+variables, because the host reads its manifest before any request. A file Tika
+finds no text in is skipped with `import.failed`, as an unsupported file was
+before. Files go to the configured server, so point it at one you trust;
+`--plugin-sandbox strict` blocks network access and therefore the server engine.
+[`extractous`](https://crates.io/crates/extractous) (Tika compiled with GraalVM)
+was considered and not used: it needs a GraalVM native-image build and a
+shared library beside the plugin on every platform.
+
 ## How it works
 
 `anytopdf` is a pluggable media/document ingestion engine whose canonical output
@@ -607,6 +646,8 @@ Bundled runtime plugins (separate executables in this workspace):
   ArcFace-style ONNX model
 - `anytopdf-plugin-vlm`: keyframe captions, questions, activities, video and
   scene summaries and a category through a local vision-language model
+- `anytopdf-plugin-tika`: any format Apache Tika reads that no built-in importer
+  claims, through a Tika server or `tika-app` jar
 
 External plugins are the intended route for model-heavy enrichers such as:
 - DETR / open-vocabulary object detection
@@ -1175,6 +1216,7 @@ Per-release detail is in [ROADMAP.md](ROADMAP.md).
 - [x] Office documents through LibreOffice and Poppler
 - [x] JSON and JSON Lines: one searchable chunk per record
 - [x] Link lists and browser bookmark exports (`--links`), with bookmark folders as PDF bookmarks
+- [x] Any other format Apache Tika reads (EPUB, Outlook `.msg`, XPS, iWork, Visio, …) through `anytopdf-plugin-tika`
 - [ ] CAD, image stacks, IGL plugin and a generic command-adapter plugin
 
 ### Media enrichment

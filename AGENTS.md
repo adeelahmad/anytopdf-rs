@@ -14,6 +14,7 @@ This Rust workspace converts media and documents into searchable PDFs:
 - `crates/anytopdf-plugin-objects/`: YOLO object detection runtime plugin.
 - `crates/anytopdf-plugin-faces/`: face detection runtime plugin (embedded YuNet model).
 - `crates/anytopdf-plugin-sentiment/`: sentiment and tone runtime plugin (VADER lexicon or local LLM).
+- `crates/anytopdf-plugin-tika/`: Apache Tika catch-all importer runtime plugin (Tika server or tika-app jar).
 - `examples/anytopdf-plugin-example.py`: runtime plugin example.
 - `scripts/verify.sh`: local checks; `.github/workflows/release.yml`: release builds.
 

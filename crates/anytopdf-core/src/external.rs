@@ -430,7 +430,10 @@ fn descriptor(plugin: &RuntimePlugin, cap: &RuntimeCapability) -> PluginDescript
 
 fn match_source(cap: &RuntimeCapability, source: &SourceRecord) -> ProbeScore {
     if let Some(mime) = source.detected_type.as_deref()
-        && cap.mime_types.iter().any(|m| mime_match(m, mime))
+        && cap
+            .mime_types
+            .iter()
+            .any(|m| m != CATCH_ALL && mime_match(m, mime))
     {
         return ProbeScore::MIME;
     }
@@ -443,11 +446,18 @@ fn match_source(cap: &RuntimeCapability, source: &SourceRecord) -> ProbeScore {
     if cap.extensions.iter().any(|x| x.eq_ignore_ascii_case(&ext)) {
         return ProbeScore::EXTENSION;
     }
+    // `*/*` claims every source, typed or not, but below any specific match,
+    // so a catch-all importer (Apache Tika) only sees what nothing else takes.
+    if cap.mime_types.iter().any(|m| m == CATCH_ALL) {
+        return ProbeScore::FALLBACK;
+    }
     ProbeScore::NONE
 }
 
+const CATCH_ALL: &str = "*/*";
+
 fn mime_match(pattern: &str, mime: &str) -> bool {
-    if pattern == "*/*" || pattern == mime {
+    if pattern == CATCH_ALL || pattern == mime {
         return true;
     }
     if let Some(prefix) = pattern.strip_suffix("/*") {
@@ -840,6 +850,35 @@ mod tests {
         assert!(mime_match("image/*", "image/png"));
         assert!(!mime_match("image/*", "imagex/png"));
         assert!(!mime_match("audio/*", "video/mp4"));
+    }
+
+    #[test]
+    fn catch_all_mime_type_matches_below_every_specific_match() {
+        let capability = |extensions: &[&str], mime_types: &[&str]| RuntimeCapability {
+            kind: "importer".into(),
+            extensions: extensions.iter().map(|x| x.to_string()).collect(),
+            mime_types: mime_types.iter().map(|x| x.to_string()).collect(),
+            priority: 0,
+            phase: None,
+        };
+        let mut typed = SourceRecord::new("report.rtf".into());
+        typed.detected_type = Some("application/rtf".into());
+        let untyped = SourceRecord::new("blob.unknown".into());
+
+        let catch_all = capability(&["rtf"], &["*/*"]);
+        assert_eq!(match_source(&catch_all, &typed), ProbeScore::EXTENSION);
+        assert_eq!(match_source(&catch_all, &untyped), ProbeScore::FALLBACK);
+        let only = capability(&[], &["*/*"]);
+        assert_eq!(match_source(&only, &typed), ProbeScore::FALLBACK);
+        assert!(ProbeScore::FALLBACK > ProbeScore::NONE);
+        assert!(
+            ProbeScore::FALLBACK < ProbeScore(100),
+            "below text sniffing"
+        );
+        assert_eq!(
+            match_source(&capability(&[], &["application/*"]), &typed),
+            ProbeScore::MIME
+        );
     }
 }
 
