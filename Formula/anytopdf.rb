@@ -2,28 +2,28 @@
 class Anytopdf < Formula
   desc "Convert media and documents into searchable, RAG-friendly PDFs"
   homepage "https://github.com/adeelahmad/anytopdf-rs"
-  version "0.3.0"
+  version "0.5.0"
   license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
     on_arm do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-aarch64-apple-darwin.tar.gz"
-      sha256 "29751b5a916a328cafdad52af19a6415a9b72c36ddc8784c8c11bbd936d435c3"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.5.0/anytopdf-0.5.0-aarch64-apple-darwin.tar.gz"
+      sha256 "c21137acb1283eacf7cc40f3f4de7dbaaa58abe3754e45d7a577879edd566500"
     end
     on_intel do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-x86_64-apple-darwin.tar.gz"
-      sha256 "71b9170b75ac6b1783e91f15aaef9fba826d0bda5af7dbb6bbc0efcc9445f2bc"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.5.0/anytopdf-0.5.0-x86_64-apple-darwin.tar.gz"
+      sha256 "748f0e16c1b8f2bcc4d8437e91abdf4fe27d31f6c1629e692c65702517b1bd57"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "9c6cc307a3e6dc7e7e44c390176ce62e7b77ebad640ea74c569272104a79f6dd"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.5.0/anytopdf-0.5.0-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "a21fdd40592ead087ee7ade3d508441106e9de79655967e78734b6fe7441865e"
     end
     on_intel do
-      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "2a789bf099cd14b5f68a147b44170d3f243299565b09b93b3a3329811a2492c0"
+      url "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.5.0/anytopdf-0.5.0-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "0292efcb7f08170bc3a07b8928c53ab357ccf027ba7a105eceb9d48d63a0ca2f"
     end
   end
 

@@ -1,13 +1,13 @@
 {
-  "version": "0.3.0",
+  "version": "0.5.0",
   "description": "Convert media and documents into searchable, RAG-friendly PDFs",
   "homepage": "https://github.com/adeelahmad/anytopdf-rs",
   "license": "MIT|Apache-2.0",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.3.0/anytopdf-0.3.0-x86_64-pc-windows-msvc.zip",
-      "hash": "db07af8edc58c45d2c80876bf9eed1658a20e4a6df22ad98ede6c8700c17cd0b",
-      "extract_dir": "anytopdf-0.3.0-x86_64-pc-windows-msvc"
+      "url": "https://github.com/adeelahmad/anytopdf-rs/releases/download/v0.5.0/anytopdf-0.5.0-x86_64-pc-windows-msvc.zip",
+      "hash": "1fa0c58b259a6e17c008f9f93d384f75b033c05829aac41d45ed976edf69ded8",
+      "extract_dir": "anytopdf-0.5.0-x86_64-pc-windows-msvc"
     }
   },
   "bin": "anytopdf.exe",
