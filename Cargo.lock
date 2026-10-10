@@ -358,6 +358,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "anytopdf-plugin-tika"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "anytopdf-core",
+ "serde_json",
+ "tempfile",
+ "ureq",
+]
+
+[[package]]
 name = "anytopdf-plugin-vlm"
 version = "0.4.0"
 dependencies = [

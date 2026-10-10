@@ -19,7 +19,7 @@ the container image on GHCR.
 Every archive carries the workspace's runtime plugins (`PLUGINS` in the
 Makefile, currently `anytopdf-plugin-audio-events`, `anytopdf-plugin-clip`,
 `anytopdf-plugin-face-id`, `anytopdf-plugin-faces`, `anytopdf-plugin-objects`,
-`anytopdf-plugin-sentiment`, `anytopdf-plugin-vlm` and `anytopdf-plugin-whisper`) in a
+`anytopdf-plugin-sentiment`, `anytopdf-plugin-tika`, `anytopdf-plugin-vlm` and `anytopdf-plugin-whisper`) in a
 `plugins/` folder. anytopdf
 finds them there (and in Homebrew's `libexec/plugins` and `<data dir>/plugins`)
 without `ANYTOPDF_PLUGIN_PATH`, but runs a bundled plugin only once its manifest

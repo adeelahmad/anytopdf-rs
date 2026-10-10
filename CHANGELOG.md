@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Behaviour changes
+
+- `anytopdf-plugin-tika`, a bundled opt-in runtime plugin, imports any format
+  Apache Tika reads that no built-in importer claims (EPUB, Outlook `.msg`, XPS,
+  iWork, Visio and more) as text pages, one per embedded document with text, and
+  keeps Tika's metadata as `tika.*` source metadata. It talks to a Tika server
+  (`ANYTOPDF_TIKA_URL`) or runs a `tika-app` jar (`ANYTOPDF_TIKA_JAR`) and stays
+  idle until one is set.
+- A runtime importer declaring the media type `*/*` is now a catch-all that only
+  matches files no other importer claims, instead of outranking extension matches.
+
 ## 0.4.0
 
 Word boxes in chunks, rendered HTML pages, and fixes from testing 0.3.0.

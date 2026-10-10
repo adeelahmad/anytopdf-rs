@@ -99,6 +99,9 @@ Status: sprint 4 closed on 2026-10-05; the work listed under "After sprint 4" me
 - [x] face-id feeds raw pixels to SFace and ArcFace R100; borderline matches no longer enroll
 - [x] one Whisper setup command per system; Linux arm64 smoke test in CI
 
+## After 0.4.0
+- [x] any other format Apache Tika reads, through `anytopdf-plugin-tika` (Tika server or `tika-app` jar)
+
 ## Backlog
 
 Priority order as of sprint 4 sign-off, with status on `main`.
