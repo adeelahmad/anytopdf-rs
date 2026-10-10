@@ -15,6 +15,12 @@ Apache Tika for every format no built-in importer reads.
 - A runtime importer declaring the media type `*/*` is now a catch-all that only
   matches files no other importer claims, instead of outranking extension matches.
 
+### Commit history
+
+#### Features
+
+- plugin: add Apache Tika catch-all importer plugin (#64) (0b04a883)
+
 ## 0.4.0
 
 Word boxes in chunks, rendered HTML pages, and fixes from testing 0.3.0.
