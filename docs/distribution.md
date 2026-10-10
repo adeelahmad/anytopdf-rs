@@ -82,8 +82,8 @@ uploads them as the `package-manifests` artifact. Commit them in a PR after each
 release (or regenerate them from the published checksums):
 
 ```bash
-gh release download v0.4.0 --pattern SHA256SUMS
-python scripts/distribution.py --version 0.4.0 --checksums SHA256SUMS --output packaging
+gh release download v0.5.0 --pattern SHA256SUMS
+python scripts/distribution.py --version 0.5.0 --checksums SHA256SUMS --output packaging
 cp packaging/anytopdf.rb Formula/anytopdf.rb
 cp packaging/anytopdf.json bucket/anytopdf.json
 ```

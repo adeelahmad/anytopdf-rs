@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+Apache Tika for every format no built-in importer reads.
 
 ### Behaviour changes
 
