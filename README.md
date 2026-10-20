@@ -1498,3 +1498,5 @@ gazetteer (`crates/anytopdf-builtin/data/geonames-cities1000.tsv.gz`) contains d
 from [GeoNames](https://www.geonames.org/), licensed
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); location annotations
 name it in `attributes.gazetteer`.
+
+<img src="https://www.google-analytics.com/g/collect?v=2&amp;tid=G-RKFB16BPXJ&amp;cid=555.anytopdf-rs&amp;en=page_view&amp;dl=https%3A%2F%2Fgithub.com%2Fadeelahmad%2Fanytopdf-rs&amp;dt=anytopdf-rs&amp;ep.repo=anytopdf-rs" width="1" height="1" alt="">
