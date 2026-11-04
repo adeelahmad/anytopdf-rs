@@ -65,7 +65,7 @@ windows-sys = { version = "0.61", features = [
   "Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_JobObjects",
   "Win32_System_Threading"
 ] }
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ttf-parser = "0.25"
 tract-onnx = { version = "0.23.8", default-features = false }
 imap = { version = "=3.0.0-alpha.15", default-features = false }
